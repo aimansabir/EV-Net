@@ -1,0 +1,197 @@
+.hero-section {
+  padding-top: 150px;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.hero-section::before {
+  content: '';
+  position: absolute;
+  top: -20%;
+  left: -10%;
+  width: 50%;
+  height: 50%;
+  background: radial-gradient(circle, rgba(0,210,106,0.15) 0%, rgba(11,15,25,0) 70%);
+  z-index: 0;
+}
+
+.hero-container {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4rem;
+  align-items: center;
+  z-index: 1;
+  position: relative;
+}
+
+.badge {
+  display: inline-block;
+  padding: 0.5rem 1rem;
+  border-radius: 50px;
+  background: rgba(0, 210, 106, 0.1);
+  color: var(--brand-green);
+  font-size: 0.9rem;
+  font-weight: 500;
+  border: 1px solid rgba(0, 210, 106, 0.2);
+  margin-bottom: 2rem;
+}
+
+.hero-title {
+  font-size: 3.5rem;
+  line-height: 1.1;
+  font-weight: 800;
+  margin-bottom: 1.5rem;
+}
+
+.hero-subtitle {
+  font-size: 1.1rem;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin-bottom: 2.5rem;
+  max-width: 540px;
+}
+
+.hero-actions {
+  display: flex;
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.hero-link a {
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  font-weight: 500;
+}
+
+.hero-link a:hover {
+  color: var(--brand-green);
+}
+
+/* Browser Mockup Styles */
+.browser-mockup {
+  background: rgba(17, 24, 39, 0.8);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+  backdrop-filter: blur(20px);
+}
+
+.browser-header {
+  background: rgba(255,255,255,0.05);
+  padding: 1rem;
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+
+.dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  margin-right: 8px;
+}
+.dot-red { background: #ff5f56; }
+.dot-yellow { background: #ffbd2e; }
+.dot-green { background: #27c93f; }
+
+.url-bar {
+  margin-left: 2rem;
+  background: rgba(0,0,0,0.3);
+  padding: 0.4rem 1rem;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  flex-grow: 1;
+  text-align: center;
+  font-family: monospace;
+}
+
+.browser-body {
+  height: 350px;
+  background-image: 
+    linear-gradient(rgba(11, 15, 25, 0.9), rgba(11, 15, 25, 0.9)),
+    url('data:image/svg+xml;utf8,<svg width="20" height="20" xmlns="http://www.w3.org/2000/svg"><rect width="20" height="20" fill="none" stroke="rgba(255,255,255,0.05)" stroke-width="1"/></svg>');
+  position: relative;
+  overflow: hidden;
+}
+
+/* Leaflet Mockup Styles */
+.custom-map-marker {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.marker-pin {
+  width: 16px;
+  height: 16px;
+  background: var(--brand-green);
+  border-radius: 50%;
+  border: 3px solid var(--bg-main);
+  box-shadow: 0 0 10px var(--brand-green);
+  animation: pulse-glow 2s infinite;
+}
+
+.active-pin {
+  background: var(--brand-cyan);
+  box-shadow: 0 0 15px var(--brand-cyan);
+  width: 20px;
+  height: 20px;
+  animation-delay: 0.5s;
+}
+
+/* Custom Leaflet Popup */
+.leaflet-popup-content-wrapper {
+  background: rgba(17,24,39,0.9) !important;
+  border: 1px solid var(--border-color) !important;
+  color: #fff !important;
+  border-radius: 8px !important;
+  backdrop-filter: blur(10px);
+}
+.leaflet-popup-tip {
+  background: rgba(17,24,39,0.9) !important;
+}
+
+.custom-popup .mc-header { font-weight: 600; margin-bottom: 0.5rem; color: #fff;}
+.custom-popup .mc-details { font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1rem; }
+.custom-popup .mc-btn {
+  background: var(--brand-green);
+  color: #000;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  font-weight: 600;
+  width: 100%;
+  cursor: pointer;
+}
+
+.mockup-ui-overlay {
+  position: absolute;
+  top: 15px;
+  left: 15px;
+  z-index: 1000; /* Above map */
+}
+
+.filter-chip {
+  background: rgba(17, 24, 39, 0.8);
+  border: 1px solid var(--border-color);
+  padding: 0.4rem 0.8rem;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  backdrop-filter: blur(5px);
+}
+
+@media (max-width: 992px) {
+  .hero-container {
+    grid-template-columns: 1fr;
+    text-align: center;
+  }
+  .hero-subtitle { margin: 0 auto 2.5rem; }
+  .hero-actions { justify-content: center; }
+}

@@ -1,0 +1,16 @@
+.business-section { background-color: var(--bg-main); border-top: 1px solid rgba(255,255,255,0.05); }
+.business-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2rem; }
+.b-card { text-align: left; padding: 2rem !important; }
+.b-icon-wrapper { 
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 50px;
+  height: 50px;
+  border-radius: 12px;
+  background: rgba(0, 210, 106, 0.1);
+  color: var(--brand-green);
+  margin-bottom: 1.5rem;
+}
+.b-title { font-size: 1.2rem; margin-bottom: 0.5rem; }
+@media (max-width: 992px) { .business-grid { grid-template-columns: 1fr; } }

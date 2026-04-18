@@ -1,0 +1,105 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Keeping this SQLite for local dev, entirely database-agnostic via env variable
+datasource db {
+  provider = "sqlite"
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  name      String
+  role      String   @default("USER") // USER, HOST, ADMIN
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  listings      Listing[]
+  bookings      Booking[]
+  reviewsLeft   Review[]       @relation("ReviewAuthor")
+  reviewsGot    Review[]       @relation("ReviewTarget")
+  notifications Notification[]
+}
+
+model Listing {
+  id              String   @id @default(cuid())
+  hostId          String
+  host            User     @relation(fields: [hostId], references: [id])
+  title           String
+  address         String
+  lat             Float
+  lng             Float
+  chargerType     String   // e.g. "22kW AC Type 2"
+  pricePerHour    Float
+  isActive        Boolean  @default(false)
+  isApproved      Boolean  @default(false) // Admin moderation
+  setupFeePaid    Boolean  @default(false) // Host verification fee
+
+  availabilities  Availability[]
+  bookings        Booking[]
+  reviews         Review[]
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model Availability {
+  id        String   @id @default(cuid())
+  listingId String
+  listing   Listing  @relation(fields: [listingId], references: [id])
+  dayOfWeek Int      // 0-6
+  startTime String   // "09:00"
+  endTime   String   // "17:00"
+}
+
+model Booking {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  listingId   String
+  listing     Listing  @relation(fields: [listingId], references: [id])
+  paymentId   String?  // Relates to a Payment record if we strict couple later
+  
+  startTime   DateTime
+  endTime     DateTime
+  status      String   // PENDING, CONFIRMED, COMPLETED, CANCELLED
+  baseFee     Float
+  serviceFee  Float
+  totalFee    Float
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Payment {
+  id          String   @id @default(cuid())
+  amount      Float
+  type        String   // BOOKING, ACTIVATION_FEE, PAYOUT
+  status      String   // PENDING, COMPLETED, FAILED
+  referenceId String   // External gateway ref
+  createdAt   DateTime @default(now())
+}
+
+model Review {
+  id        String   @id @default(cuid())
+  authorId  String
+  author    User     @relation("ReviewAuthor", fields: [authorId], references: [id])
+  targetId  String
+  target    User     @relation("ReviewTarget", fields: [targetId], references: [id])
+  listingId String?
+  listing   Listing? @relation(fields: [listingId], references: [id])
+  rating    Int      // 1-5
+  comment   String?
+  createdAt DateTime @default(now())
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  type      String   // SYSTEM, BOOKING_UPDATE, PAYMENT
+  message   String
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+}

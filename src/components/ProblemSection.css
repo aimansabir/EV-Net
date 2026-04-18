@@ -1,0 +1,125 @@
+.problem-section {
+  background: radial-gradient(circle at 100% 0%, rgba(0, 240, 255, 0.05) 0%, transparent 40%);
+}
+
+.section-title {
+  font-size: 2.5rem;
+  margin-bottom: 3rem;
+  font-weight: 700;
+}
+
+.problem-grid {
+  display: grid;
+  grid-template-columns: 1fr 1.2fr;
+  gap: 3rem;
+  align-items: stretch;
+}
+
+.ratio-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-start;
+  background: linear-gradient(145deg, rgba(17, 24, 39, 0.8), rgba(255, 95, 86, 0.05));
+  border-color: rgba(255, 95, 86, 0.2);
+  position: relative;
+  overflow: hidden;
+}
+
+.ratio-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: radial-gradient(circle at 50% -20%, rgba(255, 95, 86, 0.15) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+.ratio-badge {
+  background: rgba(255, 95, 86, 0.15);
+  color: #ff5f56;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-bottom: 2rem;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.ratio-text {
+  font-size: 5rem;
+  color: #ff5f56;
+  margin-bottom: 1rem;
+  font-weight: 800;
+  line-height: 1;
+  text-shadow: 0 0 20px rgba(255, 95, 86, 0.3);
+}
+
+.ratio-desc {
+  font-size: 1.1rem;
+  color: var(--text-secondary);
+  line-height: 1.8;
+}
+
+.ratio-desc strong {
+  color: var(--text-primary);
+}
+
+.problem-details {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.pain-points h4 {
+  font-size: 1.5rem;
+  margin-bottom: 1.5rem;
+  color: var(--text-primary);
+}
+
+.bullet-list li {
+  background: rgba(17, 24, 39, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  padding: 1rem 1.5rem;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  color: var(--text-secondary);
+}
+
+.bullet-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  background: rgba(255, 95, 86, 0.2);
+  color: #ff5f56;
+  border-radius: 50%;
+  font-weight: bold;
+  font-size: 0.9rem;
+  flex-shrink: 0;
+}
+
+.bullet-list li:last-child {
+  border-color: rgba(0, 210, 106, 0.3);
+}
+
+.bullet-list li:last-child .bullet-icon {
+  background: rgba(0, 210, 106, 0.2);
+  color: var(--brand-green);
+}
+
+.bullet-list li strong {
+  color: var(--text-primary);
+  margin-right: 0.3rem;
+}
+
+@media (max-width: 992px) {
+  .problem-grid {
+    grid-template-columns: 1fr;
+    gap: 2rem;
+  }
+}

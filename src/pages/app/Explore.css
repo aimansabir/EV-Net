@@ -1,0 +1,392 @@
+.explore-container {
+  display: flex;
+  height: calc(100vh - 72px);
+  overflow: hidden;
+}
+
+.explore-sidebar {
+  width: 405px;
+  min-width: 360px;
+  background: var(--bg-main);
+  border-right: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  z-index: 10;
+  box-shadow: 5px 0 15px rgba(0, 0, 0, 0.5);
+}
+
+/* ─── Filter Section ─────────── */
+
+.explore-filters {
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+/* Removed filters-heading */
+
+.search-input {
+  width: 100%;
+  padding: 0.75rem 3rem 0.75rem 2.5rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  color: #fff;
+  outline: none;
+  font-size: 0.9rem;
+  font-family: var(--font-body);
+  transition: border-color 0.2s;
+}
+
+.search-input:focus {
+  border-color: var(--brand-green);
+  box-shadow: 0 0 0 2px rgba(0, 210, 106, 0.08);
+}
+
+.search-wrapper {
+  position: relative;
+  margin-bottom: 1rem;
+}
+
+.search-icon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--brand-green);
+  pointer-events: none;
+}
+
+.filter-toggle-btn {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.filter-toggle-btn:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.filter-toggle-btn.active {
+  color: var(--brand-green);
+  background: rgba(0, 210, 106, 0.1);
+}
+
+
+.filter-pills {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.filter-pill {
+  width: 100%;
+  text-align: left;
+  padding: 0.7rem 1rem;
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: var(--font-body);
+}
+
+.filter-pill:hover {
+  border-color: rgba(0, 210, 106, 0.3);
+  background: rgba(0, 210, 106, 0.03);
+  color: #fff;
+}
+
+.filter-pill.active {
+  background: rgba(0, 210, 106, 0.08);
+  color: var(--brand-green);
+  border-color: var(--brand-green);
+  font-weight: 600;
+}
+
+/* ─── Listing Cards ──────────── */
+
+.explore-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1.3rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.explore-list-count {
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  margin-bottom: 0.25rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.explore-map {
+  flex: 1;
+  position: relative;
+  background: #0b0f19;
+}
+
+.map-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #0b0f19;
+}
+
+.spinner-glow {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 3px solid rgba(0, 210, 106, 0.1);
+  border-top-color: var(--brand-green);
+  animation: spin-glow 1s linear infinite;
+  box-shadow: 0 0 15px rgba(0, 210, 106, 0.2);
+}
+
+@keyframes spin-glow {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Card style — matches reference: no image, text-only, left green border on active */
+.charger-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 1.15rem 1.25rem;
+  transition: all 0.2s ease;
+  cursor: pointer;
+  position: relative;
+  border-left: 3px solid transparent;
+}
+
+.charger-card:hover {
+  border-color: rgba(0, 210, 106, 0.25);
+  border-left-color: var(--brand-green);
+  background: rgba(0, 210, 106, 0.04);
+  transform: translateY(-1px);
+}
+
+.charger-card.selected {
+  border-left-color: var(--brand-green);
+  border-color: var(--brand-green);
+  background: rgba(0, 210, 106, 0.06);
+}
+
+.cc-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 0.4rem;
+}
+
+.cc-title {
+  font-size: 1.02rem;
+  font-weight: 700;
+  color: #fff;
+  margin: 0;
+}
+
+.cc-fav-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.cc-fav-btn:hover {
+  color: #ef4444;
+}
+
+.cc-fav-btn.active {
+  color: #ef4444;
+}
+
+.cc-meta {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  margin-bottom: 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.cc-meta .cc-speed-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.cc-meta .cc-availability {
+  color: rgba(0, 210, 106, 0.8);
+}
+
+.cc-bottom {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.cc-price {
+  font-size: 1.15rem;
+  color: var(--brand-green);
+  font-weight: 700;
+  font-family: var(--font-heading);
+}
+
+.cc-price span {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  font-weight: 400;
+  font-family: var(--font-body);
+}
+
+.cc-rating {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.cc-rating .star {
+  color: #fbbf24;
+}
+
+.cc-book-btn {
+  background: linear-gradient(135deg, var(--brand-green), var(--brand-cyan));
+  color: #000;
+  border: none;
+  padding: 0.5rem 1.25rem;
+  border-radius: 10px;
+  font-weight: 800;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-family: var(--font-heading);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 2px 10px rgba(0, 210, 106, 0.2);
+}
+
+.cc-book-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 5px 20px rgba(0, 240, 255, 0.5);
+  filter: brightness(1.1);
+}
+
+/* ─── Map Popup ──────────────── */
+.custom-popup .mc-header {
+  font-weight: 700;
+  font-size: 1rem;
+  margin-bottom: 4px;
+}
+
+.custom-popup .mc-details {
+  color: #666;
+  font-size: 0.85rem;
+  margin-bottom: 6px;
+}
+
+.custom-popup .mc-btn {
+  background: var(--brand-green);
+  color: #000;
+  border: none;
+  padding: 0.4rem 0.8rem;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 0.8rem;
+  width: 100%;
+}
+
+/* ─── Map Controls ────────────── */
+.leaflet-bar {
+  border: 1px solid rgba(255, 255, 255, 0.2) !important;
+  border-radius: 10px !important;
+  overflow: hidden;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.8) !important;
+}
+
+.leaflet-bar a {
+  background-color: rgba(20, 24, 35, 0.95) !important;
+  backdrop-filter: blur(8px);
+  color: #fff !important;
+  border-bottom: 1px solid var(--border-color) !important;
+  width: 34px !important;
+  height: 34px !important;
+  line-height: 34px !important;
+  transition: all 0.2s !important;
+}
+
+.leaflet-bar a:last-child {
+  border-bottom: none !important;
+}
+
+.leaflet-bar a:hover {
+  background-color: var(--brand-green) !important;
+  color: #000 !important;
+}
+
+.leaflet-control-zoom {
+  margin-top: 1.5rem !important;
+  margin-right: 1.5rem !important;
+}
+
+.leaflet-container .leaflet-control-attribution {
+  background: rgba(11, 15, 25, 0.7) !important;
+  backdrop-filter: blur(4px);
+  color: var(--text-secondary) !important;
+  border-top-left-radius: 8px;
+  padding: 2px 8px;
+  font-size: 10px;
+}
+
+.leaflet-container .leaflet-control-attribution a {
+  color: var(--brand-green) !important;
+}
+
+/* ─── Responsive ─────────────── */
+@media (max-width: 992px) {
+  .explore-container {
+    flex-direction: column;
+  }
+
+  .explore-sidebar {
+    width: 100%;
+    min-width: 100%;
+    height: 50vh;
+  }
+
+  .explore-map {
+    height: 50vh;
+  }
+}

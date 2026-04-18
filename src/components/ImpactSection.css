@@ -1,0 +1,8 @@
+.impact-section { background-image: linear-gradient(to bottom, var(--bg-main), rgba(0,210,106,0.05)); }
+.impact-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1.5rem; margin-top: 3rem; }
+.impact-item { padding: 2rem; background: rgba(11, 15, 25, 0.6); border: 1px solid var(--border-color); border-radius: 12px; text-align: center; transition: all 0.3s ease; }
+.impact-item:hover { border-color: var(--brand-green); transform: translateY(-5px); }
+.impact-number { display: block; font-family: var(--font-heading); font-size: 3rem; font-weight: 800; color: rgba(255,255,255,0.05); -webkit-text-stroke: 1px var(--brand-green); margin-bottom: 1rem; }
+.impact-item p { font-size: 1.1rem; color: var(--text-primary); font-weight: 500; }
+@media (max-width: 992px) { .impact-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 576px) { .impact-grid { grid-template-columns: 1fr; } }
