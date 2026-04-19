@@ -3,12 +3,15 @@ import { useNavigate } from 'react-router-dom';
 import useAuthStore from '../../store/authStore';
 import { hostService } from '../../data/api';
 import { Check } from 'lucide-react';
+import FileUploadDropzone from '../../components/ui/FileUploadDropzone';
 
 const HostProfile = () => {
   const navigate = useNavigate();
   const { user, logout } = useAuthStore();
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [avatarEditing, setAvatarEditing] = useState(false);
+  const [avatarFile, setAvatarFile] = useState([]);
 
   useEffect(() => {
     const load = async () => {
@@ -46,21 +49,48 @@ const HostProfile = () => {
         <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '2rem', marginBottom: '2rem' }}>Host Profile</h2>
 
         {/* Avatar & Info */}
-        <div className="glass-card" style={{ padding: '2rem', textAlign: 'center', marginBottom: '1.5rem' }}>
-          <div style={{
-            width: '80px', height: '80px', borderRadius: '50%', margin: '0 auto 1rem',
-            background: user?.avatar ? `url(${user.avatar}) center/cover` : 'var(--brand-cyan)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            color: '#000', fontWeight: 'bold', fontSize: '2rem',
-            border: profile?.verificationStatus === 'approved' ? '3px solid var(--brand-green)' : '3px solid var(--border-color)',
-          }}>
-            {!user?.avatar && (user?.name?.[0] || 'H')}
-          </div>
-          <h3 style={{ margin: 0 }}>{user?.name}</h3>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', margin: '0.3rem 0' }}>{user?.email}</p>
-          <span style={{ display: 'inline-block', marginTop: '0.5rem', padding: '0.3rem 0.8rem', borderRadius: '20px', fontSize: '0.8rem', fontWeight: 600, background: status.bg, color: status.color }}>
-            {status.label}
-          </span>
+        <div className="glass-card" style={{ padding: '2rem', textAlign: 'center', marginBottom: '1.5rem', position: 'relative' }}>
+          
+          {!avatarEditing ? (
+            <>
+              <div style={{
+                position: 'absolute', top: '16px', right: '16px', cursor: 'pointer',
+                color: 'var(--brand-cyan)', fontSize: '0.85rem'
+              }} onClick={() => setAvatarEditing(true)}>
+                Edit Photo
+              </div>
+
+              <div style={{
+                width: '90px', height: '90px', borderRadius: '50%', margin: '0 auto 1rem',
+                background: user?.avatar ? `url(${user.avatar}) center/cover` : 'var(--bg-secondary)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                color: '#fff', fontWeight: 'bold', fontSize: '2.5rem',
+                border: profile?.verificationStatus === 'approved' ? '3px solid var(--brand-green)' : '3px solid var(--border-color)',
+                boxShadow: profile?.verificationStatus === 'approved' ? '0 4px 12px rgba(0,210,106,0.2)' : 'none'
+              }}>
+                {!user?.avatar && (user?.name?.[0] || 'H')}
+              </div>
+              <h3 style={{ margin: 0, fontSize: '1.4rem' }}>{user?.name}</h3>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem', margin: '0.3rem 0' }}>{user?.email}</p>
+              <span style={{ display: 'inline-block', marginTop: '0.5rem', padding: '0.3rem 0.8rem', borderRadius: '20px', fontSize: '0.8rem', fontWeight: 600, background: status.bg, color: status.color }}>
+                {status.label}
+              </span>
+            </>
+          ) : (
+            <div style={{ textAlign: 'left' }}>
+               <h4 style={{ margin: '0 0 1rem 0' }}>Update Host Photo</h4>
+               <FileUploadDropzone 
+                 mode="image"
+                 accept="image/jpeg, image/png"
+                 files={avatarFile}
+                 onChange={setAvatarFile}
+               />
+               <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
+                  <button className="btn btn-secondary" onClick={() => { setAvatarEditing(false); setAvatarFile([]); }} style={{ flex: 1 }}>Cancel</button>
+                  <button className="btn btn-primary" style={{ flex: 1 }} disabled={avatarFile.length === 0} onClick={() => setAvatarEditing(false)}>Save Photo</button>
+               </div>
+            </div>
+          )}
         </div>
 
         {/* Verification Progress */}

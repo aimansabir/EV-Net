@@ -155,14 +155,35 @@ const useAuthStore = create((set, get) => ({
     set({ isLoading: true, error: null });
     try {
       const { user } = await authService.login(email, password);
-      const role = user.role.toLowerCase(); // USER -> user, HOST -> host, ADMIN -> admin
-      const state = { user, role, isAuthenticated: true, isLoading: false, error: null };
+      const role = user.role.toLowerCase();
+      const state = { user, role, isAuthenticated: true };
       set(state);
       persistAuth(state);
       return { user, role };
     } catch (err) {
-      set({ isLoading: false, error: err.message });
+      const errorMsg = err.message || (typeof err === 'string' ? err : 'An unexpected login error occurred');
+      set({ error: errorMsg });
       throw err;
+    } finally {
+      set({ isLoading: false });
+    }
+  },
+
+  /**
+   * Login with Google OAuth — redirects to Google, then /auth/callback.
+   * Session hydration happens in initAuth after the redirect.
+   */
+  loginWithGoogle: async () => {
+    set({ isLoading: true, error: null });
+    try {
+      await authService.loginWithGoogle();
+    } catch (err) {
+      const errorMsg = err.message || 'Failed to initialize Google Login';
+      set({ error: errorMsg });
+      throw err;
+    } finally {
+      // Note: redirection usually happens before this for success
+      set({ isLoading: false });
     }
   },
 
@@ -189,13 +210,16 @@ const useAuthStore = create((set, get) => ({
     set({ isLoading: true, error: null });
     try {
       const { user } = await authService.signupUser(data);
-      const state = { user, role: 'user', isAuthenticated: true, isLoading: false, error: null };
+      const state = { user, role: 'user', isAuthenticated: true };
       set(state);
       persistAuth(state);
       return user;
     } catch (err) {
-      set({ isLoading: false, error: err.message });
+      const errorMsg = err.message || 'Signup failed';
+      set({ error: errorMsg });
       throw err;
+    } finally {
+      set({ isLoading: false });
     }
   },
 
@@ -206,13 +230,16 @@ const useAuthStore = create((set, get) => ({
     set({ isLoading: true, error: null });
     try {
       const { user } = await authService.signupHost(data);
-      const state = { user, role: 'host', isAuthenticated: true, isLoading: false, error: null };
+      const state = { user, role: 'host', isAuthenticated: true };
       set(state);
       persistAuth(state);
       return user;
     } catch (err) {
-      set({ isLoading: false, error: err.message });
+      const errorMsg = err.message || 'Host signup failed';
+      set({ error: errorMsg });
       throw err;
+    } finally {
+      set({ isLoading: false });
     }
   },
 

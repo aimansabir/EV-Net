@@ -88,6 +88,11 @@ export const authService = {
     // No-op in mock mode — store handles localStorage
   },
 
+  async loginWithGoogle() {
+    // No real OAuth in mock mode
+    throw new Error('Google login is not available in demo mode. Use email/password.');
+  },
+
   async getSession() {
     return null; // No real session in mock mode
   },

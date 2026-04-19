@@ -4,6 +4,7 @@ import { CheckCircle, Clock, AlertTriangle, FileText, UploadCloud, PartyPopper }
 import useAuthStore from '../../store/authStore';
 import { authService } from '../../data/api';
 import { VerificationStatus } from '../../data/schema';
+import FileUploadDropzone from '../../components/ui/FileUploadDropzone';
 
 const Verification = () => {
   const { user, reloadUser } = useAuthStore();
@@ -11,6 +12,8 @@ const Verification = () => {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState(null);
+  const [cnicFile, setCnicFile] = useState([]);
+  const [evProofFile, setEvProofFile] = useState([]);
 
   // Auto-redirect if they are not a real user or not logged in
   useEffect(() => {
@@ -147,29 +150,39 @@ const Verification = () => {
                   
                   {/* Content */}
                   <div style={{ flex: 1, paddingBottom: '1.5rem', borderBottom: idx !== steps.length - 1 ? '1px solid var(--border-color)' : 'none' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.5rem' }}>
-                      <div>
-                        <h4 style={{ margin: '0 0 0.3rem 0', color: isCompleted ? '#fff' : 'var(--text-primary)' }}>{step.title}</h4>
-                        <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: '0.85rem', lineHeight: '1.4' }}>{step.description}</p>
-                      </div>
-                      
-                      {/* Action Triggers */}
-                      {!isCompleted && !isUnderReview && !isApproved && step.status === 'action_required' && (
-                        <div style={{
-                          padding: '2rem', width: '100%', marginTop: '1rem',
-                          background: 'rgba(11, 15, 25, 0.5)', border: '1px dashed var(--border-color)', borderRadius: '8px',
-                          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', cursor: 'pointer'
-                        }}
-                        onClick={() => {
-                          alert('Mock Upload Dialog Opened. Document simulated as attached.');
-                        }}
-                        >
-                          <UploadCloud size={24} style={{ color: 'var(--brand-cyan)' }} />
-                          <span style={{ fontSize: '0.85rem', color: 'var(--brand-cyan)' }}>Click to Upload Document</span>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.5rem' }}>
+                        <div>
+                          <h4 style={{ margin: '0 0 0.3rem 0', color: isCompleted ? '#fff' : 'var(--text-primary)' }}>{step.title}</h4>
+                          <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: '0.85rem', lineHeight: '1.4' }}>{step.description}</p>
                         </div>
+                        
+                        {!isCompleted && !isUnderReview && !isApproved && step.status === 'pending' && (
+                          <button className="btn btn-secondary" style={{ padding: '0.4rem 0.8rem', fontSize: '0.75rem' }} onClick={() => alert('Mock Verification Link/OTP Sent')}>Verify Now</button>
+                        )}
+                      </div>
+
+                      {/* Action Triggers for Uploads */}
+                      {!isCompleted && !isUnderReview && !isApproved && step.status === 'action_required' && step.id === 'identity' && (
+                         <div style={{ marginTop: '1rem' }}>
+                           <FileUploadDropzone 
+                             accept="image/jpeg, image/png, application/pdf"
+                             files={cnicFile}
+                             onChange={setCnicFile}
+                             mode="document"
+                           />
+                         </div>
                       )}
-                      {!isCompleted && !isUnderReview && !isApproved && step.status === 'pending' && (
-                        <button className="btn btn-secondary" style={{ padding: '0.4rem 0.8rem', fontSize: '0.75rem' }} onClick={() => alert('Mock Verification Link/OTP Sent')}>Verify Now</button>
+                      
+                      {!isCompleted && !isUnderReview && !isApproved && step.status === 'action_required' && step.id === 'ev' && (
+                         <div style={{ marginTop: '1rem' }}>
+                           <FileUploadDropzone 
+                             accept="image/jpeg, image/png, application/pdf"
+                             files={evProofFile}
+                             onChange={setEvProofFile}
+                             mode="document"
+                           />
+                         </div>
                       )}
                     </div>
                   </div>

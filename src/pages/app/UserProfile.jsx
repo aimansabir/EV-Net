@@ -2,12 +2,15 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useAuthStore from '../../store/authStore';
 import { PakistanEVBrands, ConnectorType } from '../../data/schema';
+import FileUploadDropzone from '../../components/ui/FileUploadDropzone';
 import '../../styles/auth.css';
 
 const UserProfile = () => {
   const navigate = useNavigate();
   const { user, logout } = useAuthStore();
   const [editing, setEditing] = useState(false);
+  const [avatarEditing, setAvatarEditing] = useState(false);
+  const [avatarFile, setAvatarFile] = useState([]);
   const [formData, setFormData] = useState({
     name: user?.name || '',
     phone: user?.phone || '',
@@ -32,19 +35,46 @@ const UserProfile = () => {
         <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '2rem', marginBottom: '2rem' }}>My Profile</h2>
 
         {/* Avatar & Name */}
-        <div className="glass-card" style={{ padding: '2rem', textAlign: 'center', marginBottom: '1.5rem' }}>
-          <div style={{
-            width: '80px', height: '80px', borderRadius: '50%', margin: '0 auto 1rem',
-            background: user?.avatar ? `url(${user.avatar}) center/cover` : 'var(--brand-green)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            color: '#000', fontWeight: 'bold', fontSize: '2rem',
-            border: '3px solid var(--brand-green)',
-          }}>
-            {!user?.avatar && (user?.name?.[0] || 'U')}
-          </div>
-          <h3 style={{ margin: 0 }}>{user?.name || 'User'}</h3>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', margin: '0.3rem 0' }}>{user?.email}</p>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>{user?.phone}</p>
+        <div className="glass-card" style={{ padding: '2rem', textAlign: 'center', marginBottom: '1.5rem', position: 'relative' }}>
+          
+          {!avatarEditing ? (
+            <>
+              <div style={{
+                position: 'absolute', top: '16px', right: '16px', cursor: 'pointer',
+                color: 'var(--brand-cyan)', fontSize: '0.85rem'
+              }} onClick={() => setAvatarEditing(true)}>
+                Edit Photo
+              </div>
+              
+              <div style={{
+                width: '90px', height: '90px', borderRadius: '50%', margin: '0 auto 1rem',
+                background: user?.avatar ? `url(${user.avatar}) center/cover` : 'var(--bg-secondary)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                color: '#fff', fontWeight: 'bold', fontSize: '2.5rem',
+                border: '3px solid var(--brand-green)',
+                boxShadow: '0 4px 12px rgba(0,210,106,0.2)'
+              }}>
+                {!user?.avatar && (user?.name?.[0] || 'U')}
+              </div>
+              <h3 style={{ margin: 0, fontSize: '1.4rem' }}>{user?.name || 'User'}</h3>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem', margin: '0.3rem 0' }}>{user?.email}</p>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>{user?.phone}</p>
+            </>
+          ) : (
+            <div style={{ textAlign: 'left' }}>
+               <h4 style={{ margin: '0 0 1rem 0' }}>Update Profile Photo</h4>
+               <FileUploadDropzone 
+                 mode="image"
+                 accept="image/jpeg, image/png"
+                 files={avatarFile}
+                 onChange={setAvatarFile}
+               />
+               <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
+                  <button className="btn btn-secondary" onClick={() => { setAvatarEditing(false); setAvatarFile([]); }} style={{ flex: 1 }}>Cancel</button>
+                  <button className="btn btn-primary" style={{ flex: 1 }} disabled={avatarFile.length === 0} onClick={() => setAvatarEditing(false)}>Save Photo</button>
+               </div>
+            </div>
+          )}
         </div>
 
         {/* EV Details */}

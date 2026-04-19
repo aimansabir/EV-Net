@@ -6,7 +6,7 @@ import { Eye, EyeOff } from 'lucide-react';
 
 const Login = () => {
   const navigate = useNavigate();
-  const { login, demoLogin, isLoading, error, clearError } = useAuthStore();
+  const { login, demoLogin, loginWithGoogle, isLoading, error, clearError } = useAuthStore();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -32,6 +32,15 @@ const Login = () => {
     }
   };
 
+  const handleGoogleLogin = async () => {
+    clearError();
+    try {
+      await loginWithGoogle();
+    } catch (err) {
+      // error is set in store
+    }
+  };
+
   const navigateByRole = (role) => {
     switch (role) {
       case 'host': navigate('/host/dashboard'); break;
@@ -50,7 +59,7 @@ const Login = () => {
 
       <form onSubmit={handleSubmit} className="auth-form">
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '1.5rem' }}>
-          <button type="button" className="btn" style={{ width: '100%', background: '#fff', color: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', fontWeight: 600 }}>
+          <button type="button" onClick={handleGoogleLogin} disabled={isLoading} className="btn" style={{ width: '100%', background: '#fff', color: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', fontWeight: 600 }}>
             <img src="https://www.google.com/favicon.ico" width="16" height="16" alt="Google" />
             Continue with Google
           </button>

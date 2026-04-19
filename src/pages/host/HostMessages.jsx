@@ -158,22 +158,33 @@ const HostMessages = () => {
                   </div>
                 )}
                 
-                {messages.map(msg => {
-                  if (msg.type === 'SYSTEM') {
-                    return (
-                      <div key={msg.id} className="message system-message">
-                        <span>{msg.content}</span>
-                      </div>
-                    );
-                  }
-                  const isMine = msg.senderId === user.id;
+                {messages.map((msg, index) => {
+                  const currentDate = new Date(msg.createdAt).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' });
+                  const prevDate = index > 0 ? new Date(messages[index - 1].createdAt).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' }) : null;
+                  const showDate = currentDate !== prevDate;
+
                   return (
-                    <div key={msg.id} className={`message ${isMine ? 'mine' : 'theirs'}`}>
-                      <div className="message-content">{msg.content}</div>
-                      <div className="message-time">
-                        {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </div>
-                    </div>
+                    <React.Fragment key={msg.id}>
+                      {showDate && (
+                        <div style={{ textAlign: 'center', margin: '1.5rem 0 1rem 0' }}>
+                          <span style={{ background: 'rgba(255,255,255,0.05)', padding: '4px 12px', borderRadius: '12px', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                             {currentDate}
+                          </span>
+                        </div>
+                      )}
+                      {msg.type === 'SYSTEM' ? (
+                        <div className="message system-message">
+                          <span>{msg.content}</span>
+                        </div>
+                      ) : (
+                        <div className={`message ${msg.senderId === user.id ? 'mine' : 'theirs'}`}>
+                          <div className="message-content">{msg.content}</div>
+                          <div className="message-time">
+                            {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </div>
+                        </div>
+                      )}
+                    </React.Fragment>
                   );
                 })}
                 <div ref={endOfMessagesRef} />

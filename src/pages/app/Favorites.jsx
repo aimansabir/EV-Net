@@ -10,19 +10,36 @@ const Favorites = () => {
   const { favorites, loadFavorites, toggleFavorite } = useAppStore();
   const [listings, setListings] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  const load = async () => {
+    setLoading(true);
+    setError(null);
+    
+    // Add a timeout to prevent infinite hanging
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('Request timed out')), 10000)
+    );
+
+    try {
+      await Promise.race([
+        Promise.all([
+          loadFavorites(),
+          listingService.getAll()
+        ]),
+        timeoutPromise
+      ]).then(async ([_, allListings]) => {
+         setListings(allListings || []);
+      });
+    } catch (err) {
+      console.error("Failed to load favorites", err);
+      setError(err.message || 'Failed to load chargers');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const load = async () => {
-      try {
-        await loadFavorites();
-        const all = await listingService.getAll();
-        setListings(all);
-      } catch (err) {
-        console.error("Failed to load favorites", err);
-      } finally {
-        setLoading(false);
-      }
-    };
     load();
   }, []);
 
@@ -37,6 +54,19 @@ const Favorites = () => {
     return (
       <div className="section" style={{ minHeight: 'calc(100vh - 72px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <div style={{ color: 'var(--text-secondary)' }}>Loading saved chargers...</div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="section" style={{ minHeight: 'calc(100vh - 72px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ color: '#ef4444', marginBottom: '1rem' }}>⚠ {error}</div>
+           <button className="btn btn-primary" onClick={load}>
+            Try Again
+          </button>
+        </div>
       </div>
     );
   }

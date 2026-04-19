@@ -60,6 +60,8 @@ async function pollProfile(userId, maxAttempts = 5) {
  * the frontend expects (flat User object).
  */
 function mergeUserShape(profile, evProfile, hostProfile) {
+  if (!profile) return null;
+
   const base = {
     id: profile.id,
     email: profile.email,
@@ -108,8 +110,21 @@ export const authService = {
     if (error) throw new Error(error.message);
 
     const profile = await getProfile(data.user.id);
-    const evProfile = profile.role === 'USER' ? await getEvProfile(data.user.id) : null;
-    const hostProfile = profile.role === 'HOST' ? await getHostProfile(data.user.id) : null;
+    if (!profile) {
+      throw new Error('Authentication successful, but user profile was not found in the database.');
+    }
+
+    let evProfile = null;
+    let hostProfile = null;
+
+    if (profile.role === 'USER') {
+      evProfile = await getEvProfile(data.user.id);
+    } else if (profile.role === 'HOST') {
+      hostProfile = await getHostProfile(data.user.id);
+      if (!hostProfile) {
+        throw new Error('Host account setup is incomplete. Missing host profile record (Data Integrity error).');
+      }
+    }
 
     return { user: mergeUserShape(profile, evProfile, hostProfile) };
   },
@@ -173,6 +188,7 @@ export const authService = {
   async getMe(userId) {
     try {
       const profile = await getProfile(userId);
+      if (!profile) return null;
       const evProfile = profile.role === 'USER' ? await getEvProfile(userId) : null;
       const hostProfile = profile.role === 'HOST' ? await getHostProfile(userId) : null;
       return mergeUserShape(profile, evProfile, hostProfile);
@@ -202,6 +218,22 @@ export const authService = {
   async logout() {
     const { error } = await supabase.auth.signOut();
     if (error) throw new Error(error.message);
+  },
+
+  /**
+   * Sign in with Google OAuth.
+   * Redirects to Google consent, then back to /auth/callback.
+   * The callback page hydrates the session and routes by role.
+   */
+  async loginWithGoogle() {
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: `${window.location.origin}/auth/callback`,
+      },
+    });
+    if (error) throw new Error(error.message);
+    return data;
   },
 
   /**
@@ -242,27 +274,34 @@ export const listingService = {
       `title.ilike.%${filters.search}%,area.ilike.%${filters.search}%,city.ilike.%${filters.search}%`
     );
 
-    const { data, error } = await query.order('created_at', { ascending: false });
-    if (error) throw error;
+    try {
+      const { data, error } = await query.order('created_at', { ascending: false });
+      if (error) {
+        console.error("ListingService.getAll Error:", error);
+        throw error;
+      }
 
-    // Map listing_photos storage_path to images array for frontend compatibility
-    return data.map(l => ({
-      ...l,
-      images: (l.listing_photos || [])
-        .sort((a, b) => a.display_order - b.display_order)
-        .map(p => p.storage_path),
-      pricePerHour: l.price_per_hour,
-      chargerType: l.charger_type,
-      chargerSpeed: l.charger_speed,
-      hostId: l.host_id,
-      isActive: l.is_active,
-      isApproved: l.is_approved,
-      setupFeePaid: l.setup_fee_paid,
-      reviewCount: l.review_count,
-      sessionsCompleted: l.sessions_completed,
-      houseRules: l.house_rules,
-      createdAt: l.created_at,
-    }));
+      return (data || []).map(l => ({
+        ...l,
+        images: (l.listing_photos || [])
+          .sort((a, b) => a.display_order - b.display_order)
+          .map(p => p.storage_path),
+        pricePerHour: l.price_per_hour,
+        chargerType: l.charger_type,
+        chargerSpeed: l.charger_speed,
+        hostId: l.host_id,
+        isActive: l.is_active,
+        isApproved: l.is_approved,
+        setupFeePaid: l.setup_fee_paid,
+        reviewCount: l.review_count,
+        sessionsCompleted: l.sessions_completed,
+        houseRules: l.house_rules,
+        createdAt: l.created_at,
+      }));
+    } catch (error) {
+      console.error("listingService.getAll fetch failed", error);
+      throw error;
+    }
   },
 
   async getById(id) {
@@ -422,15 +461,16 @@ export const listingService = {
 
 export const favoriteService = {
   async getAll() {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return [];
+    const { data: userData, error: authError } = await supabase.auth.getUser();
+    if (authError || !userData?.user) return [];
 
     const { data, error } = await supabase
       .from('favorites')
       .select('listing_id')
-      .eq('user_id', user.id);
+      .eq('user_id', userData.user.id);
+    
     if (error) throw error;
-    return data.map(f => f.listing_id);
+    return data ? data.map(f => f.listing_id) : [];
   },
 
   async toggle(listingId) {

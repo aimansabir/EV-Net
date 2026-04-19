@@ -8,6 +8,7 @@ import LandingPage from './pages/public/LandingPage';
 import Login from './pages/auth/Login';
 import SignupUser from './pages/auth/SignupUser';
 import SignupHost from './pages/auth/SignupHost';
+import AuthCallback from './pages/auth/AuthCallback';
 
 // App Pages (EV User)
 import Explore from './pages/app/Explore';
@@ -66,6 +67,7 @@ function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/signup/user" element={<SignupUser />} />
         <Route path="/signup/host" element={<SignupHost />} />
+        <Route path="/auth/callback" element={<AuthCallback />} />
 
         {/* ═══ EV User Routes ═══ */}
         <Route path="/app/explore" element={

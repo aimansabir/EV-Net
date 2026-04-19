@@ -15,7 +15,7 @@ const passwordRules = [
 
 const SignupUser = () => {
   const navigate = useNavigate();
-  const { signupUser, isLoading, error, clearError } = useAuthStore();
+  const { signupUser, loginWithGoogle, isLoading, error, clearError } = useAuthStore();
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -73,6 +73,16 @@ const SignupUser = () => {
     }
   };
 
+  const handleGoogleLogin = async () => {
+    clearError();
+    setLocalError('');
+    try {
+      await loginWithGoogle();
+    } catch (err) {
+      // error is set in store
+    }
+  };
+
   return (
     <AuthShell
       role="user"
@@ -85,7 +95,7 @@ const SignupUser = () => {
         {step === 1 ? (
           <div className="auth-step animate-in">
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '1.5rem' }}>
-              <button type="button" className="btn" style={{ width: '100%', background: '#fff', color: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', fontWeight: 600 }}>
+              <button type="button" onClick={handleGoogleLogin} disabled={isLoading} className="btn" style={{ width: '100%', background: '#fff', color: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', fontWeight: 600 }}>
                 <img src="https://www.google.com/favicon.ico" width="16" height="16" alt="Google" />
                 Continue with Google
               </button>
