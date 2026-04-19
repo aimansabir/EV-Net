@@ -514,25 +514,485 @@ export const favoriteService = {
   }
 };
 
-// ─── STUB SERVICES ──────────────────────────────────────
-// These are not yet implemented in Supabase (Phase 2+).
-// We fall back to mock services so the frontend UI doesn't crash 
-// while developers are testing real Supabase Auth (Phase 1).
+// ─── AVAILABILITY SERVICE (PHASE 2) ─────────────────────
 
+export const availabilityService = {
+  async getByListing(listingId) {
+    const { data, error } = await supabase
+      .from('availability_rules')
+      .select('*')
+      .eq('listing_id', listingId);
+    if (error) throw error;
+    // Map to frontend shape
+    return data.map(a => ({
+      id: a.id,
+      listingId: a.listing_id,
+      dayOfWeek: a.day_of_week,
+      startTime: a.start_time.substring(0, 5), // "09:00:00" -> "09:00"
+      endTime: a.end_time.substring(0, 5),
+    }));
+  },
+
+  async set(listingId, schedules) {
+    // Requires transaction or sequential deletes, but simplest for now:
+    const { error: delError } = await supabase
+      .from('availability_rules')
+      .delete()
+      .eq('listing_id', listingId);
+    if (delError) throw delError;
+
+    if (schedules.length === 0) return [];
+
+    const rows = schedules.map(s => ({
+      listing_id: listingId,
+      day_of_week: s.dayOfWeek,
+      start_time: s.startTime + ':00',
+      end_time: s.endTime + ':00',
+    }));
+
+    const { data, error } = await supabase
+      .from('availability_rules')
+      .insert(rows)
+      .select();
+    if (error) throw error;
+    return data;
+  },
+
+  async generateSlots(listingId, dateStr) {
+    // Use the RPC for accurate robust slot generation if complex, 
+    // or fallback to mock locally since generating unbooked slots 
+    // is computationally light. We will leave it calling mock for now 
+    // unless we need complex timezones.
+    // For now, implementing basic local generation here:
+    const dayOfWeek = new Date(dateStr).getDay();
+    const rules = await this.getByListing(listingId);
+    const dayAvail = rules.filter(r => r.dayOfWeek === dayOfWeek);
+    
+    if (dayAvail.length === 0) return [];
+
+    // Pull bookings for that date
+    const { data: bookings } = await supabase
+      .from('bookings')
+      .select('start_time, end_time, status')
+      .eq('listing_id', listingId)
+      .eq('date', dateStr)
+      .neq('status', 'CANCELLED');
+
+    const slots = [];
+    dayAvail.forEach(a => {
+      const startHour = parseInt(a.startTime.split(':')[0]);
+      const endHour = parseInt(a.endTime.split(':')[0]);
+      for (let h = startHour; h < endHour; h++) {
+        const slotStart = `${String(h).padStart(2, '0')}:00`;
+        const slotEnd = `${String(h + 1).padStart(2, '0')}:00`;
+        
+        // Simple overlap check
+        const isBooked = bookings?.some(b => 
+          b.start_time.substring(0,5) <= slotStart && 
+          b.end_time.substring(0,5) > slotStart
+        );
+        
+        slots.push({
+          id: `slot_${listingId}_${dateStr}_${h}`,
+          listingId,
+          date: dateStr,
+          startTime: slotStart,
+          endTime: slotEnd,
+          isBooked: !!isBooked
+        });
+      }
+    });
+
+    return slots;
+  }
+};
+
+// ─── BOOKING SERVICE (PHASE 2 RPC) ──────────────────────
+
+export const bookingService = {
+  async create(data) {
+    // Calls the robust transaction-safe RPC
+    const { data: bookingId, error } = await supabase.rpc('create_booking', {
+      p_listing_id: data.listingId,
+      p_date: data.date,
+      p_start_time: data.startTime + ':00',
+      p_end_time: data.endTime + ':00'
+    });
+    
+    if (error) throw new Error(error.message);
+    
+    // Fetch newly created booking
+    const { data: booking, error: fetchError } = await supabase
+      .from('bookings')
+      .select('*')
+      .eq('id', bookingId)
+      .single();
+    if (fetchError) throw fetchError;
+    
+    return {
+      ...booking,
+      listingId: booking.listing_id,
+      startTime: booking.start_time.substring(0, 5),
+      endTime: booking.end_time.substring(0, 5),
+      baseFee: booking.base_fee,
+      serviceFee: booking.service_fee,
+      totalFee: booking.total_fee,
+      createdAt: booking.created_at,
+    };
+  },
+
+  async getByUser(userId) {
+    const { data, error } = await supabase
+      .from('bookings')
+      .select('*, listing:listings(*)')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+    
+    if (error) throw error;
+    
+    return data.map(b => ({
+      ...b,
+      listingId: b.listing_id,
+      userId: b.user_id,
+      startTime: b.start_time.substring(0, 5),
+      endTime: b.end_time.substring(0, 5),
+      baseFee: b.base_fee,
+      serviceFee: b.service_fee,
+      totalFee: b.total_fee,
+      createdAt: b.created_at,
+    }));
+  },
+
+  async getByHost(hostId) {
+    // Note: RLS ensures users can only read bookings tied to their own listings
+    const { data, error } = await supabase
+      .from('bookings')
+      .select('*, listing:listings!inner(*), user:profiles!user_id(*)')
+      .eq('listing.host_id', hostId)
+      .order('created_at', { ascending: false });
+    
+    if (error) throw error;
+    
+    return data.map(b => ({
+      ...b,
+      listingId: b.listing_id,
+      userId: b.user_id,
+      startTime: b.start_time.substring(0, 5),
+      endTime: b.end_time.substring(0, 5),
+      baseFee: b.base_fee,
+      serviceFee: b.service_fee,
+      totalFee: b.total_fee,
+      createdAt: b.created_at,
+    }));
+  },
+
+  async updateStatus(bookingId, status) {
+    // In a prod app, this might also be an RPC (e.g. host can't cancel a completed booking).
+    // For now, relies on Edge Function service_role or basic update.
+    const { data, error } = await supabase
+      .from('bookings')
+      .update({ status })
+      .eq('id', bookingId)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  }
+};
+
+// ─── MESSAGING SERVICE (PHASE 3 RPCs) ───────────────────
+
+export const messagingService = {
+  async getConversations(userId) {
+    const { data, error } = await supabase
+      .from('conversations')
+      .select(`
+        *,
+        listing:listings(*),
+        user:profiles!user_id(*),
+        host:profiles!host_id(*),
+        messages(id, content, created_at, type, sender_id, is_read)
+      `)
+      .or(`user_id.eq.${userId},host_id.eq.${userId}`)
+      .order('updated_at', { ascending: false });
+
+    if (error) throw error;
+    
+    return data.map(c => {
+      // Sort embedded messages to find lastMessage
+      const sortedMsgs = (c.messages || []).sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
+      const isUser = c.user_id === userId;
+      
+      return {
+        ...c,
+        listingId: c.listing_id,
+        userId: c.user_id,
+        hostId: c.host_id,
+        messageCount: c.message_count,
+        extensionRequested: c.extension_requested,
+        extensionApproved: c.extension_approved,
+        extensionLimit: c.extension_limit,
+        extensionCount: c.extension_count,
+        createdAt: c.created_at,
+        updatedAt: c.updated_at,
+        listing: c.listing,
+        // map 'user' to be the OTHER party for UI display logic
+        user: isUser ? c.host : c.user,
+        lastMessage: sortedMsgs.length > 0 ? {
+          ...sortedMsgs[0],
+          createdAt: sortedMsgs[0].created_at,
+          senderId: sortedMsgs[0].sender_id
+        } : null
+      };
+    }).sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+  },
+
+  async getMessages(conversationId) {
+    const { data, error } = await supabase
+      .from('messages')
+      .select('*')
+      .eq('conversation_id', conversationId)
+      .order('created_at', { ascending: true });
+    
+    if (error) throw error;
+
+    return data.map(m => ({
+      ...m,
+      conversationId: m.conversation_id,
+      senderId: m.sender_id,
+      isRead: m.is_read,
+      createdAt: m.created_at
+    }));
+  },
+
+  async createOrGetInquiry(listingId, userId) {
+    const { data, error } = await supabase.rpc('create_or_get_inquiry', {
+      p_listing_id: listingId
+    });
+    if (error) throw error;
+    if (!data || data.length === 0) throw new Error('Failed to init inquiry.');
+
+    const c = data[0];
+    return {
+      ...c,
+      listingId: c.listing_id,
+      userId: c.user_id,
+      hostId: c.host_id,
+      messageCount: c.message_count,
+      extensionRequested: c.extension_requested,
+      extensionApproved: c.extension_approved,
+      extensionLimit: c.extension_limit,
+      extensionCount: c.extension_count,
+    };
+  },
+
+  async sendMessage(conversationId, senderId, content) {
+    const { data, error } = await supabase.rpc('send_message', {
+      p_conversation_id: conversationId,
+      p_content: content
+    });
+    if (error) throw new Error(error.message); // Will throw 'Inquiry limit reached' or Regex filters
+
+    const m = data[0];
+    return {
+      ...m,
+      conversationId: m.conversation_id,
+      senderId: m.sender_id,
+      createdAt: m.created_at
+    };
+  },
+
+  async requestExtension(conversationId) {
+    const { data, error } = await supabase.rpc('request_extension', {
+      p_conversation_id: conversationId
+    });
+    if (error) throw new Error(error.message);
+    const c = data[0];
+    return { ...c, extensionRequested: c.extension_requested };
+  },
+
+  async approveExtension(conversationId) {
+    const { data, error } = await supabase.rpc('approve_extension', {
+      p_conversation_id: conversationId
+    });
+    if (error) throw new Error(error.message);
+    const c = data[0];
+    return { ...c, extensionApproved: c.extension_approved };
+  },
+
+  // Added Realtime Subscription exclusively for messaging
+  subscribeToMessages(conversationId, callback) {
+    const channel = supabase
+      .channel(`room:${conversationId}`)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'messages', filter: `conversation_id=eq.${conversationId}` },
+        (payload) => {
+          const m = payload.new;
+          callback({
+            ...m,
+            conversationId: m.conversation_id,
+            senderId: m.sender_id,
+            isRead: m.is_read,
+            createdAt: m.created_at
+          });
+        }
+      )
+      .subscribe();
+
+    return () => supabase.removeChannel(channel);
+  }
+};
+
+// ─── ADMIN SERVICE (PHASE 4 RPCs & VIEWS) ───────────────
+
+export const adminService = {
+  async getDashboard() {
+    // In prod, this would be a dedicated RPC 'get_admin_dashboard_stats' to avoid mass roundtrips.
+    // Simplifying with basic parallel queries for now since Admin Dashboard load is infrequent.
+    const [
+      { count: totalUsers },
+      { count: totalListings },
+      { count: activeListings },
+      { count: totalBookings },
+      { data: completedBookings }
+    ] = await Promise.all([
+      supabase.from('profiles').select('*', { count: 'exact', head: true }),
+      supabase.from('listings').select('*', { count: 'exact', head: true }),
+      supabase.from('listings').select('*', { count: 'exact', head: true }).eq('is_active', true).eq('is_approved', true),
+      supabase.from('bookings').select('*', { count: 'exact', head: true }),
+      supabase.from('bookings').select('service_fee').eq('status', 'COMPLETED')
+    ]);
+
+    const totalRevenue = (completedBookings || []).reduce((s, b) => s + b.service_fee, 0);
+    // Simple heuristic for pending hosts (where status = under_review)
+    const { count: pendingVerifications } = await supabase
+      .from('host_profiles')
+      .select('*', { count: 'exact', head: true })
+      .eq('verification_status', 'under_review');
+
+    return {
+      totalUsers: totalUsers || 0,
+      totalHosts: 0, // Would need distinct query
+      totalListings: totalListings || 0,
+      activeListings: activeListings || 0,
+      pendingVerifications: pendingVerifications || 0,
+      totalBookings: totalBookings || 0,
+      totalRevenue
+    };
+  },
+
+  async getListings() {
+    const { data, error } = await supabase
+      .from('listings')
+      .select('*, host:profiles!host_id(*)')
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return data.map(l => ({ ...l, hostId: l.host_id, isApproved: l.is_approved, isActive: l.is_active, createdAt: l.created_at }));
+  },
+
+  async getUsers() {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*, hostProfile:host_profiles(*), evProfile:ev_profiles(*)')
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return data.map(u => ({ ...u, createdAt: u.created_at, hostProfile: u.hostProfile, evProfile: u.evProfile }));
+  },
+
+  async getBookings() {
+    const { data, error } = await supabase
+      .from('bookings')
+      .select('*, listing:listings(*), user:profiles!user_id(*)')
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return data.map(b => ({ ...b, createdAt: b.created_at, baseFee: b.base_fee, serviceFee: b.service_fee, totalFee: b.total_fee }));
+  },
+
+  async reviewListing(listingId, decision) {
+    const { error } = await supabase.rpc('admin_review_listing', {
+      p_listing_id: listingId,
+      p_approved: decision.approved,
+      p_notes: decision.notes || ''
+    });
+    if (error) throw new Error(error.message);
+    
+    // refetch updated listing
+    const { data } = await supabase.from('listings').select('*').eq('id', listingId).single();
+    return { ...data, isApproved: data.is_approved, isActive: data.is_active };
+  },
+
+  async verifyHost(userId, decision) {
+    const { error } = await supabase.rpc('admin_verify_host', {
+      p_user_id: userId,
+      p_approved: decision.approved,
+      p_notes: decision.notes || ''
+    });
+    if (error) throw new Error(error.message);
+    return { success: true };
+  },
+
+  async verifyUser(userId, decision) {
+    const { error } = await supabase.rpc('admin_verify_user', {
+      p_user_id: userId,
+      p_approved: decision.approved,
+      p_notes: decision.notes || ''
+    });
+    if (error) throw new Error(error.message);
+    return { success: true };
+  },
+
+  async getConversations() {
+    const { data, error } = await supabase
+      .from('conversations')
+      .select('*, listing:listings(*), user:profiles!user_id(*), host:profiles!host_id(*)')
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return data.map(c => ({
+      ...c,
+      userId: c.user_id,
+      hostId: c.host_id,
+      listingId: c.listing_id,
+      createdAt: c.created_at,
+      updatedAt: c.updated_at
+    }));
+  },
+
+  async moderateConversation(conversationId, action) {
+    // simplified implementation of moderation action -> DB insert
+    const { data: admin } = await supabase.auth.getUser();
+    
+    const { data: conv, error: fetchErr } = await supabase.from('conversations').select('*').eq('id', conversationId).single();
+    if (fetchErr) throw fetchErr;
+
+    if (action === 'CLOSE_THREAD') {
+      await supabase.from('conversations').update({ status: 'CLOSED' }).eq('id', conversationId);
+    } else if (action === 'RESTRICT_INQUIRY') {
+      await supabase.from('ev_profiles').update({ is_restricted_from_inquiry: true }).eq('user_id', conv.user_id);
+    } else if (action === 'SUSPEND_ACCOUNT') {
+      await supabase.from('profiles').update({ is_suspended: true }).eq('id', conv.user_id);
+    }
+    
+    // Log explicit moderation review
+    await supabase.from('moderation_reviews').insert({
+      target_type: 'CONVERSATION',
+      target_id: conversationId,
+      admin_id: admin.user.id,
+      action: action,
+      notes: 'Admin executed quick action directly from dashboard.'
+    });
+
+    return { success: true };
+  }
+};
+
+// ─── STUB SERVICES Remaining ────────────────────────────
 import {
-  availabilityService as mockAvailability,
-  bookingService as mockBooking,
   hostService as mockHost,
   reviewService as mockReview,
-  adminService as mockAdmin,
   notificationService as mockNotification,
-  messagingService as mockMessaging
 } from './api.mock.js';
 
-export const availabilityService = mockAvailability;
-export const bookingService = mockBooking;
 export const hostService = mockHost;
 export const reviewService = mockReview;
-export const adminService = mockAdmin;
 export const notificationService = mockNotification;
-export const messagingService = mockMessaging;
