@@ -1,34 +1,92 @@
 import React, { useState } from 'react';
-import { X, CheckCircle, AlertTriangle, FileText, Download } from 'lucide-react';
-import ValidatedInput from './ValidatedInput';
+import { X, CheckCircle, AlertTriangle, FileText, Download, Loader2 } from 'lucide-react';
 
 /**
  * ReviewActionModal
  * 
  * Admin tool for viewing submitted documents and submitting a
- * moderation status change (Approve, Reject, or Resubmit).
+ * moderation status change (Approve or Reject).
  */
 const ReviewActionModal = ({ isOpen, onClose, user, targetType = 'evType', submission, onSubmit }) => {
-  const [action, setAction] = useState(null); // 'APPROVED' | 'REJECTED' | 'RESUBMISSION'
+  const [action, setAction] = useState(null); // 'APPROVED' | 'REJECTED'
   const [notes, setNotes] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState(null);
+  const [validationError, setValidationError] = useState(null);
   
   if (!isOpen || !user) return null;
 
-  // Mock document placeholders based on targetType
-  const mockDocs = targetType === 'evType' ? [
-     { id: 1, name: 'CNIC_Front.jpg', type: 'image' },
-     { id: 2, name: 'Vehicle_Registration.pdf', type: 'doc' },
-  ] : [
-     { id: 1, name: 'CNIC_Front.jpg', type: 'image' },
-     { id: 2, name: 'Property_Deed.pdf', type: 'doc' },
-     { id: 3, name: 'Charger_Unit.jpg', type: 'image' },
-  ];
+  // Map real document paths from the submission object
+  const realDocs = [];
+  if (submission?.cnic_path) {
+    realDocs.push({ id: 'cnic', name: 'CNIC Front', path: submission.cnic_path, url: submission.documentUrls?.cnic_path });
+  }
+  if (submission?.ev_proof_path) {
+    realDocs.push({ id: 'ev', name: 'EV Ownership Proof', path: submission.ev_proof_path, url: submission.documentUrls?.ev_proof_path });
+  }
+  if (submission?.property_proof_path) {
+    realDocs.push({ id: 'property', name: 'Property Proof', path: submission.property_proof_path, url: submission.documentUrls?.property_proof_path });
+  }
+  if (submission?.charger_proof_path) {
+    realDocs.push({ id: 'charger', name: 'Charger Spec Proof', path: submission.charger_proof_path, url: submission.documentUrls?.charger_proof_path });
+  }
 
-  const handleSubmit = () => {
-    onSubmit({ action, notes });
+  const getDocUrl = (doc) => doc?.url || null;
+
+  const handleSubmit = async () => {
+    console.log('[Admin] ReviewActionModal submit clicked', {
+      action,
+      notes,
+      targetType,
+      submission,
+      hasOnSubmit: typeof onSubmit === 'function',
+    });
+
+    // reset previous errors
+    setValidationError(null);
+    setSubmitError(null);
+
+    if (isSubmitting) {
+      console.warn('[Admin] ReviewActionModal submit ignored: already submitting');
+      return;
+    }
+
+    // client-side validation
+    if (!action) {
+      setValidationError('Please select Approve or Reject before submitting.');
+      return;
+    }
+    if (action === 'REJECTED' && notes.trim() === '') {
+      setValidationError('Moderator notes are required when rejecting.');
+      return;
+    }
+
+    if (typeof onSubmit !== 'function') {
+      setSubmitError('No submit handler provided.');
+      console.error('[Admin] ReviewActionModal missing onSubmit callback');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      console.log('[Admin] ReviewActionModal calling parent onSubmit...');
+      const result = await onSubmit({
+        action,
+        notes: notes.trim(),
+        targetType,
+        submission,
+        user,
+      });
+      console.log('[Admin] ReviewActionModal parent onSubmit resolved:', result);
+    } catch (err) {
+      console.error('[Admin] ReviewActionModal submit failed:', err);
+      setSubmitError(err?.message || String(err));
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const isNotesRequired = action === 'REJECTED' || action === 'RESUBMISSION';
+  const isNotesRequired = action === 'REJECTED';
   const isSubmitDisabled = !action || (isNotesRequired && notes.trim() === '');
 
   return (
@@ -39,7 +97,7 @@ const ReviewActionModal = ({ isOpen, onClose, user, targetType = 'evType', submi
     }}>
       <div style={{
         background: '#111822', border: '1px solid var(--border-color)', borderRadius: '16px',
-        width: '100%', maxWidth: '700px', maxHeight: '90vh', display: 'flex', flexDirection: 'column',
+        width: '100%', maxWidth: '750px', maxHeight: '90vh', display: 'flex', flexDirection: 'column',
         boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)'
       }}>
         
@@ -48,7 +106,7 @@ const ReviewActionModal = ({ isOpen, onClose, user, targetType = 'evType', submi
           <div>
             <h3 style={{ margin: 0 }}>Verification Review</h3>
             <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
-              Reviewing {targetType === 'evType' ? 'EV User' : 'Host'} submission for: <strong style={{ color: '#fff' }}>{user.name}</strong>
+              Reviewing {(targetType === 'hostType') ? 'Host' : targetType === 'payment' ? 'Payment' : 'EV User'} submission for: <strong style={{ color: '#fff' }}>{user.name}</strong>
             </div>
           </div>
           <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}><X size={24} /></button>
@@ -66,37 +124,67 @@ const ReviewActionModal = ({ isOpen, onClose, user, targetType = 'evType', submi
               
               {submission?.screenshot_path && (
                 <div style={{ borderRadius: '12px', overflow: 'hidden', border: '1px solid var(--border-color)' }}>
-                  <img 
-                    src={`https://pynvovmrvunhshihshuv.supabase.co/storage/v1/object/public/verification-docs/${submission.screenshot_path}`} 
-                    alt="Payment Proof" 
-                    style={{ width: '100%', display: 'block' }} 
-                  />
+                  {submission.receiptUrl ? (
+                    <img 
+                      src={submission.receiptUrl}
+                      alt="Payment Proof" 
+                      style={{ width: '100%', display: 'block' }} 
+                    />
+                  ) : (
+                    <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                      Payment receipt preview unavailable.
+                    </div>
+                  )}
                 </div>
               )}
             </div>
           ) : (
             <>
               <h4 style={{ margin: '0 0 1rem 0' }}>Submitted Documents</h4>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
-                 {mockDocs.map(doc => (
-                     <div key={doc.id} style={{ border: '1px solid var(--border-color)', borderRadius: '12px', overflow: 'hidden' }}>
-                        <div style={{ height: '120px', background: 'rgba(255,255,255,0.02)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)' }}>
-                            {doc.type === 'image' ? <FileText size={32} /> : <FileText size={32} />}
-                        </div>
-                        <div style={{ padding: '0.8rem', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span style={{ fontSize: '0.8rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{doc.name}</span>
-                            <Download size={16} color="var(--brand-cyan)" style={{ cursor: 'pointer', flexShrink: 0 }} />
-                        </div>
-                     </div>
-                 ))}
-              </div>
+              {realDocs.length === 0 ? (
+                <div style={{ padding: '2rem', textAlign: 'center', background: 'rgba(255,255,255,0.02)', borderRadius: '12px', border: '1px dashed var(--border-color)', marginBottom: '2rem' }}>
+                  <AlertTriangle size={24} color="#fbbf24" style={{ marginBottom: '0.5rem' }} />
+                  <p style={{ margin: 0, color: 'var(--text-secondary)' }}>No document paths found in this submission record.</p>
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '1.5rem', marginBottom: '2rem' }}>
+                   {realDocs.map(doc => (
+                       <div key={doc.id} style={{ border: '1px solid var(--border-color)', borderRadius: '12px', overflow: 'hidden', background: 'rgba(0,0,0,0.2)' }}>
+                          <div style={{ minHeight: '180px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                              <img 
+                                src={getDocUrl(doc)} 
+                                alt={doc.name} 
+                                style={{ maxWidth: '100%', maxHeight: '400px', objectFit: 'contain' }} 
+                                onError={(e) => {
+                                  e.target.style.display = 'none';
+                                  e.target.nextSibling.style.display = 'flex';
+                                }}
+                              />
+                              <div style={{ display: 'none', height: '120px', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)', flexDirection: 'column', gap: '10px' }}>
+                                <FileText size={48} opacity={0.3} />
+                                <span style={{ fontSize: '0.8rem' }}>Preview unavailable</span>
+                              </div>
+                          </div>
+                          <div style={{ padding: '0.8rem', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#1a222e' }}>
+                              <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>{doc.name}</span>
+                              {getDocUrl(doc) && (
+                                <a href={getDocUrl(doc)} target="_blank" rel="noreferrer" style={{ color: 'var(--brand-cyan)', display: 'flex', alignItems: 'center', gap: '4px', textDecoration: 'none', fontSize: '0.8rem' }}>
+                                  <Download size={16} /> Full View
+                                </a>
+                              )}
+                          </div>
+                       </div>
+                   ))}
+                </div>
+              )}
             </>
           )}
 
           <h4 style={{ margin: '0 0 1rem 0' }}>Moderation Action</h4>
-          <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem' }}>
+            <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem' }}>
             <button 
-                onClick={() => setAction('APPROVED')}
+              type="button"
+              onClick={() => { setAction('APPROVED'); setValidationError(null); console.log('[Admin] action=APPROVED'); }}
                 style={{ 
                     flex: 1, padding: '1rem', borderRadius: '8px', cursor: 'pointer',
                     border: action === 'APPROVED' ? '2px solid var(--brand-green)' : '1px solid var(--border-color)',
@@ -108,19 +196,8 @@ const ReviewActionModal = ({ isOpen, onClose, user, targetType = 'evType', submi
                 <span style={{ fontWeight: 600 }}>Approve</span>
             </button>
             <button 
-                onClick={() => setAction('RESUBMISSION')}
-                style={{ 
-                    flex: 1, padding: '1rem', borderRadius: '8px', cursor: 'pointer',
-                    border: action === 'RESUBMISSION' ? '2px solid #fbbf24' : '1px solid var(--border-color)',
-                    background: action === 'RESUBMISSION' ? 'rgba(251,191,36,0.1)' : 'transparent',
-                    color: action === 'RESUBMISSION' ? '#fbbf24' : '#fff', transition: 'all 0.2s',
-                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem'
-                }}>
-                <FileText size={24} />
-                <span style={{ fontWeight: 600 }}>Request Fixed Docs</span>
-            </button>
-            <button 
-                onClick={() => setAction('REJECTED')}
+              type="button"
+              onClick={() => { setAction('REJECTED'); setValidationError(null); console.log('[Admin] action=REJECTED'); }}
                 style={{ 
                     flex: 1, padding: '1rem', borderRadius: '8px', cursor: 'pointer',
                     border: action === 'REJECTED' ? '2px solid #ef4444' : '1px solid var(--border-color)',
@@ -143,9 +220,15 @@ const ReviewActionModal = ({ isOpen, onClose, user, targetType = 'evType', submi
                     rows={3} 
                     placeholder={isNotesRequired ? "You must explain exactly what needs fixing so the user can correct it." : "Optional internal notes..."}
                     value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
+                    onChange={(e) => { setNotes(e.target.value); if (validationError) setValidationError(null); }}
                     style={{ resize: 'vertical' }}
                 />
+            </div>
+          )}
+
+          {(validationError || submitError) && (
+            <div style={{ marginTop: '1rem', padding: '0.75rem', borderRadius: '8px', background: 'rgba(239,68,68,0.06)', color: '#ffb6b6' }}>
+              {validationError || submitError}
             </div>
           )}
 

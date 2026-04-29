@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ShieldCheck, Search, Filter, User, Home, Clock, AlertCircle, CheckCircle2, XCircle, ChevronRight, Loader2 } from 'lucide-react';
+import { ShieldCheck, Search, Home, Clock, AlertCircle, CheckCircle2, ChevronRight, Loader2 } from 'lucide-react';
 import ReviewActionModal from '../../components/ui/ReviewActionModal';
 import StatusBadge from '../../components/ui/StatusBadge';
 import { adminService } from '../../data/api';
@@ -10,10 +10,11 @@ const AdminVerification = () => {
   const [selectedSubmission, setSelectedSubmission] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [submissions, setSubmissions] = useState([]);
   const [payments, setPayments] = useState([]);
 
-  const tabs = ['All', 'EV Users', 'Hosts', 'Payments', 'Pending', 'Resubmission', 'Rejected'];
+  const tabs = ['All', 'EV Users', 'Hosts', 'Payments', 'Pending', 'Rejected'];
 
   useEffect(() => {
     loadSubmissions();
@@ -37,19 +38,20 @@ const AdminVerification = () => {
   };
 
   const stats = [
-    { label: 'Pending Total', value: submissions.filter(s => s.status === 'pending' || s.status === 'under_review').length + payments.filter(p => p.status === 'pending').length, icon: Clock, color: '#fbbf24' },
-    { label: 'Payments', value: payments.filter(p => p.status === 'pending').length, icon: ShieldCheck, color: '#00F0FF' },
-    { label: 'Host Proofs', value: submissions.filter(s => s.profile_type === 'HOST').length, icon: Home, color: '#a78bfa' },
+    { label: 'Pending Total', value: submissions.filter(s => (s.status || '').toLowerCase() === 'pending' || (s.status || '').toLowerCase() === 'under_review').length + payments.filter(p => (p.status || '').toLowerCase() === 'pending').length, icon: Clock, color: '#fbbf24' },
+    { label: 'Payments', value: payments.filter(p => (p.status || '').toLowerCase() === 'pending').length, icon: ShieldCheck, color: '#00F0FF' },
+    { label: 'Host Proofs', value: submissions.filter(s => (s.type || s.profile_type) === 'HOST').length, icon: Home, color: '#a78bfa' },
   ];
 
   const filteredSubmissions = activeTab === 'Payments' 
-    ? payments.filter(p => p.status === 'pending')
+    ? payments.filter(p => (p.status || '').toLowerCase() === 'pending')
     : submissions.filter(s => {
         const status = (s.status || '').toLowerCase();
+        const type = (s.type || s.profile_type || '').toUpperCase();
         if (activeTab === 'All') return true;
         if (activeTab === 'Pending') return status === 'under_review' || status === 'pending';
-        if (activeTab === 'Hosts') return s.profile_type === 'HOST';
-        if (activeTab === 'EV Users') return s.profile_type === 'EV_USER';
+        if (activeTab === 'Hosts') return type === 'HOST';
+        if (activeTab === 'EV Users') return type === 'EV_USER';
         if (activeTab === 'Rejected') return status === 'rejected';
         return true;
     });
@@ -60,28 +62,38 @@ const AdminVerification = () => {
   };
 
   const handleModerationSubmit = async ({ action, notes }) => {
-    if (!selectedSubmission) return;
+    if (!selectedSubmission) {
+      console.warn('[Admin] No selected submission on submit');
+      return { success: false, error: 'No submission selected' };
+    }
     setLoading(true);
+    setIsSubmitting(true);
+    console.log('[Admin] Submitting review for', { id: selectedSubmission.id, action, notes });
     try {
-      const decision = { approved: action === 'APPROVE' || action === 'APPROVED', notes };
+      const decision = { approved: action === 'APPROVED', notes };
       const userId = selectedSubmission.user_id;
-      
+
       if (activeTab === 'Payments' || selectedSubmission.method) {
         await adminService.verifyOnboardingPayment(selectedSubmission.id, decision.approved, notes);
-      } else if (selectedSubmission.profile_type === 'HOST') {
+      } else if ((selectedSubmission.type || selectedSubmission.profile_type) === 'HOST') {
         await adminService.verifyHost(userId, decision);
       } else {
         await adminService.verifyUser(userId, decision);
       }
-      
+
       await loadSubmissions(); // Refresh list
       setModalOpen(false);
       setSelectedSubmission(null);
+      console.log('[Admin] Review processed successfully for', selectedSubmission.id);
+      return { success: true };
     } catch (err) {
       console.error('[EV-Net] Review failed:', err);
-      alert('Failed to process review: ' + err.message);
+      setError('Failed to process review: ' + (err.message || err));
+      alert('Failed to process review: ' + (err.message || err));
+      return { success: false, error: err?.message || String(err) };
     } finally {
       setLoading(false);
+      setIsSubmitting(false);
     }
   };
 
@@ -206,11 +218,11 @@ const AdminVerification = () => {
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '4px' }}>
                                     <span style={{ fontWeight: 600, fontSize: '1.1rem' }}>{sub.user?.name || 'Unknown User'}</span>
                                     <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', border: '1px solid var(--border-color)', padding: '2px 6px', borderRadius: '4px' }}>
-                                        {sub.profile_type === 'EV_USER' ? 'EV User' : 'Host'}
+                                        {(sub.type || sub.profile_type) === 'EV_USER' ? 'EV User' : 'Host'}
                                     </span>
                                 </div>
                                 <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                                    {sub.user?.email} • {sub.method ? `Payment: ${sub.method}` : sub.document_type?.replace(/_/g, ' ')} • {new Date(sub.submitted_at || sub.created_at).toLocaleDateString()}
+                                    {sub.user?.email} • {sub.method ? `Payment: ${sub.method}` : sub.document_type?.replace(/_/g, ' ') || 'Grouped documents'} • {new Date(sub.submittedAt || sub.submitted_at || sub.created_at).toLocaleDateString()}
                                 </div>
                             </div>
                          </div>
@@ -232,7 +244,7 @@ const AdminVerification = () => {
           isOpen={modalOpen} 
           onClose={() => setModalOpen(false)} 
           user={selectedSubmission?.user} 
-          targetType={selectedSubmission?.method ? 'payment' : selectedSubmission?.profile_type === 'HOST' ? 'hostType' : 'evType'} 
+          targetType={selectedSubmission?.method ? 'payment' : (selectedSubmission?.type || selectedSubmission?.profile_type) === 'HOST' ? 'hostType' : 'evType'} 
           submission={selectedSubmission}
           onSubmit={handleModerationSubmit}
       />
