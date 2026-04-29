@@ -54,8 +54,8 @@ const LocationMarker = ({ position, onDragEnd }) => {
 
 const ListingLocationPicker = ({ 
   initialValue = '', 
-  initialLat = 31.5204, // default Lahore
-  initialLng = 74.3587,
+  initialLat = 24.8607, // default Karachi
+  initialLng = 67.0011,
   onLocationChange 
 }) => {
   const [query, setQuery] = useState(initialValue);
@@ -184,7 +184,7 @@ const ListingLocationPicker = ({
             type="text"
             className="auth-input"
             style={{ paddingLeft: '2.5rem', paddingRight: '2.5rem' }}
-            placeholder="Search for address (e.g. Model Town, Lahore)"
+            placeholder="Search for address (e.g. Clifton, Karachi)"
             value={query}
             onChange={(e) => {
               setQuery(e.target.value);

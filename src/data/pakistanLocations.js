@@ -82,3 +82,25 @@ export const PakistanCities = [
 ];
 
 export const PakistanCitiesSorted = [...PakistanCities].sort((a, b) => a.city.localeCompare(b.city));
+
+/**
+ * Normalizes city names from geocoding services (e.g. Nominatim)
+ * to match the internal city registry.
+ */
+export const normalizeCityName = (rawCity) => {
+  if (!rawCity) return '';
+  const city = rawCity.toLowerCase();
+  
+  if (city.includes('karachi')) return 'Karachi';
+  if (city.includes('lahore')) return 'Lahore';
+  if (city.includes('islamabad')) return 'Islamabad';
+  if (city.includes('rawalpindi')) return 'Rawalpindi';
+  if (city.includes('faisalabad')) return 'Faisalabad';
+  if (city.includes('multan')) return 'Multan';
+  if (city.includes('peshawar')) return 'Peshawar';
+  if (city.includes('quetta')) return 'Quetta';
+  if (city.includes('gujranwala')) return 'Gujranwala';
+  if (city.includes('sialkot')) return 'Sialkot';
+  
+  return rawCity;
+};

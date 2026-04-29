@@ -5,7 +5,7 @@ import useAuthStore from '../../store/authStore';
 import { hostService, listingService, profileService } from '../../data/api';
 import Avatar from '../../components/ui/Avatar';
 import { ChargerType } from '../../data/schema';
-import { PakistanCitiesSorted } from '../../data/pakistanLocations';
+import { PakistanCitiesSorted, normalizeCityName } from '../../data/pakistanLocations';
 import { getActivationFeeBreakdown, formatPKR } from '../../data/feeConfig';
 import ValidatedInput from '../../components/ui/ValidatedInput';
 import FileUploadDropzone from '../../components/ui/FileUploadDropzone';
@@ -19,11 +19,11 @@ const HostOnboarding = () => {
   const { user } = useAuthStore();
   const [step, setStep] = useState(1);
   const [showErrors, setShowErrors] = useState(false);
-  const totalSteps = 7;
+  const totalSteps = 8;
   const feeBreakdown = getActivationFeeBreakdown();
 
   const [profile, setProfile] = useState({
-    phone: user?.phone || '', identityDoc: '', city: 'Lahore',
+    phone: user?.phone || '', identityDoc: '', city: 'Karachi',
   });
   const [charger, setCharger] = useState({
     address: '', area: '', chargerType: '7kW AC Type 2', description: '',
@@ -53,6 +53,12 @@ const HostOnboarding = () => {
   
   // File states
   const [isUploading, setIsUploading] = useState(false);
+  const [payment, setPayment] = useState({
+    method: 'BANK_TRANSFER', // default
+    screenshot: null,
+    card: { number: '', expiry: '', cvc: '' }
+  });
+
   const [chargerPhotos, setChargerPhotos] = useState([]);
   const [propertyProofs, setPropertyProofs] = useState([]);
 
@@ -64,8 +70,8 @@ const HostOnboarding = () => {
 
   const handlePublish = async () => {
     try {
-      // 1. Create the listing with coordinates
-      await listingService.create({
+      // 1. Create the listing
+      const listing = await listingService.create({
         hostId: user?.id,
         title: `${charger.chargerType} in ${charger.area}`,
         description: charger.description,
@@ -76,12 +82,21 @@ const HostOnboarding = () => {
         priceNight: pricing.priceNight,
         amenities: charger.amenities,
         houseRules: charger.houseRules.split('\n').filter(r => r.trim()),
-        address: charger.address, // for listing_locations
+        address: charger.address,
         lat: charger.lat,
-        lng: charger.lng
+        lng: charger.lng,
+        images: chargerPhotos // Now passing photos to creation
       });
 
-      // 2. Submit verification
+      // 2. Handle Payment Submission
+      await hostService.submitOnboardingPayment(user?.id, {
+        method: payment.method,
+        amount: feeBreakdown.total,
+        screenshot: payment.screenshot,
+        card: payment.card
+      });
+
+      // 3. Submit overall verification
       await hostService.submitVerification(user?.id);
       
       navigate('/host/dashboard');
@@ -91,7 +106,7 @@ const HostOnboarding = () => {
     }
   };
 
-  const stepNames = ['Profile', 'Charger Info', 'Amenities & Rules', 'Proof Upload', 'Pricing', 'Availability', 'Review & Pay'];
+  const stepNames = ['Profile', 'Charger Info', 'Amenities & Rules', 'Proof Upload', 'Pricing', 'Availability', 'Review', 'Payment'];
 
   const formatDisplayTime = (timeStr) => {
     if (!timeStr) return '';
@@ -112,6 +127,12 @@ const HostOnboarding = () => {
     if (s === 6) {
       const anyDaySelected = Object.values(schedule.days).some(d => d);
       return anyDaySelected && timeState.start < timeState.end;
+    }
+    if (s === 7) return true;
+    if (s === 8) {
+      if (payment.method === 'BANK_TRANSFER') return payment.screenshot;
+      if (payment.method === 'CARD') return payment.card.number && payment.card.expiry && payment.card.cvc;
+      return false;
     }
     return true;
   };
@@ -199,7 +220,8 @@ const HostOnboarding = () => {
                   
                   // Only update city/area if they haven't been manually touched
                   if (!manualCity && loc.city) {
-                    setProfile(p => ({ ...p, city: loc.city }));
+                    const normalized = normalizeCityName(loc.city);
+                    setProfile(p => ({ ...p, city: normalized }));
                   }
                   if (!manualArea && loc.area) {
                     updates.area = loc.area;
@@ -433,29 +455,108 @@ const HostOnboarding = () => {
             </div>
           )}
 
-          {/* Step 7: Review & Pay */}
+          {/* Step 7: Review */}
           {step === 7 && (
             <div className="animate-in" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-              <h3 style={{ margin: 0 }}>Review & Activate</h3>
-              <div style={{ padding: '1.5rem', background: 'rgba(0,0,0,0.3)', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
-                <h4 style={{ marginBottom: '1rem', fontSize: '1.1rem' }}>Verification & Activation Fee</h4>
-                <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '1rem' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                    <span style={{ color: 'var(--text-secondary)' }}>Base Activation Fee</span>
-                    <span>{formatPKR(feeBreakdown.baseFee)}</span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                    <span style={{ color: 'var(--text-secondary)' }}>Tax (16% GST)</span>
-                    <span>{formatPKR(feeBreakdown.tax)}</span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid var(--border-color)', fontWeight: 'bold', fontSize: '1.2rem', color: 'var(--brand-green)' }}>
-                    <span>Total Payable</span>
-                    <span>{formatPKR(feeBreakdown.total)}</span>
-                  </div>
+              <h3 style={{ margin: 0 }}>Final Review</h3>
+              <div style={{ background: 'rgba(255,255,255,0.03)', padding: '1.5rem', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
+                <p style={{ margin: '0 0 1rem 0', fontWeight: 'bold' }}>{charger.chargerType} in {charger.area}</p>
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', margin: '0 0 0.5rem 0' }}>Address: {charger.address}</p>
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Pricing: PKR {pricing.priceDay}/kWh (Day) • PKR {pricing.priceNight}/kWh (Night)</p>
+              </div>
+              <div style={{ padding: '1.25rem', background: 'rgba(0,210,106,0.05)', borderRadius: '12px', border: '1px solid rgba(0,210,106,0.1)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', fontSize: '0.9rem' }}>
+                  <span style={{ color: 'var(--text-secondary)' }}>Activation Fee</span>
+                  <span>{formatPKR(feeBreakdown.total)}</span>
                 </div>
               </div>
               <div style={{ display: 'flex', gap: '1rem' }}>
                 <button className="btn btn-secondary" onClick={() => setStep(6)} style={{ flex: 1 }}>Back</button>
+                <button className="btn btn-primary" onClick={() => handleContinue(8)} style={{ flex: 2 }}>Proceed to Payment</button>
+              </div>
+            </div>
+          )}
+
+          {/* Step 8: Payment */}
+          {step === 8 && (
+            <div className="animate-in" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+              <h3 style={{ margin: 0 }}>Activation Payment</h3>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginTop: '-1rem' }}>Choose how you'd like to pay the one-time activation fee.</p>
+              
+              <div style={{ display: 'flex', gap: '1rem' }}>
+                <button 
+                  className={`btn ${payment.method === 'BANK_TRANSFER' ? 'btn-primary' : 'btn-secondary'}`} 
+                  onClick={() => setPayment({...payment, method: 'BANK_TRANSFER'})}
+                  style={{ flex: 1, fontSize: '0.85rem' }}
+                >
+                  Bank Transfer
+                </button>
+                <button 
+                  className={`btn ${payment.method === 'CARD' ? 'btn-primary' : 'btn-secondary'}`} 
+                  onClick={() => setPayment({...payment, method: 'CARD'})}
+                  style={{ flex: 1, fontSize: '0.85rem' }}
+                >
+                  Credit/Debit Card
+                </button>
+              </div>
+
+              {payment.method === 'BANK_TRANSFER' ? (
+                <div style={{ background: 'rgba(255,255,255,0.03)', padding: '1.5rem', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
+                  <p style={{ fontSize: '0.85rem', marginBottom: '1rem' }}>Transfer <strong>{formatPKR(feeBreakdown.total)}</strong> to:</p>
+                  <div style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', lineHeight: '1.8' }}>
+                    <p style={{ margin: 0 }}><strong>Bank:</strong> Meezan Bank Ltd.</p>
+                    <p style={{ margin: 0 }}><strong>Account:</strong> EV-Net Solutions</p>
+                    <p style={{ margin: 0 }}><strong>Account #:</strong> 0210-XXXXXXXXXX</p>
+                    <p style={{ margin: 0 }}><strong>IBAN:</strong> PK21MEZNXXXXXXXXXXXXXXXX</p>
+                  </div>
+                  <div style={{ marginTop: '1.5rem' }}>
+                    <FileUploadDropzone 
+                      label="Upload Payment Screenshot" 
+                      mode="image" 
+                      files={payment.screenshot ? [payment.screenshot] : []} 
+                      onChange={(files) => setPayment({...payment, screenshot: files[0]})} 
+                    />
+                    {showErrors && !payment.screenshot && <p style={{ color: '#fb7185', fontSize: '0.75rem', marginTop: '0.4rem' }}>Payment proof is required</p>}
+                  </div>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                  <ValidatedInput 
+                    label="Card Number" 
+                    placeholder="4242 4242 4242 4242" 
+                    value={payment.card.number} 
+                    onChange={v => setPayment({...payment, card: {...payment.card, number: v}})}
+                    forceError={showErrors}
+                    required
+                  />
+                  <div style={{ display: 'flex', gap: '1rem' }}>
+                    <div style={{ flex: 1 }}>
+                      <ValidatedInput 
+                        label="Expiry" 
+                        placeholder="MM/YY" 
+                        value={payment.card.expiry} 
+                        onChange={v => setPayment({...payment, card: {...payment.card, expiry: v}})}
+                        forceError={showErrors}
+                        required
+                      />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <ValidatedInput 
+                        label="CVC" 
+                        placeholder="123" 
+                        type="password"
+                        value={payment.card.cvc} 
+                        onChange={v => setPayment({...payment, card: {...payment.card, cvc: v}})}
+                        forceError={showErrors}
+                        required
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: '1rem' }}>
+                <button className="btn btn-secondary" onClick={() => setStep(7)} style={{ flex: 1 }}>Back</button>
                 <button className="btn btn-primary" onClick={handlePublish} style={{ flex: 2 }}>Pay & Submit</button>
               </div>
             </div>

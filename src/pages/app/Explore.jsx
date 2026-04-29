@@ -9,7 +9,7 @@ import { Search, MapPin, SlidersHorizontal, Settings2 } from 'lucide-react';
 import 'leaflet/dist/leaflet.css';
 import './Explore.css';
 
-const DEFAULT_CENTER = [31.5204, 74.3587];
+const DEFAULT_CENTER = [24.8607, 67.0011]; // default Karachi
 const DEFAULT_ZOOM = 12;
 
 // Fake "available now" times for demo realism

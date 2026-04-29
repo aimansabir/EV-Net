@@ -12,7 +12,23 @@
 import { supabase } from '../lib/supabase.js';
 import { calculateHostPayout } from './feeConfig.js';
 
-// ─── HELPERS ────────────────────────────────────────────
+// ─── PERFORMANCE CACHE ──────────────────────────────────
+let _cachedUser = null;
+let _userCacheTime = 0;
+const CACHE_TTL = 10000; // 10 seconds
+
+async function getAuthenticatedUser() {
+  const now = Date.now();
+  if (_cachedUser && (now - _userCacheTime < CACHE_TTL)) {
+    return { data: { user: _cachedUser }, error: null };
+  }
+  const { data, error } = await supabase.auth.getUser();
+  if (!error && data.user) {
+    _cachedUser = data.user;
+    _userCacheTime = now;
+  }
+  return { data, error };
+}
 
 async function getProfile(userId) {
   // DEMO BACKDOOR: Mock admin profile
@@ -36,6 +52,7 @@ async function getProfile(userId) {
 }
 
 async function getEvProfile(userId) {
+  if (userId === 'admin_main') return null;
   const { data, error } = await supabase
     .from('ev_profiles')
     .select('*, avatar_path')
@@ -46,6 +63,7 @@ async function getEvProfile(userId) {
 }
 
 async function getHostProfile(userId) {
+  if (userId === 'admin_main') return null;
   const { data, error } = await supabase
     .from('host_profiles')
     .select('*, avatar_path')
@@ -194,15 +212,23 @@ export const authService = {
   async login(email, password) {
     return withTimeout((async () => {
       let userId;
+      let authUser = null;
 
       // DEMO BACKDOOR: Allow admin login with fixed credentials
       if (email === 'admin@EV-Net.pk' && password === 'admin123') {
         console.log('[EV-Net] Admin Demo Login Detected. Bypassing Auth...');
         userId = 'admin_main'; 
+        authUser = { id: userId, app_metadata: { provider: 'email' } };
       } else {
-        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw new Error(error.message);
-        userId = data.user.id;
+        const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ email, password });
+        if (authError) throw new Error(authError.message);
+        
+        // Reset cache on login
+        _cachedUser = authData.user;
+        _userCacheTime = Date.now();
+
+        userId = authData.user.id;
+        authUser = authData.user;
       }
       const profile = await getProfile(userId);
       if (!profile) {
@@ -228,8 +254,8 @@ export const authService = {
         }
       }
 
-      const provider = data.user?.app_metadata?.provider || 'email';
-      return { user: mergeUserShape(profile, evProfile, hostProfile, data.user) };
+      const provider = authUser?.app_metadata?.provider || 'email';
+      return { user: mergeUserShape(profile, evProfile, hostProfile, authUser) };
     })(), 10000);
   },
 
@@ -405,7 +431,14 @@ export const authService = {
         }
       }
 
-      const { data: { user: authUser } } = await supabase.auth.getUser();
+      let authUser = null;
+      if (userId === 'admin_main') {
+        authUser = { id: userId, app_metadata: { provider: 'email' } };
+      } else {
+        const { data: { user } } = await getAuthenticatedUser();
+        authUser = user;
+      }
+      
       return mergeUserShape(profile, evProfile, hostProfile, authUser);
     } catch (err) {
       console.error('[EV-Net] getMe failed:', err);
@@ -671,7 +704,7 @@ export const listingService = {
         area: data.area,
         charger_type: data.chargerType,
         charger_speed: data.chargerSpeed,
-        price_per_hour: data.pricePerHour || 0,
+        price_per_hour: data.pricePerHour || 1, // Satisfy check (price_per_hour > 0)
         price_day_per_kwh: data.priceDay,
         price_night_per_kwh: data.priceNight,
         amenities: data.amenities || [],
@@ -681,14 +714,26 @@ export const listingService = {
       .single();
     if (error) throw error;
 
-    // Insert location separately
+    // 2. Insert location separately
     if (data.address && data.lat && data.lng) {
-      await supabase.from('listing_locations').insert({
+      const { error: locError } = await supabase.from('listing_locations').insert({
         listing_id: listing.id,
         address: data.address,
         lat: data.lat,
-        lng: data.lng,
+        lng: data.lng
       });
+      if (locError) console.error("[EV-Net] Failed to insert listing location:", locError);
+    }
+
+    // 3. Insert photos
+    if (data.images && data.images.length > 0) {
+      const photoRows = data.images.map((path, index) => ({
+        listing_id: listing.id,
+        storage_path: path,
+        display_order: index
+      }));
+      const { error: photoError } = await supabase.from('listing_photos').insert(photoRows);
+      if (photoError) console.error("[EV-Net] Failed to insert listing photos:", photoError);
     }
 
     return listing;
@@ -1397,7 +1442,7 @@ export const adminService = {
 
   async moderateConversation(conversationId, action) {
     // simplified implementation of moderation action -> DB insert
-    const { data: admin } = await supabase.auth.getUser();
+    const { data: admin } = await getAuthenticatedUser();
     
     const { data: conv, error: fetchErr } = await supabase.from('conversations').select('*').eq('id', conversationId).single();
     if (fetchErr) throw fetchErr;
@@ -1420,14 +1465,77 @@ export const adminService = {
     });
 
     return { success: true };
+  },
+
+  async getOnboardingPayments() {
+    return onboardingPaymentService.getAllSubmissions();
+  },
+
+  async verifyOnboardingPayment(paymentId, approved, notes) {
+    return onboardingPaymentService.verifyPayment(paymentId, approved, notes);
   }
 };
 
-// ─── STUB SERVICES Remaining ────────────────────────────
-import {
-  hostService as mockHost,
-  reviewService as mockReview,
-} from './api.mock.js';
+// ─── ONBOARDING PAYMENT SERVICE ─────────────────────────
+
+export const onboardingPaymentService = {
+  async submitPayment(userId, data) {
+    let screenshotPath = null;
+    
+    // 1. Upload screenshot if bank transfer
+    if (data.method === 'BANK_TRANSFER' && data.screenshot) {
+      const fileName = `${userId}_${Date.now()}.png`;
+      const filePath = `payments/${fileName}`;
+      const { error: uploadError } = await supabase.storage
+        .from('verification-docs')
+        .upload(filePath, data.screenshot, { upsert: true });
+      
+      if (uploadError) throw uploadError;
+      screenshotPath = filePath;
+    }
+
+    // 2. Insert payment record
+    const { error } = await supabase
+      .from('onboarding_payments')
+      .insert({
+        user_id: userId,
+        amount: data.amount,
+        method: data.method,
+        screenshot_path: screenshotPath,
+        status: data.method === 'CARD' ? 'verified' : 'pending', // Card verified instantly for demo
+      });
+
+    if (error) throw error;
+    return { success: true };
+  },
+
+  async getAllSubmissions() {
+    const { data, error } = await supabase
+      .from('onboarding_payments')
+      .select(`
+        *,
+        user:profiles(id, name, email, avatar_url)
+      `)
+      .order('created_at', { ascending: false });
+    
+    if (error) throw error;
+    return data;
+  },
+
+  async verifyPayment(paymentId, approved, notes) {
+    const { error } = await supabase
+      .from('onboarding_payments')
+      .update({
+        status: approved ? 'verified' : 'failed',
+        admin_notes: notes,
+        verified_at: new Date().toISOString()
+      })
+      .eq('id', paymentId);
+    
+    if (error) throw error;
+    return { success: true };
+  }
+};
 
 export const hostService = {
   async getDashboard(hostId) {
@@ -1541,6 +1649,10 @@ export const hostService = {
       .eq('user_id', userId);
     if (error) throw error;
     return this.getProfile(userId);
+  },
+
+  async submitOnboardingPayment(userId, data) {
+    return onboardingPaymentService.submitPayment(userId, data);
   }
 };
 export const reviewService = {
@@ -1815,3 +1927,5 @@ export const verificationService = {
     return await withDbTimeout(authService.getMe(userId), 5000);
   }
 };
+
+

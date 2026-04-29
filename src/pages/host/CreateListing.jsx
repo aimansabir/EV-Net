@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import useAuthStore from '../../store/authStore';
 import { listingService } from '../../data/api';
 import { ChargerType } from '../../data/schema';
-import { PakistanCitiesSorted } from '../../data/pakistanLocations';
+import { PakistanCitiesSorted, normalizeCityName } from '../../data/pakistanLocations';
 import { Info, Lock } from 'lucide-react';
 import SearchableSelect from '../../components/ui/SearchableSelect';
 import PhotoGridManager from '../../components/ui/PhotoGridManager';
@@ -18,7 +18,7 @@ const CreateListing = () => {
   const [showErrors, setShowErrors] = useState(false);
   const [photos, setPhotos] = useState([]);
   const [formData, setFormData] = useState({
-    title: '', description: '', address: '', city: 'Lahore', area: '',
+    title: '', description: '', address: '', city: 'Karachi', area: '',
     chargerType: '7kW AC Type 2', chargerSpeed: '7kW', priceDay: 40, priceNight: 60,
     amenities: [], houseRules: '',
     lat: null, lng: null
@@ -118,7 +118,8 @@ const CreateListing = () => {
                   };
                   
                   if (!manualCity && loc.city) {
-                    setFormData(prev => ({ ...prev, city: loc.city }));
+                    const normalized = normalizeCityName(loc.city);
+                    setFormData(prev => ({ ...prev, city: normalized }));
                   }
                   if (!manualArea && loc.area) {
                     updates.area = loc.area;

@@ -8,7 +8,7 @@ import ValidatedInput from './ValidatedInput';
  * Admin tool for viewing submitted documents and submitting a
  * moderation status change (Approve, Reject, or Resubmit).
  */
-const ReviewActionModal = ({ isOpen, onClose, user, targetType = 'evType', onSubmit }) => {
+const ReviewActionModal = ({ isOpen, onClose, user, targetType = 'evType', submission, onSubmit }) => {
   const [action, setAction] = useState(null); // 'APPROVED' | 'REJECTED' | 'RESUBMISSION'
   const [notes, setNotes] = useState('');
   
@@ -57,20 +57,41 @@ const ReviewActionModal = ({ isOpen, onClose, user, targetType = 'evType', onSub
         {/* Scrollable Body */}
         <div style={{ padding: '1.5rem', overflowY: 'auto', flex: 1 }}>
           
-          <h4 style={{ margin: '0 0 1rem 0' }}>Submitted Documents</h4>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
-             {mockDocs.map(doc => (
-                 <div key={doc.id} style={{ border: '1px solid var(--border-color)', borderRadius: '12px', overflow: 'hidden' }}>
-                    <div style={{ height: '120px', background: 'rgba(255,255,255,0.02)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)' }}>
-                        {doc.type === 'image' ? <FileText size={32} /> : <FileText size={32} />}
-                    </div>
-                    <div style={{ padding: '0.8rem', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ fontSize: '0.8rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{doc.name}</span>
-                        <Download size={16} color="var(--brand-cyan)" style={{ cursor: 'pointer', flexShrink: 0 }} />
-                    </div>
-                 </div>
-             ))}
-          </div>
+          {targetType === 'payment' ? (
+            <div style={{ marginBottom: '2rem' }}>
+              <div style={{ background: 'rgba(255,255,255,0.03)', padding: '1rem', borderRadius: '12px', border: '1px solid var(--border-color)', marginBottom: '1rem' }}>
+                <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem' }}>Method: <strong style={{ color: 'var(--brand-cyan)' }}>{submission?.method?.replace('_', ' ')}</strong></p>
+                <p style={{ margin: 0, fontSize: '0.9rem' }}>Amount: <strong style={{ color: 'var(--brand-green)' }}>PKR {submission?.amount}</strong></p>
+              </div>
+              
+              {submission?.screenshot_path && (
+                <div style={{ borderRadius: '12px', overflow: 'hidden', border: '1px solid var(--border-color)' }}>
+                  <img 
+                    src={`https://pynvovmrvunhshihshuv.supabase.co/storage/v1/object/public/verification-docs/${submission.screenshot_path}`} 
+                    alt="Payment Proof" 
+                    style={{ width: '100%', display: 'block' }} 
+                  />
+                </div>
+              )}
+            </div>
+          ) : (
+            <>
+              <h4 style={{ margin: '0 0 1rem 0' }}>Submitted Documents</h4>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
+                 {mockDocs.map(doc => (
+                     <div key={doc.id} style={{ border: '1px solid var(--border-color)', borderRadius: '12px', overflow: 'hidden' }}>
+                        <div style={{ height: '120px', background: 'rgba(255,255,255,0.02)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)' }}>
+                            {doc.type === 'image' ? <FileText size={32} /> : <FileText size={32} />}
+                        </div>
+                        <div style={{ padding: '0.8rem', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span style={{ fontSize: '0.8rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{doc.name}</span>
+                            <Download size={16} color="var(--brand-cyan)" style={{ cursor: 'pointer', flexShrink: 0 }} />
+                        </div>
+                     </div>
+                 ))}
+              </div>
+            </>
+          )}
 
           <h4 style={{ margin: '0 0 1rem 0' }}>Moderation Action</h4>
           <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem' }}>

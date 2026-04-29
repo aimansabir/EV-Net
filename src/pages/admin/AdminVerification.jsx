@@ -11,8 +11,9 @@ const AdminVerification = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [submissions, setSubmissions] = useState([]);
+  const [payments, setPayments] = useState([]);
 
-  const tabs = ['All', 'EV Users', 'Hosts', 'Pending', 'Resubmission', 'Rejected'];
+  const tabs = ['All', 'EV Users', 'Hosts', 'Payments', 'Pending', 'Resubmission', 'Rejected'];
 
   useEffect(() => {
     loadSubmissions();
@@ -21,10 +22,14 @@ const AdminVerification = () => {
   const loadSubmissions = async () => {
     setLoading(true);
     try {
-      const data = await adminService.getVerificationSubmissions();
-      setSubmissions(data);
+      const [subData, payData] = await Promise.all([
+        adminService.getVerificationSubmissions(),
+        adminService.getOnboardingPayments()
+      ]);
+      setSubmissions(subData);
+      setPayments(payData);
     } catch (err) {
-      console.error('[EV-Net] Failed to load submissions:', err);
+      console.error('[EV-Net] Failed to load queue:', err);
       setError('Could not load verification queue.');
     } finally {
       setLoading(false);
@@ -32,20 +37,22 @@ const AdminVerification = () => {
   };
 
   const stats = [
-    { label: 'Pending Total', value: submissions.filter(s => s.status === 'pending' || s.status === 'under_review').length, icon: Clock, color: '#fbbf24' },
-    { label: 'EV Driver Proofs', value: submissions.filter(s => s.profile_type === 'EV_USER').length, icon: User, color: '#00F0FF' },
+    { label: 'Pending Total', value: submissions.filter(s => s.status === 'pending' || s.status === 'under_review').length + payments.filter(p => p.status === 'pending').length, icon: Clock, color: '#fbbf24' },
+    { label: 'Payments', value: payments.filter(p => p.status === 'pending').length, icon: ShieldCheck, color: '#00F0FF' },
     { label: 'Host Proofs', value: submissions.filter(s => s.profile_type === 'HOST').length, icon: Home, color: '#a78bfa' },
   ];
 
-  const filteredSubmissions = submissions.filter(s => {
-      const status = (s.status || '').toLowerCase();
-      if (activeTab === 'All') return true;
-      if (activeTab === 'Pending') return status === 'under_review' || status === 'pending';
-      if (activeTab === 'Hosts') return s.profile_type === 'HOST';
-      if (activeTab === 'EV Users') return s.profile_type === 'EV_USER';
-      if (activeTab === 'Rejected') return status === 'rejected';
-      return true;
-  });
+  const filteredSubmissions = activeTab === 'Payments' 
+    ? payments.filter(p => p.status === 'pending')
+    : submissions.filter(s => {
+        const status = (s.status || '').toLowerCase();
+        if (activeTab === 'All') return true;
+        if (activeTab === 'Pending') return status === 'under_review' || status === 'pending';
+        if (activeTab === 'Hosts') return s.profile_type === 'HOST';
+        if (activeTab === 'EV Users') return s.profile_type === 'EV_USER';
+        if (activeTab === 'Rejected') return status === 'rejected';
+        return true;
+    });
 
   const handleReviewClick = (submission) => {
       setSelectedSubmission(submission);
@@ -56,10 +63,12 @@ const AdminVerification = () => {
     if (!selectedSubmission) return;
     setLoading(true);
     try {
-      const decision = { approved: action === 'APPROVE', notes };
+      const decision = { approved: action === 'APPROVE' || action === 'APPROVED', notes };
       const userId = selectedSubmission.user_id;
       
-      if (selectedSubmission.profile_type === 'HOST') {
+      if (activeTab === 'Payments' || selectedSubmission.method) {
+        await adminService.verifyOnboardingPayment(selectedSubmission.id, decision.approved, notes);
+      } else if (selectedSubmission.profile_type === 'HOST') {
         await adminService.verifyHost(userId, decision);
       } else {
         await adminService.verifyUser(userId, decision);
@@ -69,7 +78,7 @@ const AdminVerification = () => {
       setModalOpen(false);
       setSelectedSubmission(null);
     } catch (err) {
-      console.error('[EV-Net] Verification review failed:', err);
+      console.error('[EV-Net] Review failed:', err);
       alert('Failed to process review: ' + err.message);
     } finally {
       setLoading(false);
@@ -186,8 +195,8 @@ const AdminVerification = () => {
                            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                       >
                          <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
-                            {sub.user?.avatar ? (
-                              <img src={sub.user.avatar} alt="" style={{ width: '48px', height: '48px', borderRadius: '50%', objectFit: 'cover' }} />
+                            { (sub.user?.avatar || sub.user?.avatar_url) ? (
+                              <img src={sub.user.avatar || sub.user.avatar_url} alt="" style={{ width: '48px', height: '48px', borderRadius: '50%', objectFit: 'cover' }} />
                             ) : (
                               <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: 'var(--bg-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold' }}>
                                   {sub.user?.name?.[0] || 'U'}
@@ -201,7 +210,7 @@ const AdminVerification = () => {
                                     </span>
                                 </div>
                                 <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                                    {sub.user?.email} • {sub.document_type?.replace(/_/g, ' ')} • {new Date(sub.submitted_at).toLocaleDateString()}
+                                    {sub.user?.email} • {sub.method ? `Payment: ${sub.method}` : sub.document_type?.replace(/_/g, ' ')} • {new Date(sub.submitted_at || sub.created_at).toLocaleDateString()}
                                 </div>
                             </div>
                          </div>
@@ -223,7 +232,8 @@ const AdminVerification = () => {
           isOpen={modalOpen} 
           onClose={() => setModalOpen(false)} 
           user={selectedSubmission?.user} 
-          targetType={selectedSubmission?.type} 
+          targetType={selectedSubmission?.method ? 'payment' : selectedSubmission?.profile_type === 'HOST' ? 'hostType' : 'evType'} 
+          submission={selectedSubmission}
           onSubmit={handleModerationSubmit}
       />
     </div>
