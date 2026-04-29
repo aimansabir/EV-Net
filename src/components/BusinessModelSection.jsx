@@ -6,11 +6,11 @@ const BusinessModelSection = () => {
   return (
     <section className="section business-section">
       <div className="container">
-        <h2 className="section-title text-center">Revenue Model</h2>
+        <h2 className="section-title text-center">How EV-Net Scales</h2>
         <p className="text-center text-secondary" style={{ maxWidth: '600px', margin: '0 auto 3rem' }}>
           EV-Net is designed for sustainable growth, balancing value for hosts with platform scalability.
         </p>
-        
+
         <div className="business-grid">
           <div className="glass-card b-card">
             <div className="b-icon-wrapper"><Percent size={32} /></div>
