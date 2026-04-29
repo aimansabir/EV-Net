@@ -3,6 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import useAuthStore from '../store/authStore';
 import logoUrl from '../assets/logo.png';
 import { getHomeRouteByRole } from '../utils/navigation';
+import NotificationCenter from '../components/NotificationCenter';
 import '../components/Navbar.css';
 
 const AppLayout = ({ children }) => {
@@ -35,7 +36,9 @@ const AppLayout = ({ children }) => {
             ))}
           </ul>
 
-          <div className="nav-actions" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <div className="nav-actions" style={{ display: 'flex', alignItems: 'center', gap: '1.25rem' }}>
+            <NotificationCenter />
+            
             <Link to="/app/profile" style={{
               width: '36px', height: '36px', borderRadius: '50%',
               background: user?.avatar ? `url(${user.avatar}) center/cover` : 'var(--brand-green)',

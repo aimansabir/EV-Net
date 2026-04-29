@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import useAuthStore from '../../store/authStore';
 import { availabilityService, listingService } from '../../data/api';
+import { ChevronDown } from 'lucide-react';
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-const HOURS = Array.from({ length: 15 }, (_, i) => `${String(i + 7).padStart(2, '0')}:00`); // 07:00 - 21:00
+const HOURS = Array.from({ length: 24 }, (_, i) => `${String(i).padStart(2, '0')}:00`);
 
 const HostAvailability = () => {
   const { user } = useAuthStore();
@@ -11,6 +12,15 @@ const HostAvailability = () => {
   const [selectedListing, setSelectedListing] = useState('');
   const [schedule, setSchedule] = useState({});
   const [saved, setSaved] = useState(false);
+
+  const format12h = (time24) => {
+    const [h, m] = time24.split(':');
+    let hour = parseInt(h);
+    const ampm = hour >= 12 ? 'PM' : 'AM';
+    hour = hour % 12;
+    hour = hour ? hour : 12;
+    return `${hour}:${m} ${ampm}`;
+  };
 
   useEffect(() => {
     const load = async () => {
@@ -67,10 +77,25 @@ const HostAvailability = () => {
 
         {listings.length > 1 && (
           <div style={{ marginBottom: '1.5rem' }}>
-            <select className="auth-select" value={selectedListing} onChange={e => setSelectedListing(e.target.value)}
-              style={{ width: '100%', padding: '0.75rem 1rem', background: 'rgba(11,15,25,0.6)', border: '1px solid var(--border-color)', borderRadius: '10px', color: 'white', fontSize: '0.95rem' }}>
-              {listings.map(l => <option key={l.id} value={l.id}>{l.title}</option>)}
-            </select>
+            <div style={{ position: 'relative' }}>
+              <select className="auth-select" value={selectedListing} onChange={e => setSelectedListing(e.target.value)}
+                style={{ 
+                  width: '100%', 
+                  padding: '0.75rem 2.5rem 0.75rem 1rem', 
+                  background: 'rgba(11,15,25,0.6)', 
+                  border: '1px solid var(--border-color)', 
+                  borderRadius: '10px', 
+                  color: 'white', 
+                  fontSize: '0.95rem',
+                  appearance: 'none',
+                  cursor: 'pointer'
+                }}>
+                {listings.map(l => <option key={l.id} value={l.id}>{l.title}</option>)}
+              </select>
+              <div style={{ position: 'absolute', right: '1rem', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: 'var(--text-secondary)' }}>
+                <ChevronDown size={18} />
+              </div>
+            </div>
           </div>
         )}
 
@@ -102,12 +127,12 @@ const HostAvailability = () => {
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: 1 }}>
                       <select value={dayData.start} onChange={e => updateTime(dayIdx, 'start', e.target.value)}
                         style={{ padding: '0.4rem', borderRadius: '6px', border: '1px solid var(--border-color)', background: 'rgba(11,15,25,0.6)', color: '#fff', fontSize: '0.85rem' }}>
-                        {HOURS.map(h => <option key={h} value={h}>{h}</option>)}
+                        {HOURS.map(h => <option key={h} value={h}>{format12h(h)}</option>)}
                       </select>
                       <span style={{ color: 'var(--text-secondary)' }}>to</span>
                       <select value={dayData.end} onChange={e => updateTime(dayIdx, 'end', e.target.value)}
                         style={{ padding: '0.4rem', borderRadius: '6px', border: '1px solid var(--border-color)', background: 'rgba(11,15,25,0.6)', color: '#fff', fontSize: '0.85rem' }}>
-                        {HOURS.map(h => <option key={h} value={h}>{h}</option>)}
+                        {HOURS.map(h => <option key={h} value={h}>{format12h(h)}</option>)}
                       </select>
                     </div>
                   ) : (

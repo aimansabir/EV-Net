@@ -9,9 +9,9 @@ const customIcon = new L.DivIcon({ className: 'custom-map-marker', html: `<div c
 const activeIcon = new L.DivIcon({ className: 'custom-map-marker active', html: `<div class="marker-pin active-pin"></div>`, iconSize: [24, 24], iconAnchor: [12, 12] });
 
 const mockListings = [
-  { id: 1, title: 'Gulberg Home Charger', desc: '11kW • Available 2pm - 8pm', price: 'Rs. 800 / hr', lat: 31.5300, lng: 74.3400 },
-  { id: 2, title: 'DHA Phase 6 Villa', desc: '22kW Fast • Available Now', price: 'Rs. 1200 / hr', lat: 31.5120, lng: 74.3600 },
-  { id: 3, title: 'Model Town Station', desc: '7kW AC • Available Now', price: 'Rs. 600 / hr', lat: 31.4700, lng: 74.3200 }
+  { id: 1, title: 'Gulberg Home Charger', desc: '11kW • Available 2pm - 8pm', price: 'Rs. 35/55 per kWh', lat: 31.5300, lng: 74.3400 },
+  { id: 2, title: 'DHA Phase 6 Villa', desc: '22kW Fast • Available Now', price: 'Rs. 40/60 per kWh', lat: 31.5120, lng: 74.3600 },
+  { id: 3, title: 'Model Town Station', desc: '7kW AC • Available Now', price: 'Rs. 30/50 per kWh', lat: 31.4700, lng: 74.3200 }
 ];
 
 const MapFlyToMarker = ({ activeListing }) => {

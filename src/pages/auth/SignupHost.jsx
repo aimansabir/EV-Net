@@ -2,7 +2,8 @@ import React, { useState, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import AuthShell from '../../components/auth/AuthShell';
 import useAuthStore from '../../store/authStore';
-import { Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff, Home, Mail } from 'lucide-react';
+
 
 const passwordRules = [
   { key: 'length', label: 'At least 8 characters', test: (p) => p.length >= 8 },
@@ -25,6 +26,26 @@ const SignupHost = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [localError, setLocalError] = useState('');
+  const [isSuccess, setIsSuccess] = useState(false);
+  const [verificationRequired, setVerificationRequired] = useState(false);
+  
+  const formatPhone = (value) => {
+    if (!value) return '';
+    const digits = value.replace(/\D/g, '');
+    let main = '';
+    if (digits.startsWith('92')) {
+      main = digits.slice(2);
+    } else if (digits.startsWith('0')) {
+      main = digits.slice(1);
+    } else {
+      main = digits;
+    }
+    main = main.slice(0, 10);
+    let res = '+92';
+    if (main.length > 0) res += '-' + main.slice(0, 3);
+    if (main.length > 3) res += '-' + main.slice(3);
+    return res;
+  };
 
   const pwChecks = useMemo(() => {
     return passwordRules.map(r => ({ ...r, passed: r.test(formData.password) }));
@@ -46,12 +67,53 @@ const SignupHost = () => {
     }
 
     try {
-      await signupHost(formData);
-      navigate('/host/onboarding');
+      const result = await signupHost({ ...formData, avatar: null });
+      if (result?.verificationRequired) {
+        setVerificationRequired(true);
+        setIsSuccess(true);
+      } else {
+        navigate('/host/onboarding');
+      }
     } catch (err) {
       // error is set in store
     }
   };
+
+  if (isSuccess && verificationRequired) {
+    return (
+      <AuthShell
+        role="host"
+        title="Check Your Email"
+        subtitle="We've sent a verification link to your inbox"
+      >
+        <div style={{ textAlign: 'center', padding: '2rem 1rem' }}>
+          <div style={{
+            fontSize: '3rem',
+            marginBottom: '1.5rem',
+            background: 'rgba(0, 210, 106, 0.1)',
+            width: '80px',
+            height: '80px',
+            borderRadius: '50%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            margin: '0 auto 1.5rem'
+          }}>
+            <Mail size={40} color="var(--brand-green)" />
+          </div>
+          <p style={{ color: 'var(--text-main)', marginBottom: '1.5rem', lineHeight: '1.6' }}>
+            To complete your registration, please click the link we just sent to <strong>{formData.email}</strong>.
+          </p>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: '2rem' }}>
+            Didn't receive it? Check your spam folder or wait a few minutes.
+          </p>
+          <Link to="/login" className="btn btn-primary" style={{ width: '100%', textDecoration: 'none' }}>
+            Go to Login
+          </Link>
+        </div>
+      </AuthShell>
+    );
+  }
 
   return (
     <AuthShell
@@ -59,6 +121,7 @@ const SignupHost = () => {
       title="Become a Host"
       subtitle="List your charger and start earning with EV-Net"
     >
+
       {(error || localError) && <div className="auth-error">{localError || error}</div>}
 
       <form onSubmit={handleSignup} className="auth-form">
@@ -152,16 +215,17 @@ const SignupHost = () => {
           <input
             type="tel"
             className="auth-input"
-            placeholder="+92 3XX XXXXXXX"
+            placeholder="+92-3XX-XXXXXXX"
             required
+            maxLength={15}
             value={formData.phone}
-            onChange={e => setFormData({ ...formData, phone: e.target.value })}
+            onChange={e => setFormData({ ...formData, phone: formatPhone(e.target.value) })}
           />
         </div>
 
         <div className="auth-note">
           <p>
-            <span className="note-icon">🏠</span>
+            <span className="note-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Home size={16} /></span>
             <span><strong>Signup is free.</strong> After joining, you'll complete onboarding. A one-time verification applies before your listing goes live.</span>
           </p>
         </div>

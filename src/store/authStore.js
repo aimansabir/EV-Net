@@ -42,7 +42,8 @@ function persistAuth(state) {
 const useAuthStore = create((set, get) => ({
   ...loadPersistedAuth(),
   isInitialized: false,
-  isLoading: false,
+  isLoading: false,           // Global auth action loading (login/signup)
+  isAuthHydrating: false,     // Background profile fetching
   error: null,
   _authSubscription: null,
   _initPromise: null,
@@ -70,41 +71,55 @@ const useAuthStore = create((set, get) => ({
       const session = await authService.getSession();
 
       if (session?.user) {
-        // Active Supabase session — hydrate from DB
-        const user = await authService.getMe(session.user.id);
-        if (user) {
-          const state = {
-            user,
-            role: user.role.toLowerCase(),
-            isAuthenticated: true,
-          };
-          set(state);
-          persistAuth(state);
-        } else {
-          // Session exists but profile missing — force sign out
-          try { await authService.logout(); } catch { /* best-effort */ }
-          get()._clearAuth();
-        }
+        // 1a. INSTANT HINT: Use session metadata to unlock UI immediately
+        const metadataRole = session.user.user_metadata?.role?.toLowerCase() || 'user';
+        set({ 
+          role: metadataRole, 
+          isAuthenticated: true,
+          isInitialized: true // UNLOCK NAVIGATION IMMEDIATELY
+        });
+
+        // 1b. BACKGROUND: Hydrate full profile (No await here, let it run in bg)
+        set({ isAuthHydrating: true });
+        authService.getMe(session.user.id).then(user => {
+          if (user) {
+            const state = {
+              user,
+              role: user.role.toLowerCase(),
+              isAuthenticated: true,
+            };
+            set({ ...state, isAuthHydrating: false });
+            persistAuth(state);
+          } else {
+            // Profile truly missing - only then clear
+            get()._clearAuth();
+            set({ isAuthHydrating: false });
+          }
+        }).catch(err => {
+          console.error('[EV-Net] Background hydration failed:', err);
+          set({ isAuthHydrating: false });
+        });
       } else {
         // 2. No Supabase session — fall back to localStorage (mock mode)
         const persisted = loadPersistedAuth();
         if (persisted.user) {
-          try {
-            const updatedUser = await authService.getMe(persisted.user.id);
+          // Provisionally trust persisted state for mock speed
+          set({ ...persisted, isInitialized: true });
+          
+          set({ isAuthHydrating: true });
+          authService.getMe(persisted.user.id).then(updatedUser => {
             if (updatedUser) {
               set({ 
                 user: updatedUser, 
                 role: updatedUser.role.toLowerCase(), 
-                isAuthenticated: true 
+                isAuthenticated: true,
+                isAuthHydrating: false
               });
             } else {
-              // User no longer exists or session invalid
               get()._clearAuth();
+              set({ isAuthHydrating: false });
             }
-          } catch (err) {
-            console.error('[EV-Net] Network or fetch error during mock hydration:', err);
-            // Ignore error, preserve persisted local state
-          }
+          }).catch(() => set({ isAuthHydrating: false }));
         }
       }
 
@@ -125,12 +140,10 @@ const useAuthStore = create((set, get) => ({
                 set(state);
                 persistAuth(state);
               } else {
-                console.warn('[EV-Net] Auth state handler: missing user profile.');
                 get()._clearAuth();
               }
             } catch (err) {
               console.error('[EV-Net] Auth error during state change:', err);
-              // Do not clear auth on network/fetch exceptions; only when profile missing.
             }
           }
         });
@@ -209,11 +222,17 @@ const useAuthStore = create((set, get) => ({
   signupUser: async (data) => {
     set({ isLoading: true, error: null });
     try {
-      const { user } = await authService.signupUser(data);
+      const result = await authService.signupUser(data);
+      
+      if (result.verificationRequired) {
+        return { verificationRequired: true };
+      }
+
+      const { user } = result;
       const state = { user, role: 'user', isAuthenticated: true };
       set(state);
       persistAuth(state);
-      return user;
+      return { user, success: true };
     } catch (err) {
       const errorMsg = err.message || 'Signup failed';
       set({ error: errorMsg });
@@ -229,11 +248,17 @@ const useAuthStore = create((set, get) => ({
   signupHost: async (data) => {
     set({ isLoading: true, error: null });
     try {
-      const { user } = await authService.signupHost(data);
+      const result = await authService.signupHost(data);
+
+      if (result.verificationRequired) {
+        return { verificationRequired: true };
+      }
+
+      const { user } = result;
       const state = { user, role: 'host', isAuthenticated: true };
       set(state);
       persistAuth(state);
-      return user;
+      return { user, success: true };
     } catch (err) {
       const errorMsg = err.message || 'Host signup failed';
       set({ error: errorMsg });

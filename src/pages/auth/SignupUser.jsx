@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Eye, EyeOff } from 'lucide-react';
+import { ArrowLeft, Eye, EyeOff, Mail, Info } from 'lucide-react';
 import AuthShell from '../../components/auth/AuthShell';
 import useAuthStore from '../../store/authStore';
 import { PakistanEVBrands, ConnectorType } from '../../data/schema';
@@ -30,12 +30,42 @@ const SignupUser = () => {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [localError, setLocalError] = useState('');
   const [step, setStep] = useState(1);
+  const [isSuccess, setIsSuccess] = useState(false);
+  const [verificationRequired, setVerificationRequired] = useState(false);
 
   const handleBrandChange = (brand) => {
     setFormData({ ...formData, evBrand: brand, evModel: '' });
   };
 
   const modelsForBrand = PakistanEVBrands.find(b => b.brand === formData.evBrand)?.models || [];
+  
+  const formatPhone = (value) => {
+    // If user deleted everything, keep it empty or reset to +92
+    if (!value) return '';
+    
+    // Extract digits only
+    const digits = value.replace(/\D/g, '');
+    
+    // Determine the main 10 digits
+    let main = '';
+    if (digits.startsWith('92')) {
+      main = digits.slice(2);
+    } else if (digits.startsWith('0')) {
+      main = digits.slice(1);
+    } else {
+      main = digits;
+    }
+    
+    // Limit to 10 digits
+    main = main.slice(0, 10);
+    
+    // Build the format: +92-XXX-XXXXXXX
+    let res = '+92';
+    if (main.length > 0) res += '-' + main.slice(0, 3);
+    if (main.length > 3) res += '-' + main.slice(3);
+    
+    return res;
+  };
 
   const pwChecks = useMemo(() => {
     return passwordRules.map(r => ({ ...r, passed: r.test(formData.password) }));
@@ -66,12 +96,54 @@ const SignupUser = () => {
     }
 
     try {
-      await signupUser(formData);
-      navigate('/app/explore');
+      const result = await signupUser({ ...formData, avatar: null });
+      if (result?.verificationRequired) {
+        setVerificationRequired(true);
+        setIsSuccess(true);
+      } else {
+        navigate('/app/explore');
+      }
     } catch (err) {
       // error is set in store
     }
   };
+
+  if (isSuccess && verificationRequired) {
+    return (
+      <AuthShell
+        role="user"
+        title="Check Your Email"
+        subtitle="We've sent a verification link to your inbox"
+      >
+        <div style={{ textAlign: 'center', padding: '2rem 1rem' }}>
+          <div style={{ 
+            fontSize: '3rem', 
+            marginBottom: '1.5rem',
+            background: 'rgba(6, 182, 212, 0.1)',
+            width: '80px',
+            height: '80px',
+            borderRadius: '50%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            margin: '0 auto 1.5rem'
+          }}>
+            <Mail size={40} color="var(--brand-cyan)" />
+          </div>
+          <h3 style={{ color: 'var(--text-main)', marginBottom: '1rem' }}>Almost there!</h3>
+          <p style={{ color: 'var(--text-main)', marginBottom: '1.5rem', lineHeight: '1.6' }}>
+            To complete your registration, please click the link we just sent to <strong>{formData.email}</strong>.
+          </p>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: '2rem' }}>
+            Verification ensures a secure and trusted community for both drivers and hosts.
+          </p>
+          <Link to="/login" className="btn btn-primary" style={{ width: '100%', textDecoration: 'none' }}>
+            Go to Login
+          </Link>
+        </div>
+      </AuthShell>
+    );
+  }
 
   const handleGoogleLogin = async () => {
     clearError();
@@ -103,6 +175,7 @@ const SignupUser = () => {
                 <span>or sign up with email</span>
               </div>
             </div>
+
 
             <div className="auth-field">
               <label>Full Name</label>
@@ -195,10 +268,11 @@ const SignupUser = () => {
               <input
                 type="tel"
                 className="auth-input"
-                placeholder="+92 3XX XXXXXXX"
+                placeholder="+92-3XX-XXXXXXX"
                 required
+                maxLength={15}
                 value={formData.phone}
-                onChange={e => setFormData({ ...formData, phone: e.target.value })}
+                onChange={e => setFormData({ ...formData, phone: formatPhone(e.target.value) })}
               />
             </div>
 
@@ -259,7 +333,7 @@ const SignupUser = () => {
 
             <div className="auth-note">
               <p>
-                <span className="note-icon">ℹ</span>
+                <span className="note-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Info size={16} /></span>
                 <span><strong>Signup is 100% free.</strong> Booking fees only apply when you reserve a charging session.</span>
               </p>
             </div>

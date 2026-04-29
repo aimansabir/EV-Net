@@ -30,3 +30,5 @@ export const adminService = api.adminService;
 export const reviewService = api.reviewService;
 export const favoriteService = api.favoriteService;
 export const notificationService = api.notificationService;
+export const profileService = api.profileService;
+export const verificationService = api.verificationService;

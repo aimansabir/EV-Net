@@ -112,7 +112,9 @@ export const ReportStatus = {
  * @property {boolean} canBook
  * @property {boolean} exactLocationUnlocked
  * @property {boolean} isRestrictedFromInquiry
+ * @property {string|null} avatarPath
  * @property {boolean} isSuspended
+ * @property {'email'|'google'} authProvider
  */
 
 /**
@@ -127,6 +129,7 @@ export const ReportStatus = {
  * @property {boolean} payoutSetupComplete
  * @property {number} onboardingStep - 0-6
  * @property {string|null} moderationNotes - admin notes
+ * @property {string|null} avatarPath
  * @property {string} createdAt
  */
 
@@ -184,9 +187,15 @@ export const ReportStatus = {
  * @property {string} startTime - "14:00"
  * @property {string} endTime - "16:00"
  * @property {'PENDING'|'CONFIRMED'|'COMPLETED'|'CANCELLED'} status
- * @property {number} baseFee - PKR
- * @property {number} serviceFee - PKR
- * @property {number} totalFee - PKR
+ * @property {string} vehicleSize - SMALL, MEDIUM, or LARGE
+ * @property {string} pricingBand - DAY or NIGHT
+ * @property {number} estimatedKwh
+ * @property {number} baseCharge - PKR
+ * @property {number} userServiceFee - PKR
+ * @property {number} hostPlatformFee - PKR
+ * @property {number} gatewayFee - PKR
+ * @property {number} userTotal - PKR
+ * @property {number} hostPayout - PKR
  * @property {string} createdAt
  */
 
@@ -305,7 +314,9 @@ export const createUser = (overrides = {}) => ({
   canBook: false,
   exactLocationUnlocked: false,
   isRestrictedFromInquiry: false,
+  avatarPath: null,
   isSuspended: false,
+  authProvider: 'email',
   createdAt: new Date().toISOString(),
   ...overrides,
 });
@@ -321,6 +332,7 @@ export const createHostProfile = (overrides = {}) => ({
   payoutSetupComplete: false,
   onboardingStep: 0,
   moderationNotes: null,
+  avatarPath: null,
   createdAt: new Date().toISOString(),
   ...overrides,
 });
@@ -337,7 +349,9 @@ export const createListing = (overrides = {}) => ({
   lng: 0,
   chargerType: ChargerType.AC_7KW,
   chargerSpeed: '7kW',
-  pricePerHour: 500,
+  pricePerHour: 0, // LEGACY
+  price_day_per_kwh: 40,
+  price_night_per_kwh: 60,
   images: [],
   amenities: [],
   houseRules: [],
@@ -359,9 +373,15 @@ export const createBooking = (overrides = {}) => ({
   startTime: '',
   endTime: '',
   status: BookingStatus.PENDING,
-  baseFee: 0,
-  serviceFee: 0,
-  totalFee: 0,
+  vehicleSize: 'SMALL',
+  pricingBand: 'DAY',
+  estimatedKwh: 0,
+  baseCharge: 0,
+  userServiceFee: 0,
+  hostPlatformFee: 0,
+  gatewayFee: 0,
+  userTotal: 0,
+  hostPayout: 0,
   createdAt: new Date().toISOString(),
   ...overrides,
 });
@@ -463,19 +483,77 @@ export const PakistanEVBrands = [
 ];
 
 export const PakistanCities = [
-  { city: 'Lahore', areas: ['DHA Phase 1-9', 'Gulberg I-V', 'Johar Town', 'Model Town', 'Bahria Town', 'Cavalry Ground', 'Cantt', 'Garden Town', 'Valencia', 'WAPDA Town'] },
-  { city: 'Karachi', areas: ['DHA Phase 1-8', 'Clifton', 'Gulshan-e-Iqbal', 'Nazimabad', 'PECHS', 'KDA Scheme 1', 'North Nazimabad', 'Bahria Town', 'Malir Cantt', 'FB Area'] },
-  { city: 'Islamabad', areas: ['F-6', 'F-7', 'F-8', 'F-10', 'F-11', 'G-6', 'G-11', 'E-7', 'I-8', 'DHA Phase 1-5', 'Bahria Town Phase 1-8', 'Bani Gala'] },
-  { city: 'Rawalpindi', areas: ['Bahria Town Phase 7-8', 'DHA Phase 1', 'Saddar', 'Cantt', 'Satellite Town', 'Gulraiz', 'Chaklala Scheme 3', 'Westridge'] },
-  { city: 'Faisalabad', areas: ['Madina Town', 'Lyallpur Town', 'Jinnah Town', 'Peoples Colony', 'Samanabad', 'Millat Town', 'Canal Road', 'Gulberg'] },
-  { city: 'Multan', areas: ['Gulgasht Colony', 'Multan Cantt', 'Shah Rukn-e-Alam', 'Wapda Town', 'Garden Town', 'New Multan', 'Bosan Road', 'Model Town'] },
-  { city: 'Peshawar', areas: ['Hayatabad Phase 1-7', 'University Town', 'Peshawar Cantt', 'Ring Road', 'Warsak Road', 'Gulbahar', 'Shami Road'] },
-  { city: 'Quetta', areas: ['Quetta Cantt', 'Samungli Road', 'Jinnah Town', 'Satellite Town', 'Gulberg', 'Model Town', 'Ziarat Road'] },
-  { city: 'Gujranwala', areas: ['Satellite Town', 'Model Town', 'DC Road', 'Garden Town', 'Wapda Town', 'Cantt', 'Rahwali'] },
-  { city: 'Sialkot', areas: ['Sialkot Cantt', 'Model Town', 'Paris Road', 'Defence', 'Sambrial', 'Kashmir Road'] },
-  { city: 'Abbottabad', areas: ['Mandian', 'Supply', 'Nawan Shehr', 'Cantt', 'Kakul', 'Jinnahabad'] },
-  { city: 'Sukkur', areas: ['Barrage Road', 'Military Road', 'New Sukkur', 'Rohri', 'Shikarpur Road'] },
-  { city: 'Sargodha', areas: ['Satellite Town', 'Model Town', 'University Road', 'Sargodha Cantt', 'Pearls Valley'] },
-  { city: 'Bahawalpur', areas: ['Model Town', 'Satellite Town', 'Wapda Town', 'Yazman Road', 'Cheema Town'] },
-  { city: 'Jhelum', areas: ['Jhelum Cantt', 'Kala Gujran', 'Citi Housing', 'Civil Lines', 'Saeela'] },
+  {
+    city: 'Karachi',
+    areas: [
+      'DHA Phase 1', 'DHA Phase 2', 'DHA Phase 4', 'DHA Phase 5', 'DHA Phase 6', 'DHA Phase 7', 'DHA Phase 8', 'DHA Phase 8 Ext',
+      'Clifton Block 1', 'Clifton Block 2', 'Clifton Block 3', 'Clifton Block 4', 'Clifton Block 5', 'Clifton Block 7', 'Clifton Block 8', 'Clifton Block 9',
+      'PECHS Block 2', 'PECHS Block 3', 'PECHS Block 6',
+      'Gulshan-e-Iqbal Block 1', 'Gulshan-e-Iqbal Block 2', 'Gulshan-e-Iqbal Block 3', 'Gulshan-e-Iqbal Block 4', 'Gulshan-e-Iqbal Block 5', 'Gulshan-e-Iqbal Block 10', 'Gulshan-e-Iqbal Block 13',
+      'Bahria Town Karachi - Precinct 1', 'Bahria Town Karachi - Precinct 2', 'Bahria Town Karachi - Precinct 12', 'Bahria Town Karachi - Precinct 19',
+      'Scheme 33', 'KDA Scheme 1', 'Malir Cantt', 'North Nazimabad Block A', 'North Nazimabad Block B', 'North Nazimabad Block F', 'North Nazimabad Block H',
+      'Emaar Crescent Bay', 'Garden', 'Federal B Area', 'Karsaz', 'Naval Anchorage', 'Gulistan-e-Jauhar Block 1', 'Gulistan-e-Jauhar Block 12', 'Gulistan-e-Jauhar Block 15'
+    ]
+  },
+  {
+    city: 'Lahore',
+    areas: [
+      'DHA Phase 1', 'DHA Phase 2', 'DHA Phase 3', 'DHA Phase 4', 'DHA Phase 5', 'DHA Phase 6', 'DHA Phase 7', 'DHA Phase 8', 'DHA Phase 9 Prism', 'DHA Phase 9 Town', 'DHA Phase 11 (Rahbar)',
+      'Gulberg I', 'Gulberg II', 'Gulberg III', 'Gulberg V',
+      'Model Town', 'Johar Town Phase 1', 'Johar Town Phase 2', 'Bahria Town Sector A', 'Bahria Town Sector B', 'Bahria Town Sector C', 'Bahria Town Sector D', 'Bahria Town Sector E',
+      'Defense Raya', 'Cavalry Ground', 'Cantt', 'Garden Town', 'Faisal Town', 'Valencia Town', 'WAPDA Town', 'Lake City', 'State Life', 'Sui Gas Society',
+      'Green City', 'Paragon City', 'New Lahore City', 'Zaitoon City', 'Al Kabir Town', 'Park View City', 'Etihad Town', 'Central Park', 'LDA City'
+    ]
+  },
+  {
+    city: 'Islamabad',
+    areas: [
+      'E-7', 'F-6', 'F-7', 'F-8', 'F-10', 'F-11', 'G-6', 'G-7', 'G-8', 'G-9', 'G-10', 'G-11', 'G-13', 'G-15', 'H-13', 'I-8', 'I-9', 'I-10',
+      'DHA Phase 1', 'DHA Phase 2', 'DHA Phase 3', 'DHA Phase 4', 'DHA Phase 5', 'DHA Valley',
+      'Bahria Town Phase 1', 'Bahria Town Phase 2', 'Bahria Town Phase 3', 'Bahria Town Phase 4', 'Bahria Town Phase 5', 'Bahria Town Phase 6', 'Bahria Town Phase 7', 'Bahria Town Phase 8', 'Bahria Enclave',
+      'Gulberg Residencia', 'Gulberg Greens', 'Park View City', 'Eighteen', 'Top City-1', 'Mumtaz City', 'University Town', 'B-17 Multi Gardens', 'D-12', 'E-11'
+    ]
+  },
+  {
+    city: 'Rawalpindi',
+    areas: [
+      'Bahria Town Phase 7', 'Bahria Town Phase 8', 'Chaklala Scheme 3', 'Saddar', 'Rawalpindi Cantt', 'Satellite Town', 'Westridge', 'Gulraiz', 'Airport Housing Society', 'DHA Phase 1'
+    ]
+  },
+  {
+    city: 'Faisalabad',
+    areas: [
+      'Madina Town', 'Peoples Colony', 'Samanabad', 'Lyallpur Town', 'Canal Road', 'Citi Housing', 'Faisalabad Motorway City', 'Sargodha Road', 'Jinnah Town'
+    ]
+  },
+  {
+    city: 'Multan',
+    areas: [
+      'DHA Multan', 'Bosan Road', 'Gulgasht Colony', 'Multan Cantt', 'Wapda Town', 'Buch Villas', 'Model Town', 'Garden Town'
+    ]
+  },
+  {
+    city: 'Peshawar',
+    areas: [
+      'DHA Peshawar', 'Hayatabad Phase 1', 'Hayatabad Phase 3', 'Hayatabad Phase 5', 'Hayatabad Phase 7', 'University Town', 'Peshawar Cantt', 'Regi Model Town'
+    ]
+  },
+  {
+    city: 'Quetta',
+    areas: [
+        'Quetta Cantt', 'Jinnah Town', 'Satellite Town', 'Samungli Road', 'DHA Quetta'
+    ]
+  },
+  {
+    city: 'Gujranwala',
+    areas: [
+        'Citi Housing', 'DHA Gujranwala', 'Satellite Town', 'Model Town', 'Garden Town', 'Master City'
+    ]
+  },
+  {
+    city: 'Sialkot',
+    areas: [
+        'Sialkot Cantt', 'Citi Housing', 'Model Town', 'Defence'
+    ]
+  }
 ];

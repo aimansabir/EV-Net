@@ -13,7 +13,7 @@ import {
   createConversation, createMessage,
   UserRole, VerificationStatus, BookingStatus 
 } from './schema.js';
-import { calculateBookingFees, calculateHostPayout } from './feeConfig.js';
+import { calculateBookingFees, calculateHostPayout, getPricingBand, calculateEnergyBookingFees } from './feeConfig.js';
 
 // Simulate network delay
 const delay = (ms = 200) => new Promise(resolve => setTimeout(resolve, ms));
@@ -51,6 +51,24 @@ export const authService = {
     return { user: safeUser };
   },
 
+  async sendVerificationEmail(email) {
+    await delay(500);
+    console.log('[Mock] Sending verification email to:', email);
+    return { success: true };
+  },
+
+  async sendPhoneOTP(phone) {
+    await delay(500);
+    console.log('[Mock] Sending WhatsApp OTP to:', phone);
+    return { success: true };
+  },
+
+  async verifyPhoneOTP(phone, token, role) {
+    await delay(500);
+    console.log('[Mock] Verifying OTP for:', phone, 'Token:', token);
+    return { success: true, user: _users.find(u => u.phone === phone) };
+  },
+
   async signupHost(data) {
     await delay(300);
     if (_users.find(u => u.email === data.email)) throw new Error('Email already registered');
@@ -66,14 +84,7 @@ export const authService = {
   },
 
   async submitUserVerification(userId) {
-    await delay(300);
-    const idx = _users.findIndex(u => u.id === userId);
-    if (idx === -1) throw new Error('User not found');
-    _users[idx].verificationStatus = VerificationStatus.UNDER_REVIEW;
-    _users[idx].cnicSubmitted = true;
-    _users[idx].evProofSubmitted = true;
-    const { password: _, ...safeUser } = _users[idx];
-    return safeUser;
+    return verificationService.submitForReview(userId, 'USER');
   },
 
   async getMe(userId) {
@@ -89,8 +100,21 @@ export const authService = {
   },
 
   async loginWithGoogle() {
-    // No real OAuth in mock mode
-    throw new Error('Google login is not available in demo mode. Use email/password.');
+    await delay(500);
+    // Find or create a google user
+    let user = _users.find(u => u.email === 'google@example.com');
+    if (!user) {
+      user = createUser({
+        id: 'user_google_1',
+        name: 'Google Test User',
+        email: 'google@example.com',
+        authProvider: 'google',
+        emailVerified: true,
+      });
+      _users.push(user);
+    }
+    const { password: _, ...safeUser } = user;
+    return { user: safeUser };
   },
 
   async getSession() {
@@ -113,12 +137,16 @@ export const listingService = {
     if (filters.isApproved !== undefined) result = result.filter(l => l.isApproved === filters.isApproved);
     if (filters.city) result = result.filter(l => l.city === filters.city);
     if (filters.chargerType) result = result.filter(l => l.chargerType === filters.chargerType);
-    if (filters.maxPrice) result = result.filter(l => l.pricePerHour <= filters.maxPrice);
+    if (filters.maxPrice) result = result.filter(l => l.price_day_per_kwh <= filters.maxPrice);
     if (filters.search) {
       const q = filters.search.toLowerCase();
       result = result.filter(l => l.title.toLowerCase().includes(q) || l.area.toLowerCase().includes(q) || l.city.toLowerCase().includes(q));
     }
-    return result;
+    return result.map(l => ({
+      ...l,
+      priceDay: l.price_day_per_kwh,
+      priceNight: l.price_night_per_kwh
+    }));
   },
 
   async getById(id) {
@@ -134,6 +162,8 @@ export const listingService = {
     const listingAvailability = _availability.filter(a => a.listingId === id);
     return {
       ...listing,
+      priceDay: listing.price_day_per_kwh,
+      priceNight: listing.price_night_per_kwh,
       host: host ? { id: host.id, name: host.name, avatar: host.avatar, createdAt: host.createdAt } : null,
       hostProfile: hostProfile ? { verificationStatus: hostProfile.verificationStatus } : null,
       reviews: listingReviews,
@@ -143,16 +173,30 @@ export const listingService = {
 
   async create(data) {
     await delay(300);
-    const listing = createListing(data);
+    const listing = createListing({
+      ...data,
+      price_day_per_kwh: data.priceDay,
+      price_night_per_kwh: data.priceNight,
+      pricePerHour: data.pricePerHour || 0
+    });
     _listings.push(listing);
-    return listing;
+    return {
+      ...listing,
+      priceDay: listing.price_day_per_kwh,
+      priceNight: listing.price_night_per_kwh
+    };
   },
 
   async update(id, data) {
     await delay(200);
     const idx = _listings.findIndex(l => l.id === id);
     if (idx === -1) throw new Error('Listing not found');
-    _listings[idx] = { ..._listings[idx], ...data };
+    _listings[idx] = { 
+      ..._listings[idx], 
+      ...data,
+      price_day_per_kwh: data.priceDay !== undefined ? data.priceDay : _listings[idx].price_day_per_kwh,
+      price_night_per_kwh: data.priceNight !== undefined ? data.priceNight : _listings[idx].price_night_per_kwh
+    };
     return _listings[idx];
   },
 
@@ -164,7 +208,11 @@ export const listingService = {
 
   async getByHost(hostId) {
     await delay(200);
-    return _listings.filter(l => l.hostId === hostId);
+    return _listings.filter(l => l.hostId === hostId).map(l => ({
+      ...l,
+      priceDay: l.price_day_per_kwh,
+      priceNight: l.price_night_per_kwh
+    }));
   },
 };
 
@@ -234,16 +282,35 @@ export const bookingService = {
     const listing = _listings.find(l => l.id === data.listingId);
     if (listing && listing.hostId === data.userId) throw new Error('You cannot book your own charger.');
 
-    // Calculate fees
-    const hours = (parseInt(data.endTime.split(':')[0]) - parseInt(data.startTime.split(':')[0]));
-    const fees = calculateBookingFees(listing.pricePerHour, hours);
+    // Calculate fees (Energy model)
+    const band = getPricingBand(data.startTime);
+    const fees = calculateEnergyBookingFees(
+      data.vehicleSize || 'SMALL', 
+      band, 
+      listing.price_day_per_kwh, 
+      listing.price_night_per_kwh
+    );
 
     const booking = createBooking({
       ...data,
-      ...fees,
+      baseCharge: fees.baseCharge,
+      userServiceFee: fees.userServiceFee,
+      hostPlatformFee: fees.hostPlatformFee,
+      gatewayFee: fees.gatewayCost,
+      userTotal: fees.userTotal,
+      hostPayout: fees.hostPayout,
+      pricingBand: band,
+      estimatedKwh: fees.energyKwh,
       status: BookingStatus.PENDING,
     });
     _bookings.push(booking);
+
+    // Notification Triggers
+    if (listing) {
+      notificationService.create({ userId: data.userId, type: 'BOOKING_SUBMITTED', message: `Booking submitted for ${listing.title}. Waiting for host confirmation.` });
+      notificationService.create({ userId: listing.hostId, type: 'NEW_BOOKING_REQUEST', message: `New booking request for ${listing.title}.` });
+    }
+
     return booking;
   },
 
@@ -254,6 +321,10 @@ export const bookingService = {
       .map(b => ({
         ...b,
         listing: _listings.find(l => l.id === b.listingId),
+        // Ensure legacy fields don't break UI but prioritze new breakdown
+        baseCharge: b.baseCharge || b.baseFee,
+        userServiceFee: b.userServiceFee || b.serviceFee,
+        userTotal: b.userTotal || b.totalFee
       }))
       .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   },
@@ -267,6 +338,9 @@ export const bookingService = {
         ...b,
         listing: _listings.find(l => l.id === b.listingId),
         user: _users.find(u => u.id === b.userId),
+        baseCharge: b.baseCharge || b.baseFee,
+        userServiceFee: b.userServiceFee || b.serviceFee,
+        userTotal: b.userTotal || b.totalFee
       }))
       .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   },
@@ -276,6 +350,17 @@ export const bookingService = {
     const idx = _bookings.findIndex(b => b.id === bookingId);
     if (idx === -1) throw new Error('Booking not found');
     _bookings[idx].status = status;
+
+    // Notification Trigger
+    const b = _bookings[idx];
+    const listing = _listings.find(l => l.id === b.listingId);
+    if (listing) {
+      const msg = status === BookingStatus.CONFIRMED 
+        ? `Your booking for ${listing.title} has been confirmed!`
+        : `Your booking for ${listing.title} is now ${status.toLowerCase()}.`;
+      notificationService.create({ userId: b.userId, type: 'BOOKING_STATUS_UPDATE', message: msg, createdAt: new Date().toISOString() });
+    }
+
     return _bookings[idx];
   },
 };
@@ -343,22 +428,63 @@ export const hostService = {
     const earningsByMonth = {};
     completedBookings.forEach(b => {
       const month = b.createdAt.substring(0, 7); // "2026-03"
-      const { hostPayout, platformCommission } = calculateHostPayout(b.baseFee);
+      
+      // Use new breakdown if available, else fallback to legacy calc
+      const base = b.baseCharge || b.baseFee || 0;
+      const payout = b.hostPayout || (base - Math.round(base * 0.22)); // Fallback 22%
+      const commission = b.hostPlatformFee || Math.round(base * 0.22);
+
       if (!earningsByMonth[month]) earningsByMonth[month] = { revenue: 0, payout: 0, commission: 0, sessions: 0 };
-      earningsByMonth[month].revenue += b.baseFee;
-      earningsByMonth[month].payout += hostPayout;
-      earningsByMonth[month].commission += platformCommission;
+      earningsByMonth[month].revenue += base;
+      earningsByMonth[month].payout += payout;
+      earningsByMonth[month].commission += commission;
       earningsByMonth[month].sessions += 1;
     });
 
     return {
-      totalRevenue: completedBookings.reduce((s, b) => s + b.baseFee, 0),
-      totalPayout: completedBookings.reduce((s, b) => s + calculateHostPayout(b.baseFee).hostPayout, 0),
-      totalCommission: completedBookings.reduce((s, b) => s + calculateHostPayout(b.baseFee).platformCommission, 0),
+      totalRevenue: completedBookings.reduce((s, b) => s + (b.baseCharge || b.baseFee || 0), 0),
+      totalPayout: completedBookings.reduce((s, b) => s + (b.hostPayout || 0), 0),
+      totalCommission: completedBookings.reduce((s, b) => s + (b.hostPlatformFee || 0), 0),
       totalSessions: completedBookings.length,
       byMonth: earningsByMonth,
     };
   },
+};
+
+// ─── VERIFICATION SERVICE ───────────────────────────────
+
+export const verificationService = {
+  async uploadDocument(userId, profileType, documentType, file) {
+    await delay(500);
+    const userIdx = _users.findIndex(u => u.id === userId);
+    if (userIdx !== -1) {
+      if (documentType === 'CNIC_FRONT') _users[userIdx].cnicSubmitted = true;
+      if (documentType === 'EV_PROOF') _users[userIdx].evProofSubmitted = true;
+    }
+    
+    const hostIdx = _hostProfiles.findIndex(h => h.userId === userId);
+    if (hostIdx !== -1) {
+      if (documentType === 'PROPERTY_PROOF') _hostProfiles[hostIdx].propertyProofUploaded = true;
+      if (documentType === 'CHARGER_PROOF') _hostProfiles[hostIdx].chargerProofUploaded = true;
+    }
+
+    return { success: true, path: `mock/${documentType}.jpg` };
+  },
+
+  async submitForReview(userId, profileType) {
+    await delay(300);
+    if (profileType === 'USER') {
+      const idx = _users.findIndex(u => u.id === userId);
+      if (idx !== -1) _users[idx].verificationStatus = VerificationStatus.UNDER_REVIEW;
+    } else {
+      const idx = _hostProfiles.findIndex(h => h.userId === userId);
+      if (idx !== -1) _hostProfiles[idx].verificationStatus = VerificationStatus.UNDER_REVIEW;
+    }
+    
+    notificationService.create({ userId, type: 'VERIFICATION_SUBMITTED', message: 'Your verification documents have been submitted and are under review.' });
+    
+    return _users.find(u => u.id === userId);
+  }
 };
 
 // ─── REVIEW SERVICE ─────────────────────────────────────
@@ -686,5 +812,26 @@ export const messagingService = {
     _conversations[convIdx].updatedAt = sysMsg.createdAt;
 
     return _conversations[convIdx];
+  }
+};
+
+// ─── PROFILE SERVICE ────────────────────────────────────
+
+export const profileService = {
+  async get(userId) {
+    return authService.getMe(userId);
+  },
+
+  async uploadAvatar(userId, file, role) {
+    await delay(500);
+    const userIdx = _users.findIndex(u => u.id === userId);
+    if (userIdx === -1) throw new Error('User not found');
+    
+    // Simulate storage path
+    const path = `mock/${userId}/avatar.${file.name.split('.').pop()}`;
+    _users[userIdx].avatarPath = path;
+    _users[userIdx].avatar = URL.createObjectURL(file); // Mock object URL
+    
+    return _users[userIdx];
   }
 };

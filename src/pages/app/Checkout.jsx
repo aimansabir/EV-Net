@@ -1,7 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { listingService, bookingService } from '../../data/api';
-import { calculateBookingFees, formatPKR } from '../../data/feeConfig';
+import { 
+  calculateEnergyBookingFees, 
+  getPricingBand, 
+  PRICING_BAND, 
+  VEHICLE_SIZES, 
+  ENERGY_BY_SIZE,
+  formatPKR,
+  calculateBookingFees
+} from '../../data/feeConfig';
+import { 
+  Calendar, Clock, Zap, Moon, ShieldCheck, ArrowLeft, 
+  Info, AlertTriangle, CheckCircle, Car, MapPin
+} from 'lucide-react';
 import useAuthStore from '../../store/authStore';
 
 const Checkout = () => {
@@ -17,18 +29,53 @@ const Checkout = () => {
   const date = searchParams.get('date') || new Date().toISOString().split('T')[0];
   const startTime = searchParams.get('start') || '14:00';
   const duration = parseInt(searchParams.get('duration') || '2');
-  const endHour = parseInt(startTime.split(':')[0]) + duration;
+  const vehicleSize = searchParams.get('vehicleSize') || VEHICLE_SIZES.SMALL;
+  
+  // End time calculation for scheduling
+  const endHour = (parseInt(startTime.split(':')[0]) + duration) % 24;
   const endTime = `${String(endHour).padStart(2, '0')}:00`;
 
   useEffect(() => {
     listingService.getById(chargerId).then(setListing);
   }, [chargerId]);
 
-  if (!listing) return <div className="section" style={{ minHeight: 'calc(100vh - 72px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><div style={{ color: 'var(--text-secondary)' }}>Loading...</div></div>;
+  if (!listing) return (
+    <div className="section" style={{ minHeight: 'calc(100vh - 72px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ color: 'var(--text-secondary)' }}>Loading...</div>
+    </div>
+  );
 
-  const fees = calculateBookingFees(listing.pricePerHour, duration);
+  // Pricing Logic (Same as ChargerDetail)
+  const currentBand = getPricingBand(startTime);
+  const energyFees = calculateEnergyBookingFees(
+    vehicleSize, 
+    currentBand, 
+    listing.priceDay, 
+    listing.priceNight
+  );
 
-  const formatTime = (time24) => {
+  const hasEnergyPricing = !energyFees.isIncomplete;
+  
+  let fees;
+  if (hasEnergyPricing) {
+    fees = energyFees;
+  } else {
+    // Final Legacy Fallback (using old hourly model)
+    const legacyFees = calculateBookingFees(listing.pricePerHour, duration);
+    fees = {
+      baseCharge: legacyFees.baseFee,
+      userServiceFee: legacyFees.serviceFee,
+      userTotal: legacyFees.totalFee,
+      isLegacy: true,
+      reason: energyFees.error, // e.g. MISSING_RATE
+      rateUsed: listing.pricePerHour,
+    };
+  }
+
+  const vehicleLabel = vehicleSize === VEHICLE_SIZES.LARGE ? 'Large SUV / Truck' : vehicleSize === VEHICLE_SIZES.MEDIUM ? 'Sedan / Crossover' : 'Small / City Car';
+  const energyKwh = ENERGY_BY_SIZE[vehicleSize];
+
+  const formatTime12h = (time24) => {
     if (!time24) return '';
     const [hStr, mStr] = time24.split(':');
     let h = parseInt(hStr);
@@ -39,15 +86,16 @@ const Checkout = () => {
   };
 
   const handleConfirm = async () => {
+    if (processing) return;
     setProcessing(true);
     setError('');
     try {
       await bookingService.create({
-        userId: user?.id || 'user_ali',
         listingId: chargerId,
         date,
         startTime,
         endTime,
+        vehicleSize,
       });
       setConfirmed(true);
       setTimeout(() => navigate('/app/bookings'), 2500);
@@ -58,82 +106,202 @@ const Checkout = () => {
   };
 
   return (
-    <div className="section" style={{ minHeight: 'calc(100vh - 72px)', display: 'flex' }}>
-      <div className="container" style={{ margin: 'auto', maxWidth: '600px', width: '100%' }}>
+    <div className="section" style={{ minHeight: 'calc(100vh - 72px)', background: 'radial-gradient(circle at top right, rgba(0, 240, 255, 0.05), transparent 400px)' }}>
+      <div className="container" style={{ maxWidth: '850px', paddingTop: '2rem', paddingBottom: '4rem' }}>
         
         {confirmed ? (
-          <div className="glass-card text-center" style={{ padding: '4rem 2rem' }}>
-            <div style={{ width: '80px', height: '80px', background: 'var(--brand-green)', borderRadius: '50%', color: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 2rem', fontSize: '2rem', animation: 'fadeInV 0.5s' }}>
-              ✓
+          <div className="glass-card text-center" style={{ padding: '5rem 2rem', borderRadius: '32px' }}>
+            <div style={{ width: '90px', height: '90px', background: 'var(--brand-green)', borderRadius: '50%', color: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 2.5rem', fontSize: '2.5rem', boxShadow: '0 0 30px rgba(0, 210, 106, 0.4)' }}>
+              <CheckCircle size={40} />
             </div>
-            <h2 style={{ marginBottom: '1rem' }}>Booking Confirmed!</h2>
-            <p style={{ color: 'var(--text-secondary)' }}>Your charger has been reserved. Redirecting to your bookings...</p>
+            <h2 style={{ fontSize: '2.2rem', marginBottom: '1rem', fontWeight: 800 }}>Booking Confirmed!</h2>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '1.1rem' }}>Your charger has been reserved. Redirecting to your bookings...</p>
           </div>
         ) : (
-          <div className="glass-card" style={{ padding: '2rem', position: 'relative' }}>
-            {/* Back Button */}
-            <button onClick={() => navigate(-1)} style={{
-              display: 'inline-flex', alignItems: 'center', gap: '0.4rem', border: 'none', background: 'transparent',
-              color: 'var(--text-secondary)', cursor: 'pointer', fontFamily: 'var(--font-body)', fontSize: '0.9rem',
-              marginBottom: '1rem', padding: 0, transition: 'color 0.2s'
-            }} onMouseOver={e => e.currentTarget.style.color = '#fff'} onMouseOut={e => e.currentTarget.style.color = 'var(--text-secondary)'}>
-              <span style={{ fontSize: '1.2rem', lineHeight: 1 }}>&larr;</span> Back to Slot Selection
-            </button>
-
-            <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '1.8rem', marginBottom: '1.5rem' }}>Confirm Booking</h2>
-            
-            {/* Listing Summary */}
-            <div style={{ display: 'flex', gap: '1rem', padding: '1rem', background: 'rgba(255,255,255,0.05)', borderRadius: '10px', marginBottom: '1.5rem', alignItems: 'center' }}>
-              <div style={{ width: '60px', height: '45px', borderRadius: '6px', background: `url(${listing.images?.[0]}) center/cover`, backgroundColor: '#222', flexShrink: 0 }} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+            {/* Header */}
+            <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
               <div>
-                <h4 style={{ marginBottom: '0.2rem', fontSize: '1rem' }}>{listing.title}</h4>
-                <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', margin: 0 }}>
-                  {date} • {formatTime(startTime)} – {formatTime(endTime)} ({duration} hour{duration > 1 ? 's' : ''})
-                </p>
+                <button onClick={() => navigate(-1)} style={{
+                  display: 'inline-flex', alignItems: 'center', gap: '0.5rem', border: 'none', background: 'transparent',
+                  color: 'var(--text-secondary)', cursor: 'pointer', fontFamily: 'var(--font-body)', fontSize: '0.9rem',
+                  padding: 0, transition: 'all 0.2s', marginBottom: '1.25rem'
+                }} onMouseOver={e => e.currentTarget.style.color = '#fff'} onMouseOut={e => e.currentTarget.style.color = 'var(--text-secondary)'}>
+                  <ArrowLeft size={16} /> Back to Charger
+                </button>
+                <h1 style={{ fontSize: '2.5rem', fontWeight: 900, margin: 0, lineHeight: 1.1, color: '#fff', letterSpacing: '-0.5px' }}>Review Booking</h1>
+                <p style={{ color: 'var(--text-secondary)', marginTop: '0.75rem', fontSize: '1.05rem', fontWeight: 500 }}>Please verify your session details before confirming.</p>
+              </div>
+              <div style={{ textAlign: 'right', paddingBottom: '0.5rem' }}>
+                <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '1.5px', fontWeight: 800 }}>Step 2 of 2</span>
+                <div style={{ display: 'flex', gap: '6px', marginTop: '6px', justifyContent: 'flex-end' }}>
+                  <div style={{ width: '24px', height: '4px', borderRadius: '2px', background: 'var(--brand-green)', opacity: 0.3 }} />
+                  <div style={{ width: '40px', height: '4px', borderRadius: '2px', background: 'var(--brand-green)' }} />
+                </div>
               </div>
             </div>
 
             {error && (
-              <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171', padding: '0.75rem 1rem', borderRadius: '8px', fontSize: '0.85rem', marginBottom: '1rem' }}>
+              <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171', padding: '1.25rem', borderRadius: '16px', fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '14px' }}>
+                <AlertTriangle size={20} />
                 {error}
               </div>
             )}
 
-            {/* Fee Breakdown */}
-            <div style={{ borderTop: '1px solid var(--border-color)', borderBottom: '1px solid var(--border-color)', padding: '1.5rem 0', marginBottom: '1.5rem' }}>
-              <h4 style={{ marginBottom: '1rem' }}>Fee Summary</h4>
-              
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.8rem' }}>
-                <span style={{ color: 'var(--text-secondary)' }}>Base Charging Fee ({duration} hr{duration > 1 ? 's' : ''} × {formatPKR(listing.pricePerHour)})</span>
-                <span>{formatPKR(fees.baseFee)}</span>
-              </div>
-              
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.8rem' }}>
-                <span style={{ color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                  Platform Service Fee 
-                  <span style={{ fontSize: '0.7rem', background: 'rgba(0, 210, 106, 0.2)', color: 'var(--brand-green)', padding: '2px 6px', borderRadius: '4px' }}>Required</span>
-                </span>
-                <span>{formatPKR(fees.serviceFee)}</span>
-              </div>
-              <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '1rem', fontStyle: 'italic' }}>
-                The service fee helps us run the platform and provide 24/7 customer support.
-              </p>
+            <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 0.9fr', gap: '2.5rem', alignItems: 'start' }}>
+              {/* Left Column: Summary */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                
+                {/* 1. Listing Summary */}
+                <div className="glass-card" style={{ padding: '1.5rem', borderRadius: '24px' }}>
+                  <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center' }}>
+                    <div style={{ width: '120px', height: '85px', borderRadius: '16px', background: `url(${listing.images?.[0]}) center/cover`, border: '1px solid var(--border-color)', boxShadow: '0 4px 12px rgba(0,0,0,0.2)' }} />
+                    <div style={{ flex: 1 }}>
+                      <h3 style={{ fontSize: '1.25rem', fontWeight: 700, margin: '0 0 0.5rem' }}>{listing.title}</h3>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+                        <MapPin size={16} color="var(--brand-green)" />
+                        {listing.area}, {listing.city}
+                      </div>
+                    </div>
+                  </div>
+                </div>
 
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '1rem', paddingTop: '1rem', borderTop: '1px dashed var(--border-color)', fontSize: '1.2rem', fontWeight: 'bold' }}>
-                <span>Total Payable</span>
-                <span style={{ color: 'var(--brand-green)' }}>{formatPKR(fees.totalFee)}</span>
+                {/* 2. Session Detail Grid */}
+                <div className="glass-card" style={{ padding: '2rem', borderRadius: '24px' }}>
+                  <h4 style={{ fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--text-secondary)', fontWeight: 800, letterSpacing: '1px', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                     <Clock size={14} color="var(--brand-green)" /> Reservation Window
+                  </h4>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
+                    
+                    <div style={{ display: 'flex', gap: '14px' }}>
+                      <div style={{ background: 'rgba(255,255,255,0.03)', width: '48px', height: '48px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '12px', border: '1px solid var(--border-color)', flexShrink: 0 }}>
+                        <Calendar size={20} color="var(--brand-green)" />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', textTransform: 'uppercase', fontWeight: 800, marginBottom: '2px' }}>Date</div>
+                        <div style={{ fontSize: '1rem', fontWeight: 600 }}>{new Date(date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}</div>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '14px' }}>
+                      <div style={{ background: 'rgba(255,255,255,0.03)', width: '48px', height: '48px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '12px', border: '1px solid var(--border-color)', flexShrink: 0 }}>
+                        <Zap size={20} color="var(--brand-green)" />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', textTransform: 'uppercase', fontWeight: 800, marginBottom: '2px' }}>Arrival Time</div>
+                        <div style={{ fontSize: '1rem', fontWeight: 600 }}>{formatTime12h(startTime)}</div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '2px' }}>2 hr session window</div>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '14px' }}>
+                      <div style={{ background: 'rgba(255,255,255,0.03)', width: '48px', height: '48px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '12px', border: '1px solid var(--border-color)', flexShrink: 0 }}>
+                        <Car size={20} color="var(--brand-green)" />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', textTransform: 'uppercase', fontWeight: 800, marginBottom: '2px' }}>Vehicle</div>
+                        <div style={{ fontSize: '1rem', fontWeight: 600 }}>{vehicleLabel}</div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '2px' }}>{vehicleSize} size class</div>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '14px' }}>
+                      <div style={{ background: 'rgba(255,255,255,0.03)', width: '48px', height: '48px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '12px', border: '1px solid var(--border-color)', flexShrink: 0 }}>
+                        {currentBand === 'DAY' ? <Zap size={20} color="var(--brand-cyan)" /> : <Moon size={20} color="#fbbf24" />}
+                      </div>
+                      <div>
+                        <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', textTransform: 'uppercase', fontWeight: 800, marginBottom: '2px' }}>Pricing Mode</div>
+                        <div style={{ fontSize: '1rem', fontWeight: 600 }}>{hasEnergyPricing ? `${currentBand} Band` : 'Legacy Mode'}</div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '2px' }}>{hasEnergyPricing ? `${formatPKR(fees.rateUsed)} / kWh` : `${formatPKR(listing.pricePerHour)} / hr`}</div>
+                      </div>
+                    </div>
+
+                  </div>
+                </div>
+
+                {/* 3. Safety Notice */}
+                <div className="glass-card" style={{ padding: '1.25rem 1.5rem', borderRadius: '20px', border: '1px solid rgba(0, 240, 255, 0.2)', background: 'rgba(0, 240, 255, 0.03)', display: 'flex', gap: '14px', alignItems: 'center' }}>
+                  <ShieldCheck size={24} color="var(--brand-cyan)" style={{ flexShrink: 0 }} />
+                  <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                    Exact address and contact info shared instantly upon confirmation. Your safety is our priority.
+                  </p>
+                </div>
+
+              </div>
+
+              {/* Right Column: Checkout Card */}
+              <div style={{ position: 'sticky', top: '100px' }}>
+                <div className="glass-card" style={{ padding: '2rem', borderRadius: '28px', border: '1px solid var(--border-color)', boxShadow: '0 20px 40px rgba(0,0,0,0.3)' }}>
+                  <h3 style={{ fontSize: '1.4rem', fontWeight: 800, marginBottom: '2rem' }}>Total Payable</h3>
+                  
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', marginBottom: '2.5rem' }}>
+                    
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ color: 'var(--text-secondary)', fontSize: '0.95rem' }}>
+                        {hasEnergyPricing ? `Energy Usage (${energyKwh} kWh)` : `Session Duration (${duration} hrs)`}
+                      </div>
+                      <div style={{ fontWeight: 600, fontSize: '1.05rem' }}>{formatPKR(fees.baseCharge)}</div>
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ color: 'var(--text-secondary)', fontSize: '0.95rem' }}>Platform Service Fee</span>
+                        <div className="tooltip-trigger" title="Covers 24/7 support and platform maintenance."><Info size={14} style={{ opacity: 0.3 }} /></div>
+                      </div>
+                      <div style={{ fontWeight: 600, fontSize: '1.05rem' }}>{formatPKR(fees.userServiceFee)}</div>
+                    </div>
+
+                    <div style={{ height: '1px', background: 'var(--border-color)', margin: '0.5rem 0' }} />
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+                      <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#fff' }}>Total Amount</div>
+                      <div style={{ textAlign: 'right' }}>
+                        <div style={{ fontSize: '1.8rem', fontWeight: 900, color: 'var(--brand-green)', lineHeight: 1 }}>{formatPKR(fees.userTotal)}</div>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '4px', textTransform: 'uppercase', fontWeight: 700 }}>Incl. all taxes & fees</div>
+                      </div>
+                    </div>
+
+                  </div>
+
+                  {fees.isLegacy && (
+                    <div style={{ padding: '1rem', borderRadius: '12px', background: 'rgba(251, 191, 36, 0.05)', border: '1px solid rgba(251, 191, 36, 0.2)', marginBottom: '1.5rem' }}>
+                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#fbbf24', fontSize: '0.7rem', fontWeight: 900, textTransform: 'uppercase', marginBottom: '4px' }}>
+                         <AlertTriangle size={12} /> Legacy Listing
+                       </div>
+                       <p style={{ margin: 0, fontSize: '0.8rem', color: 'rgba(255,255,255,0.6)', lineHeight: 1.4 }}>
+                         This host uses legacy hourly pricing. Energy estimation is not available.
+                       </p>
+                    </div>
+                  )}
+
+                  <button 
+                    onClick={handleConfirm}
+                    disabled={processing}
+                    className="btn btn-primary" 
+                    style={{ 
+                      width: '100%', 
+                      padding: '1.25rem', 
+                      fontSize: '1.15rem', 
+                      fontWeight: 800, 
+                      borderRadius: '16px', 
+                      boxShadow: '0 12px 30px rgba(0, 210, 106, 0.3)',
+                      transition: 'all 0.3s ease'
+                    }}
+                  >
+                    {processing ? 'Processing Booking...' : 'Confirm Reservation'}
+                  </button>
+
+                  <div style={{ textAlign: 'center', marginTop: '1.25rem' }}>
+                    <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                      <ShieldCheck size={14} color="var(--brand-green)" /> Payment handled upon arrival
+                    </p>
+                  </div>
+
+                </div>
               </div>
             </div>
-
-            <button className="btn btn-primary" onClick={handleConfirm} disabled={processing} style={{ width: '100%', fontSize: '1.1rem' }}>
-              {processing ? 'Processing...' : 'Confirm Payment & Book Slot'}
-            </button>
-            <p className="text-center" style={{ marginTop: '1rem', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-              You won't be charged until the host accepts the booking if required.
-            </p>
           </div>
         )}
-
       </div>
     </div>
   );

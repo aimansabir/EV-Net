@@ -62,7 +62,9 @@ const HostListings = () => {
                       <h4 style={{ margin: 0, fontSize: '1.15rem' }}>{listing.title}</h4>
                       <span style={{ padding: '0.2rem 0.7rem', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 600, background: status.bg, color: status.color, flexShrink: 0 }}>{status.label}</span>
                     </div>
-                    <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', margin: '0.3rem 0' }}>{listing.chargerType} • {formatPKR(listing.pricePerHour)}/hr</p>
+                    <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', margin: '0.3rem 0' }}>
+                      {listing.chargerType} • Day: {formatPKR(listing.priceDay)}/kWh • Night: {formatPKR(listing.priceNight)}/kWh
+                    </p>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', fontSize: '0.85rem', marginTop: '0.5rem' }}>
                       <span style={{ color: 'var(--text-secondary)' }}>{listing.sessionsCompleted} sessions</span>
                       {listing.rating > 0 && <span style={{ color: '#fbbf24', display: 'flex', alignItems: 'center', gap: '4px' }}><Star size={14} fill="currentColor" /> {listing.rating}</span>}

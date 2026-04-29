@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import useAuthStore from '../store/authStore';
 import logoUrl from '../assets/logo.png';
 import { getHomeRouteByRole } from '../utils/navigation';
+import NotificationCenter from '../components/NotificationCenter';
 import '../components/Navbar.css';
 
 const HostLayout = ({ children }) => {
@@ -12,6 +13,7 @@ const HostLayout = ({ children }) => {
 
   const navItems = [
     { path: '/host/dashboard', label: 'Dashboard' },
+    { path: '/host/onboarding', label: 'Verification' },
     { path: '/host/listings', label: 'Listings' },
     { path: '/host/bookings', label: 'Bookings' },
     { path: '/host/availability', label: 'Availability' },
@@ -40,7 +42,9 @@ const HostLayout = ({ children }) => {
             ))}
           </ul>
 
-          <div className="nav-actions" style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <div className="nav-actions" style={{ display: 'flex', alignItems: 'center', gap: '1.25rem' }}>
+            <NotificationCenter />
+            
             <button
               onClick={() => { logout(); navigate('/'); }}
               style={{ background: 'transparent', border: '1px solid rgba(255,255,255,0.2)', color: '#fff', padding: '0.4rem 0.8rem', borderRadius: '4px', cursor: 'pointer', fontSize: '0.85rem' }}

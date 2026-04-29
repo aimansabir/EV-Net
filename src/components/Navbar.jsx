@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
 import useAuthStore from '../store/authStore';
+import Avatar from './ui/Avatar';
 import logoUrl from '../assets/logo.png';
 import './Navbar.css';
 
@@ -8,7 +9,7 @@ const Navbar = () => {
   const [scrolled, setScrolled] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
-  const { isAuthenticated, role, isInitialized } = useAuthStore();
+  const { user, isAuthenticated, role, isInitialized } = useAuthStore();
 
   useEffect(() => {
     const handleScroll = () => {
@@ -54,13 +55,28 @@ const Navbar = () => {
           {!isInitialized ? (
             <div style={{ width: '100px', height: '40px' }} /> /* Stable placeholder */
           ) : isAuthenticated ? (
-            <button
-              className="btn btn-primary"
-              onClick={() => navigate(role === 'host' ? '/host/dashboard' : role === 'admin' ? '/admin' : '/app/explore')}
-              style={{ fontSize: '0.9rem' }}
-            >
-              {role === 'host' ? 'Host Dashboard' : role === 'admin' ? 'Admin Dashboard' : 'Explore'}
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+              <button
+                className="btn btn-primary"
+                onClick={() => navigate(role?.toUpperCase() === 'HOST' ? '/host/dashboard' : role?.toUpperCase() === 'ADMIN' ? '/admin' : '/app/explore')}
+                style={{ fontSize: '0.9rem' }}
+              >
+                {role?.toUpperCase() === 'HOST' ? 'Host Dashboard' : role?.toUpperCase() === 'ADMIN' ? 'Admin Dashboard' : 'Explore'}
+              </button>
+              
+              <div 
+                onClick={() => navigate(role?.toUpperCase() === 'HOST' ? '/host/profile' : '/app/profile')} 
+                style={{ cursor: 'pointer', transition: 'transform 0.2s' }}
+                onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.05)'}
+                onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
+              >
+                <Avatar 
+                  src={user?.avatar} 
+                  name={user?.name} 
+                  size="38px" 
+                />
+              </div>
+            </div>
           ) : (
             <>
               <button className="btn btn-secondary" onClick={() => navigate('/login')} style={{ fontSize: '0.9rem', border: '1px solid var(--border-color)', background: 'transparent' }}>

@@ -21,14 +21,14 @@ export const SUPABASE_TABLES = {
     notes: 'One-to-one with users where role=HOST.',
   },
   listings: {
-    columns: 'id (uuid, PK), host_id (uuid, FK users.id, not null), title (text, not null), description (text), address (text), city (text), area (text), lat (float8), lng (float8), charger_type (text), charger_speed (text), price_per_hour (numeric, not null), images (text[]), amenities (text[]), house_rules (text[]), is_active (bool, default false), is_approved (bool, default false), setup_fee_paid (bool, default false), rating (numeric, default 0), review_count (int, default 0), sessions_completed (int, default 0), created_at (timestamptz), updated_at (timestamptz)',
+    columns: 'id (uuid, PK), host_id (uuid, FK users.id, not null), title (text, not null), description (text), address (text), city (text), area (text), lat (float8), lng (float8), charger_type (text), charger_speed (text), price_per_hour (numeric, [LEGACY]), price_day_per_kwh (numeric), price_night_per_kwh (numeric), images (text[]), amenities (text[]), house_rules (text[]), is_active (bool, default false), is_approved (bool, default false), setup_fee_paid (bool, default false), rating (numeric, default 0), review_count (int, default 0), sessions_completed (int, default 0), created_at (timestamptz), updated_at (timestamptz)',
   },
   availability: {
     columns: 'id (uuid, PK), listing_id (uuid, FK listings.id), day_of_week (int, check 0-6), start_time (text), end_time (text)',
     notes: 'Recurring weekly schedule per listing.',
   },
   bookings: {
-    columns: 'id (uuid, PK), user_id (uuid, FK users.id), listing_id (uuid, FK listings.id), date (date), start_time (text), end_time (text), status (text, check PENDING/CONFIRMED/COMPLETED/CANCELLED), base_fee (numeric), service_fee (numeric), total_fee (numeric), created_at (timestamptz)',
+    columns: 'id (uuid, PK), user_id (uuid, FK users.id), listing_id (uuid, FK listings.id), date (date), start_time (text), end_time (text), status (text, check PENDING/CONFIRMED/COMPLETED/CANCELLED), vehicle_size (text), estimated_kwh (numeric), pricing_band (text), base_fee (numeric), user_service_fee (numeric), host_platform_fee (numeric), gateway_fee (numeric), total_fee (numeric), host_payout (numeric), created_at (timestamptz)',
   },
   reviews: {
     columns: 'id (uuid, PK), author_id (uuid, FK users.id), listing_id (uuid, FK listings.id), rating (int, check 1-5), comment (text), created_at (timestamptz)',
@@ -38,6 +38,10 @@ export const SUPABASE_TABLES = {
   },
   notifications: {
     columns: 'id (uuid, PK), user_id (uuid, FK users.id), type (text), message (text), is_read (bool, default false), created_at (timestamptz)',
+  },
+  verification_submissions: {
+    columns: 'id (uuid, PK), user_id (uuid, FK users.id), profile_type (text, check USER/HOST), document_type (text, e.g. CNIC_FRONT, EV_PROOF), storage_path (text), status (text, default PENDING), submitted_at (timestamptz, default now()), admin_note (text), reviewed_at (timestamptz), reviewed_by (uuid, FK users.id)',
+    notes: 'Normalized table for all document-based verifications.',
   },
 };
 
@@ -81,7 +85,7 @@ export const RLS_POLICIES = {
 export const STORAGE_BUCKETS = {
   avatars: { public: true, maxSize: '2MB', allowedTypes: ['image/jpeg', 'image/png', 'image/webp'] },
   listing_images: { public: true, maxSize: '5MB', allowedTypes: ['image/jpeg', 'image/png', 'image/webp'] },
-  verification_docs: { public: false, maxSize: '10MB', allowedTypes: ['image/jpeg', 'image/png', 'application/pdf'], notes: 'Only accessible by uploading host and admins.' },
+  verification_documents: { public: false, maxSize: '10MB', allowedTypes: ['image/jpeg', 'image/png', 'application/pdf'], notes: 'Only accessible by uploading host and admins.' },
 };
 
 // ═══════════════════════════════════════════════════════
@@ -104,7 +108,7 @@ export const EDGE_FUNCTIONS = [
     name: 'create-booking',
     method: 'POST',
     description: 'Validates slot availability, prevents double-booking, prevents self-booking, calculates fees using feeConfig, creates booking record.',
-    inputs: '{ listing_id, date, start_time, end_time }',
+    inputs: '{ p_listing_id, p_date, p_start_time, p_end_time, p_vehicle_size }',
     outputs: '{ booking }',
   },
   {
@@ -172,7 +176,7 @@ export const API_ENDPOINTS = {
   // Listings
   'GET /api/listings': { query: '?city&chargerType&maxPrice&search&isActive&isApproved', response: '{ listings[] }', auth: 'JWT' },
   'GET /api/listings/:id': { response: '{ listing, host, hostProfile, reviews[], availability[] }', auth: 'JWT' },
-  'POST /api/listings': { body: '{ title, description, address, city, area, lat, lng, chargerType, chargerSpeed, pricePerHour, images, amenities, houseRules }', auth: 'JWT (host)' },
+  'POST /api/listings': { body: '{ title, description, address, city, area, lat, lng, chargerType, chargerSpeed, priceDay, priceNight, images, amenities, houseRules }', auth: 'JWT (host)' },
   'PATCH /api/listings/:id': { body: 'partial listing fields', auth: 'JWT (owner host)' },
   'DELETE /api/listings/:id': { auth: 'JWT (owner host)' },
 
@@ -182,7 +186,7 @@ export const API_ENDPOINTS = {
   'GET /api/listings/:id/slots?date=': { response: '{ slots[] }', auth: 'JWT', notes: 'Edge Function: generate-slots' },
 
   // Bookings
-  'POST /api/bookings': { body: '{ listingId, date, startTime, endTime }', auth: 'JWT (user)', notes: 'Edge Function: create-booking' },
+  'POST /api/bookings': { body: '{ listingId, date, startTime, endTime, vehicleSize }', auth: 'JWT (user)', notes: 'Edge Function: create-booking' },
   'GET /api/bookings/me': { response: '{ bookings[] }', auth: 'JWT (user)' },
   'PATCH /api/bookings/:id/status': { body: '{ status }', auth: 'JWT (host/admin)', notes: 'Edge Function: update-booking-status' },
 

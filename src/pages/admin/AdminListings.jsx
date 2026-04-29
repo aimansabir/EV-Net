@@ -37,7 +37,7 @@ const AdminListings = () => {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
-                {['Listing', 'Host', 'Type', 'Price', 'Status', 'Actions'].map(h => (
+                {['Listing', 'Host', 'Type', 'Rate (kWh)', 'Status', 'Actions'].map(h => (
                   <th key={h} style={{ textAlign: 'left', padding: '0.75rem', color: 'var(--text-secondary)', fontWeight: 500 }}>{h}</th>
                 ))}
               </tr>
@@ -58,7 +58,10 @@ const AdminListings = () => {
                     </td>
                     <td style={{ padding: '0.75rem', color: 'var(--text-secondary)' }}>{listing.host?.name}</td>
                     <td style={{ padding: '0.75rem', color: 'var(--text-secondary)' }}>{listing.chargerType}</td>
-                    <td style={{ padding: '0.75rem' }}>{formatPKR(listing.pricePerHour)}</td>
+                    <td style={{ padding: '0.75rem' }}>
+                      <div style={{ fontSize: '0.8rem' }}>D: {formatPKR(listing.priceDay)}</div>
+                      <div style={{ fontSize: '0.8rem' }}>N: {formatPKR(listing.priceNight)}</div>
+                    </td>
                     <td style={{ padding: '0.75rem' }}>
                       <span style={{ padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600, background: `${status.color}20`, color: status.color }}>{status.label}</span>
                     </td>

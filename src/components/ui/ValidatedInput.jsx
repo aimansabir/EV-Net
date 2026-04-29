@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { AlertCircle } from 'lucide-react';
+import { AlertCircle, Plus, Minus } from 'lucide-react';
 
 /**
  * ValidatedInput
@@ -19,10 +19,19 @@ const ValidatedInput = ({
   maxLength,
   min,
   max,
-  disabled
+  disabled,
+  forceError = false, // Trigger manual validation from parent
+  compact = false      // Smaller, segmented stepper layout
 }) => {
   const [error, setError] = useState('');
   const [touched, setTouched] = useState(false);
+
+  // Trigger validation if parent forces it
+  useEffect(() => {
+    if (forceError) {
+      handleBlur();
+    }
+  }, [forceError]);
 
   // Strip invalid characters immediately upon typing
   const handleChange = (e) => {
@@ -36,7 +45,6 @@ const ValidatedInput = ({
       val = val.replace(/[^a-zA-Z\s\-']/g, ''); // Letters, spaces, hyphens, ticks
     } else if (format === 'cnic') {
       val = val.replace(/[^0-9-]/g, ''); // Numbers and hyphens
-      // Auto-format for Pakistan CNIC: 5-7-1 (XXXXX-XXXXXXX-X)
       const cleanVal = val.replace(/-/g, '');
       if (cleanVal.length > 0) {
         val = cleanVal.match(new RegExp('.{1,5}', 'g'))[0];
@@ -49,15 +57,7 @@ const ValidatedInput = ({
       setError(''); // Clear error while typing
     }
 
-    // Trigger parent callback
-    if (format === 'money' || format === 'numeric') {
-        const numPattern = val === '' ? '' : Number(val);
-        // Only return if it matches min/max if they are tightly bound to state,
-        // Wait, for inputs, it's better to allow typing and validate bounds on blur.
-        onChange(val);
-    } else {
-        onChange(val);
-    }
+    onChange(val);
   };
 
   // Run final validation passes when user leaves the field
@@ -79,7 +79,6 @@ const ValidatedInput = ({
         newError = 'Password must be at least 8 characters';
       }
       
-      // Min/max validation for money/numeric
       if (format === 'money' || format === 'numeric') {
           const numValue = Number(value);
           if (min !== undefined && numValue < min) newError = `Minimum value is ${min}`;
@@ -90,19 +89,52 @@ const ValidatedInput = ({
     setError(newError);
   };
 
+  const handleStep = (amount) => {
+    if (disabled) return;
+    const numValue = Number(value || 0);
+    const newValue = Math.max(min || 0, Math.min(max || 999999, numValue + amount));
+    onChange(String(newValue));
+    if (touched || forceError) handleBlur(); 
+  };
+
   return (
-    <div className="auth-field" style={{ marginBottom: '1.25rem' }}>
+    <div className="auth-field" style={{ 
+      marginBottom: '1.25rem',
+      maxWidth: compact ? '320px' : '100%',
+      margin: compact ? '0 auto 1.25rem' : '0 0 1.25rem'
+    }}>
       {label && (
-        <label>
+        <label style={{ textAlign: compact ? 'center' : 'left', display: 'block', marginBottom: '0.8rem', opacity: 0.8, fontSize: '0.9rem' }}>
           {label} {required && <span style={{ color: 'var(--brand-cyan)' }}>*</span>}
         </label>
       )}
       
-      <div style={{ position: 'relative' }}>
+      <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+        {(format === 'money' || format === 'numeric') && !disabled && (
+          <button 
+            type="button"
+            onClick={() => handleStep(-(format === 'money' ? 50 : 1))}
+            style={{
+              position: 'absolute', left: '6px', zIndex: 5,
+              width: compact ? '42px' : '32px', height: compact ? '42px' : '32px', borderRadius: '6px',
+              background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-color)',
+              color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              cursor: 'pointer', transition: 'all 0.1s'
+            }}
+            onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
+            onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
+          >
+            <Minus size={14} />
+          </button>
+        )}
+
         {format === 'money' && (
            <span style={{
-             position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)',
-             color: 'var(--text-secondary)', fontSize: '0.9rem', fontWeight: '500'
+             position: 'absolute', 
+             left: compact ? '76px' : '48px', 
+             top: '50%', transform: 'translateY(-50%)',
+             color: 'var(--text-main)', fontSize: '1rem', fontWeight: '500', zIndex: 2,
+             opacity: 0.4
            }}>
              PKR
            </span>
@@ -117,8 +149,37 @@ const ValidatedInput = ({
           onBlur={handleBlur}
           maxLength={maxLength || (format === 'cnic' ? 15 : undefined)}
           disabled={disabled}
-          style={format === 'money' ? { paddingLeft: '3rem' } : undefined}
+          style={{
+            ...(compact ? { height: '56px' } : {}),
+            textAlign: compact ? 'center' : 'left',
+            fontWeight: compact ? '700' : '500',
+            fontSize: compact ? '1.25rem' : '1rem',
+            paddingLeft: compact ? '0' : (format === 'money' ? '90px' : (format === 'numeric' ? '48px' : '12px')),
+            paddingRight: compact ? '0' : ((format === 'money' || format === 'numeric') ? '48px' : '12px'),
+            textIndent: compact && format === 'money' ? '2.8rem' : '0',
+            letterSpacing: compact ? '0.05em' : 'normal',
+            background: compact ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.05)',
+            border: compact ? '1px solid rgba(255,255,255,0.1)' : '1px solid var(--border-color)'
+          }}
         />
+
+        {(format === 'money' || format === 'numeric') && !disabled && (
+          <button 
+            type="button"
+            onClick={() => handleStep(format === 'money' ? 50 : 1)}
+            style={{
+              position: 'absolute', right: '6px', zIndex: 5,
+              width: compact ? '42px' : '32px', height: compact ? '42px' : '32px', borderRadius: '6px',
+              background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-color)',
+              color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              cursor: 'pointer', transition: 'all 0.1s'
+            }}
+            onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
+            onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
+          >
+            <Plus size={14} />
+          </button>
+        )}
       </div>
 
       {error && (
@@ -126,7 +187,8 @@ const ValidatedInput = ({
           display: 'flex', alignItems: 'center', gap: '0.4rem',
           color: '#fb7185', fontSize: '0.8rem', marginTop: '0.4rem',
           background: 'rgba(225, 29, 72, 0.1)', padding: '0.4rem 0.6rem',
-          borderRadius: '4px', border: '1px solid rgba(225, 29, 72, 0.2)'
+          borderRadius: '4px', border: '1px solid rgba(225, 29, 72, 0.2)',
+          justifyContent: compact ? 'center' : 'flex-start'
         }}>
           <AlertCircle size={14} />
           {error}

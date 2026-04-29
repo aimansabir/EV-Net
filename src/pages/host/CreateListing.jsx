@@ -2,37 +2,79 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useAuthStore from '../../store/authStore';
 import { listingService } from '../../data/api';
-import { ChargerType, PakistanCities } from '../../data/schema';
-import { Info } from 'lucide-react';
-import AreaComboBox from '../../components/ui/AreaComboBox';
+import { ChargerType } from '../../data/schema';
+import { PakistanCitiesSorted } from '../../data/pakistanLocations';
+import { Info, Lock } from 'lucide-react';
+import SearchableSelect from '../../components/ui/SearchableSelect';
 import PhotoGridManager from '../../components/ui/PhotoGridManager';
+import ListingLocationPicker from '../../components/ui/ListingLocationPicker';
+import ValidatedInput from '../../components/ui/ValidatedInput';
 import '../../styles/auth.css';
 
 const CreateListing = () => {
   const navigate = useNavigate();
   const { user } = useAuthStore();
   const [step, setStep] = useState(1);
+  const [showErrors, setShowErrors] = useState(false);
   const [photos, setPhotos] = useState([]);
   const [formData, setFormData] = useState({
     title: '', description: '', address: '', city: 'Lahore', area: '',
-    chargerType: '7kW AC Type 2', chargerSpeed: '7kW', pricePerHour: 500,
+    chargerType: '7kW AC Type 2', chargerSpeed: '7kW', priceDay: 40, priceNight: 60,
     amenities: [], houseRules: '',
+    lat: null, lng: null
   });
+
+  const [manualCity, setManualCity] = useState(false);
+  const [manualArea, setManualArea] = useState(false);
 
   const amenityOptions = ['WiFi Available', 'CCTV Security', 'Covered Parking', 'Restroom Access', 'Drinking Water', 'Gated Community', 'Near Restaurants', 'Garden Seating', 'Overnight Available'];
   const totalSteps = 4;
 
+  const isStepValid = (s) => {
+    if (s === 1) return formData.title && formData.address && formData.city && formData.area && formData.lat && formData.lng;
+    if (s === 2) return formData.description;
+    if (s === 3) return photos.length >= 1;
+    return true;
+  };
+
+  const handleContinue = () => {
+    if (isStepValid(step)) {
+      setStep(step + 1);
+      setShowErrors(false);
+    } else {
+      setShowErrors(true);
+    }
+  };
+
+  const handleCancel = () => {
+    const hasInput = formData.title || formData.address || formData.description || photos.length > 0;
+    if (hasInput) {
+      if (window.confirm("Are you sure you want to discard your progress?")) {
+        navigate('/host/dashboard');
+      }
+    } else {
+      navigate('/host/dashboard');
+    }
+  };
+
+  const verificationStatus = user?.verificationStatus || 'draft';
+  const isVerified = verificationStatus === 'approved';
+
   const handleSubmit = async () => {
-    // Determine status based on photo rules: 3 for published/review, else draft
+    if (!isStepValid(4)) {
+       setShowErrors(true);
+       return;
+    }
+
     const isDraft = photos.length < 3;
     
     await listingService.create({
       ...formData,
       hostId: user?.id || 'host_ahsan',
-      images: ['https://images.unsplash.com/photo-1593941707882-a5bba14938cb?w=800&h=450&fit=crop'], // In production, map photos state here
+      images: ['https://images.unsplash.com/photo-1593941707882-a5bba14938cb?w=800&h=450&fit=crop'],
       houseRules: formData.houseRules.split('\n').filter(r => r.trim()),
-      lat: 31.5 + Math.random() * 0.05,
-      lng: 74.3 + Math.random() * 0.05,
+      lat: formData.lat,
+      lng: formData.lng,
       isActive: !isDraft,
       isApproved: false,
     });
@@ -50,32 +92,110 @@ const CreateListing = () => {
         <div className="glass-card" style={{ padding: '2rem' }}>
           {step === 1 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.2rem' }}>
-              <h3 style={{ margin: 0 }}>Location & Charger</h3>
-              <div className="auth-field"><label>Listing Title</label><input className="auth-input" placeholder="e.g. DHA Phase 6 Fast Charger" value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} /></div>
-              <div className="auth-field"><label>Address (Private)</label><input className="auth-input" placeholder="House 42, Street 7, DHA Phase 6" value={formData.address} onChange={e => setFormData({...formData, address: e.target.value})} /></div>
+              <div style={{ marginBottom: '0.5rem' }}>
+                <h3 style={{ margin: 0 }}>Location & Charger</h3>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginTop: '0.4rem' }}>Identify where and what kind of charger you are listing.</p>
+              </div>
+
+              <ValidatedInput 
+                label="Listing Title" 
+                placeholder="e.g. DHA Phase 6 Fast Charger" 
+                value={formData.title} 
+                onChange={v => setFormData({...formData, title: v})} 
+                forceError={showErrors}
+                required
+              />
+
+              <ListingLocationPicker 
+                initialValue={formData.address}
+                initialLat={formData.lat || 31.5204}
+                initialLng={formData.lng || 74.3587}
+                onLocationChange={(loc) => {
+                  const updates = { 
+                    address: loc.address || formData.address,
+                    lat: loc.lat, 
+                    lng: loc.lng 
+                  };
+                  
+                  if (!manualCity && loc.city) {
+                    setFormData(prev => ({ ...prev, city: loc.city }));
+                  }
+                  if (!manualArea && loc.area) {
+                    updates.area = loc.area;
+                  }
+                  
+                  setFormData(prev => ({ ...prev, ...updates }));
+                }}
+              />
+              {showErrors && (!formData.lat || !formData.lng) && (
+                <p style={{ color: '#fb7185', fontSize: '0.75rem', marginTop: '-0.8rem' }}>Please select a valid location on the map.</p>
+              )}
+
               <div className="auth-row" style={{ display: 'flex', gap: '1rem', width: '100%' }}>
-                <div className="auth-field" style={{ flex: 1, marginBottom: '1.25rem' }}>
-                  <label>City <span style={{ color: 'var(--brand-cyan)' }}>*</span></label>
-                  <select className="auth-select" value={formData.city} onChange={e => setFormData({...formData, city: e.target.value, area: ''})}>
-                    {PakistanCities.map(c => <option key={c.city} value={c.city}>{c.city}</option>)}
-                  </select>
+                <div style={{ flex: 1 }}>
+                  <SearchableSelect 
+                    label="City" 
+                    city={formData.city} 
+                    required 
+                    options={PakistanCitiesSorted.map(c => c.city)}
+                    value={formData.city} 
+                    onChange={v => {
+                      setFormData({...formData, city: v, area: ''});
+                      setManualCity(true);
+                    }} 
+                  />
                 </div>
                 <div style={{ flex: 1 }}>
-                  <AreaComboBox label="Area (Public)" city={formData.city} required value={formData.area} onChange={v => setFormData({...formData, area: v})} />
+                  <SearchableSelect 
+                    label="Area (Public)" required 
+                    options={PakistanCitiesSorted.find(c => c.city === formData.city)?.areas || []}
+                    placeholder={formData.city ? "Select area" : "Select city first"}
+                    value={formData.area} 
+                    onChange={v => {
+                      setFormData({...formData, area: v});
+                      setManualArea(true);
+                    }} 
+                    disabled={!formData.city}
+                  />
+                  {showErrors && !formData.area && <p style={{ color: '#fb7185', fontSize: '0.75rem', marginTop: '0.4rem' }}>Area is required</p>}
                 </div>
               </div>
+
               <div className="auth-row">
-                <div className="auth-field"><label>Charger Type</label><select className="auth-select" value={formData.chargerType} onChange={e => setFormData({...formData, chargerType: e.target.value})}>{Object.values(ChargerType).map(t => <option key={t} value={t}>{t}</option>)}</select></div>
-                <div className="auth-field">
-                  <label>Price / Hour (PKR)</label>
+                <div className="auth-field" style={{ flex: 1 }}>
+                  <label>Charger Type</label>
+                  <select className="auth-select" value={formData.chargerType} onChange={e => setFormData({...formData, chargerType: e.target.value})}>
+                    {Object.values(ChargerType).map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </div>
+                <div className="auth-field" style={{ flex: 1 }}>
+                  <label>Day Rate (per kWh)</label>
                   <div className="stepper-input">
-                    <button type="button" onClick={() => setFormData({...formData, pricePerHour: Math.max(0, formData.pricePerHour - 50)})}>-</button>
-                    <input type="number" className="auth-input" value={formData.pricePerHour} onChange={e => setFormData({...formData, pricePerHour: Number(e.target.value)})} />
-                    <button type="button" onClick={() => setFormData({...formData, pricePerHour: formData.pricePerHour + 50})}>+</button>
+                    <button type="button" onClick={() => setFormData({...formData, priceDay: Math.max(0, formData.priceDay - 5)})}>-</button>
+                    <input type="number" className="auth-input" value={formData.priceDay} onChange={e => setFormData({...formData, priceDay: Number(e.target.value)})} />
+                    <button type="button" onClick={() => setFormData({...formData, priceDay: formData.priceDay + 5})}>+</button>
                   </div>
+                  <p style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '4px' }}>08:00 AM - 08:00 PM (Solar cheaper)</p>
+                </div>
+                <div className="auth-field" style={{ flex: 1 }}>
+                  <label>Night Rate (per kWh)</label>
+                  <div className="stepper-input">
+                    <button type="button" onClick={() => setFormData({...formData, priceNight: Math.max(0, formData.priceNight - 5)})}>-</button>
+                    <input type="number" className="auth-input" value={formData.priceNight} onChange={e => setFormData({...formData, priceNight: Number(e.target.value)})} />
+                    <button type="button" onClick={() => setFormData({...formData, priceNight: formData.priceNight + 5})}>+</button>
+                  </div>
+                  <p style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '4px' }}>08:00 PM - 08:00 AM (Grid only)</p>
                 </div>
               </div>
-              <button className="btn btn-primary" onClick={() => setStep(2)}>Continue</button>
+
+              <div style={{ background: 'rgba(6, 182, 212, 0.05)', border: '1px solid rgba(6, 182, 212, 0.1)', padding: '0.8rem', borderRadius: '8px', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                <p style={{ margin: 0 }}><Info size={14} style={{ verticalAlign: 'middle', marginRight: '6px' }} /> <strong>Solar-First:</strong> We recommend setting day rates ~30% lower to encourage charging during peak solar yield.</p>
+              </div>
+
+              <div style={{ display: 'flex', gap: '1rem', marginTop: '0.5rem' }}>
+                <button className="btn btn-secondary" onClick={handleCancel} style={{ flex: 1 }}>Cancel</button>
+                <button className="btn btn-primary" onClick={handleContinue} style={{ flex: 2 }}>Continue</button>
+              </div>
             </div>
           )}
 
@@ -96,8 +216,8 @@ const CreateListing = () => {
               </div>
               <div className="auth-field"><label>House Rules (one per line)</label><textarea className="auth-input" rows={3} placeholder="Park in designated spot only&#10;No overnight charging" value={formData.houseRules} onChange={e => setFormData({...formData, houseRules: e.target.value})} style={{ resize: 'vertical' }} /></div>
               <div style={{ display: 'flex', gap: '1rem' }}>
-                <button className="btn btn-secondary" onClick={() => setStep(1)} style={{ flex: 1 }}>Back</button>
-                <button className="btn btn-primary" onClick={() => setStep(3)} style={{ flex: 1 }}>Continue</button>
+                <button className="btn btn-secondary" onClick={() => { setStep(1); setShowErrors(false); }} style={{ flex: 1 }}>Back</button>
+                <button className="btn btn-primary" onClick={handleContinue} style={{ flex: 1 }}>Continue</button>
               </div>
             </div>
           )}
@@ -111,8 +231,8 @@ const CreateListing = () => {
                   maxPhotos={5}
               />
               <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
-                <button className="btn btn-secondary" onClick={() => setStep(2)} style={{ flex: 1 }}>Back</button>
-                <button className="btn btn-primary" onClick={() => setStep(4)} style={{ flex: 1 }} disabled={photos.length === 0}>Continue</button>
+                <button className="btn btn-secondary" onClick={() => { setStep(2); setShowErrors(false); }} style={{ flex: 1 }}>Back</button>
+                <button className="btn btn-primary" onClick={handleContinue} style={{ flex: 1 }}>Continue</button>
               </div>
             </div>
           )}
@@ -123,15 +243,24 @@ const CreateListing = () => {
               <div style={{ background: 'rgba(255,255,255,0.03)', padding: '1rem', borderRadius: '8px' }}>
                 <p style={{ fontSize: '0.9rem', marginBottom: '0.3rem' }}><strong>{formData.title || 'Untitled'}</strong></p>
                 <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{formData.address}, {formData.area}, {formData.city}</p>
-                <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '0.5rem' }}>{formData.chargerType} • PKR {formData.pricePerHour}/hr</p>
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '0.5rem' }}>{formData.chargerType} • Day: PKR {formData.priceDay}/kWh • Night: PKR {formData.priceNight}/kWh</p>
                 <p style={{ fontSize: '0.85rem', color: 'var(--brand-cyan)', marginTop: '0.5rem' }}>{photos.length} Photos Attached (Min 3 required to publish)</p>
               </div>
-              <div className="auth-note">
-                <p><span className="note-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Info size={16} /></span><span>Your listing will be saved as a Draft if you have less than 3 photos. Otherwise, it will be submitted for Review.</span></p>
-              </div>
+              {!isVerified && (
+                <div className="auth-note" style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
+                   <p><span className="note-icon" style={{ color: '#ef4444' }}><Lock size={16} /></span><span style={{ color: '#fca5a5' }}>Host account not yet verified. You can save this listing as a Draft, but it cannot be published until your profile is approved.</span></p>
+                </div>
+              )}
               <div style={{ display: 'flex', gap: '1rem' }}>
                 <button className="btn btn-secondary" onClick={() => setStep(3)} style={{ flex: 1 }}>Back</button>
-                <button className="btn btn-primary" onClick={handleSubmit} style={{ flex: 2 }}>{photos.length >= 3 ? 'Submit For Review' : 'Save as Draft'}</button>
+                <button 
+                  className="btn btn-primary" 
+                  onClick={handleSubmit} 
+                  style={{ flex: 2 }}
+                  disabled={!isVerified && photos.length >= 3}
+                >
+                  {photos.length >= 3 ? (isVerified ? 'Submit For Review' : 'Verification Required') : 'Save as Draft'}
+                </button>
               </div>
             </div>
           )}

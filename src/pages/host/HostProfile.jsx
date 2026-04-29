@@ -1,17 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useAuthStore from '../../store/authStore';
-import { hostService } from '../../data/api';
-import { Check } from 'lucide-react';
-import FileUploadDropzone from '../../components/ui/FileUploadDropzone';
+import { hostService, profileService } from '../../data/api';
+import { Check, Camera, Loader2 } from 'lucide-react';
+import Avatar from '../../components/ui/Avatar';
 
 const HostProfile = () => {
   const navigate = useNavigate();
   const { user, logout } = useAuthStore();
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [avatarEditing, setAvatarEditing] = useState(false);
-  const [avatarFile, setAvatarFile] = useState([]);
+  const fileInputRef = useRef(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState('');
 
   useEffect(() => {
     const load = async () => {
@@ -23,6 +24,28 @@ const HostProfile = () => {
   }, [user]);
 
   const handleLogout = () => { logout(); navigate('/'); };
+
+  const handleAvatarClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file || !user) return;
+    
+    setIsUploading(true);
+    setUploadError('');
+    try {
+      await profileService.uploadAvatar(user.id, file, 'HOST');
+      const { reloadUser } = useAuthStore.getState();
+      await reloadUser();
+    } catch (err) {
+      console.error("Host avatar upload failed:", err);
+      setUploadError('Failed to upload image.');
+    } finally {
+      setIsUploading(false);
+    }
+  };
 
   const statusConfig = {
     draft: { color: '#9CA3AF', bg: 'rgba(156,163,175,0.15)', label: 'Draft', desc: 'Complete your profile to get verified.' },
@@ -49,48 +72,55 @@ const HostProfile = () => {
         <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '2rem', marginBottom: '2rem' }}>Host Profile</h2>
 
         {/* Avatar & Info */}
-        <div className="glass-card" style={{ padding: '2rem', textAlign: 'center', marginBottom: '1.5rem', position: 'relative' }}>
-          
-          {!avatarEditing ? (
-            <>
-              <div style={{
-                position: 'absolute', top: '16px', right: '16px', cursor: 'pointer',
-                color: 'var(--brand-cyan)', fontSize: '0.85rem'
-              }} onClick={() => setAvatarEditing(true)}>
-                Edit Photo
-              </div>
+        <div className="glass-card" style={{ padding: '2.5rem 2rem', textAlign: 'center', marginBottom: '1.5rem', position: 'relative' }}>
+          <div style={{ position: 'relative', width: '120px', height: '120px', margin: '0 auto 1.25rem' }}>
+            <Avatar 
+              src={user?.avatar} 
+              name={user?.name} 
+              size="120px" 
+              style={{ 
+                border: profile?.verificationStatus === 'approved' ? '4px solid var(--brand-green)' : '4px solid var(--border-color)',
+                boxShadow: profile?.verificationStatus === 'approved' ? '0 8px 24px rgba(0,210,106,0.2)' : '0 4px 12px rgba(0,0,0,0.2)',
+                cursor: 'pointer'
+              }}
+              onClick={handleAvatarClick}
+            />
+            {/* Hidden Input */}
+            <input 
+              type="file" 
+              ref={fileInputRef} 
+              onChange={handleFileChange} 
+              accept="image/jpeg, image/png" 
+              style={{ display: 'none' }} 
+            />
 
-              <div style={{
-                width: '90px', height: '90px', borderRadius: '50%', margin: '0 auto 1rem',
-                background: user?.avatar ? `url(${user.avatar}) center/cover` : 'var(--bg-secondary)',
+            {/* Premium Camera FAB */}
+            <button 
+              onClick={handleAvatarClick}
+              disabled={isUploading}
+              style={{
+                position: 'absolute', bottom: '4px', right: '4px',
+                width: '36px', height: '36px', borderRadius: '50%',
+                background: 'var(--brand-green)', border: 'none',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                color: '#fff', fontWeight: 'bold', fontSize: '2.5rem',
-                border: profile?.verificationStatus === 'approved' ? '3px solid var(--brand-green)' : '3px solid var(--border-color)',
-                boxShadow: profile?.verificationStatus === 'approved' ? '0 4px 12px rgba(0,210,106,0.2)' : 'none'
-              }}>
-                {!user?.avatar && (user?.name?.[0] || 'H')}
-              </div>
-              <h3 style={{ margin: 0, fontSize: '1.4rem' }}>{user?.name}</h3>
-              <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem', margin: '0.3rem 0' }}>{user?.email}</p>
-              <span style={{ display: 'inline-block', marginTop: '0.5rem', padding: '0.3rem 0.8rem', borderRadius: '20px', fontSize: '0.8rem', fontWeight: 600, background: status.bg, color: status.color }}>
-                {status.label}
-              </span>
-            </>
-          ) : (
-            <div style={{ textAlign: 'left' }}>
-               <h4 style={{ margin: '0 0 1rem 0' }}>Update Host Photo</h4>
-               <FileUploadDropzone 
-                 mode="image"
-                 accept="image/jpeg, image/png"
-                 files={avatarFile}
-                 onChange={setAvatarFile}
-               />
-               <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
-                  <button className="btn btn-secondary" onClick={() => { setAvatarEditing(false); setAvatarFile([]); }} style={{ flex: 1 }}>Cancel</button>
-                  <button className="btn btn-primary" style={{ flex: 1 }} disabled={avatarFile.length === 0} onClick={() => setAvatarEditing(false)}>Save Photo</button>
-               </div>
-            </div>
-          )}
+                color: '#000', cursor: 'pointer',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+              }}
+              onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.1)'}
+              onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
+            >
+              {isUploading ? <Loader2 size={18} className="animate-spin" /> : <Camera size={18} strokeWidth={2.5} />}
+            </button>
+          </div>
+
+          <h3 style={{ margin: 0, fontSize: '1.4rem', fontFamily: 'var(--font-heading)' }}>{user?.name}</h3>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem', margin: '0.3rem 0' }}>{user?.email}</p>
+          <span style={{ display: 'inline-block', marginTop: '0.5rem', padding: '0.3rem 0.8rem', borderRadius: '20px', fontSize: '0.8rem', fontWeight: 600, background: status.bg, color: status.color }}>
+            {status.label}
+          </span>
+          
+          {uploadError && <p style={{ color: '#f87171', fontSize: '0.75rem', marginTop: '1rem' }}>{uploadError}</p>}
         </div>
 
         {/* Verification Progress */}
@@ -118,7 +148,18 @@ const HostProfile = () => {
               </div>
             ))}
           </div>
-          <p style={{ marginTop: '1rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{status.desc}</p>
+          
+          <p style={{ marginTop: '1rem', fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>{status.desc}</p>
+
+          {profile?.verificationStatus !== 'approved' && (
+            <button 
+              className="btn btn-primary" 
+              onClick={() => navigate('/host/onboarding')}
+              style={{ width: '100%', fontSize: '0.9rem' }}
+            >
+              {profile?.verificationStatus === 'rejected' ? 'Update & Resubmit' : 'Complete Verification'}
+            </button>
+          )}
         </div>
 
         {/* Logout */}

@@ -141,7 +141,7 @@ const FileUploadDropzone = ({
                 {mode === 'image' ? 'Take Photo or Choose File' : 'Drag & Drop, or Browse'}
             </h4>
             <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
-                Supported formats: {accept.replace(/[(image/)(application/)]/g, '').replace(/,/g, ', ')} (Max {maxSizeMB}MB)
+                Supported formats: {accept.split(',').map(m => m.trim().split('/')[1]).join(', ')} (Max {maxSizeMB}MB)
             </p>
         </div>
       )}

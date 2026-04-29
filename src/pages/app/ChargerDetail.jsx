@@ -3,12 +3,27 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { MapContainer, TileLayer, Marker } from 'react-leaflet';
 import L from 'leaflet';
 import { listingService, availabilityService, bookingService } from '../../data/api';
-import { calculateBookingFees, formatPKR } from '../../data/feeConfig';
+import {
+  calculateEnergyBookingFees,
+  getPricingBand,
+  formatPKR,
+  VEHICLE_SIZES,
+  ENERGY_BY_SIZE,
+  PRICING_BAND,
+  calculateBookingFees
+} from '../../data/feeConfig';
 import DatePicker from 'react-datepicker';
-import { Calendar, MapPin, ArrowLeft, Lock, Unlock, ExternalLink, ShieldCheck, ChevronDown, Clock, Timer, MessageSquare } from 'lucide-react';
+import {
+  Calendar, MapPin, ArrowLeft, Lock, Unlock, ExternalLink, ShieldCheck,
+  ChevronDown, Clock, Timer, MessageSquare, Wifi, Video, ParkingCircle,
+  Droplets, User, Shield, Utensils, Trees, Moon, Zap, ShoppingBag,
+  Lightbulb, Waves, Coffee, Milestone, Smartphone, CheckCircle
+} from 'lucide-react';
+import Avatar from '../../components/ui/Avatar';
 import useAuthStore from '../../store/authStore';
 import { canBook, exactLocationUnlocked as checkLocationUnlocked, canCreateInquiry } from '../../utils/accessControl';
 import { messagingService } from '../../data/api';
+import { getFuzzyCoordinates } from '../../data/cityCoordinates';
 import 'react-datepicker/dist/react-datepicker.css';
 import '../../styles/calendar.css';
 import 'leaflet/dist/leaflet.css';
@@ -35,9 +50,11 @@ const ChargerDetail = () => {
   const [slots, setSlots] = useState([]);
   const [selectedStart, setSelectedStart] = useState('');
   const [duration, setDuration] = useState(2);
+  const [vehicleSize, setVehicleSize] = useState(VEHICLE_SIZES.SMALL);
   const [userBookings, setUserBookings] = useState([]);
   const [isStartOpen, setIsStartOpen] = useState(false);
   const [isDurationOpen, setIsDurationOpen] = useState(false);
+  const [isVehicleOpen, setIsVehicleOpen] = useState(false);
   const [isCreatingInquiry, setIsCreatingInquiry] = useState(false);
   const { user } = useAuthStore();
 
@@ -45,7 +62,7 @@ const ChargerDetail = () => {
     const load = async () => {
       const data = await listingService.getById(id);
       setListing(data);
-      
+
       if (user) {
         try {
           const bookings = await bookingService.getByUser(user.id);
@@ -72,6 +89,7 @@ const ChargerDetail = () => {
       if (!e.target.closest('.custom-dropdown-container')) {
         setIsStartOpen(false);
         setIsDurationOpen(false);
+        setIsVehicleOpen(false);
       }
     };
     window.addEventListener('mousedown', handleClickOutside);
@@ -81,9 +99,36 @@ const ChargerDetail = () => {
   if (loading) return <div className="section" style={{ minHeight: 'calc(100vh - 72px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><div style={{ color: 'var(--text-secondary)' }}>Loading...</div></div>;
   if (!listing) return <div className="section" style={{ minHeight: 'calc(100vh - 72px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><div>Listing not found</div></div>;
 
-  const fees = calculateBookingFees(listing.pricePerHour, duration);
+  // Pricing Logic
+  const currentBand = getPricingBand(selectedStart);
+
+  // High-level check for energy support
+  const energyFees = calculateEnergyBookingFees(
+    vehicleSize,
+    currentBand,
+    listing.priceDay,
+    listing.priceNight
+  );
+
+  const hasEnergyPricing = !energyFees.isIncomplete;
+
+  let fees;
+  if (hasEnergyPricing) {
+    fees = energyFees;
+  } else {
+    // Final Legacy Fallback (using old hourly model)
+    const legacyFees = calculateBookingFees(listing.pricePerHour, duration);
+    fees = {
+      baseCharge: legacyFees.baseFee,
+      userServiceFee: legacyFees.serviceFee,
+      userTotal: legacyFees.totalFee,
+      isLegacy: true,
+      reason: energyFees.error // e.g. MISSING_RATE
+    };
+  }
+
   const isHostVerified = listing.hostProfile?.verificationStatus === 'approved';
-  
+
   // Privacy Logic using centralized access control
   const exactLocationUnlocked = checkLocationUnlocked(user, id, userBookings);
   const userCanBook = canBook(user);
@@ -110,14 +155,32 @@ const ChargerDetail = () => {
     }
   };
 
-  const amenityIcons = {
-    'WiFi Available': '📶', 'CCTV Security': '📹', 'Covered Parking': '🅿️', 'Drinking Water': '💧',
-    'Restroom Access': '🚻', 'Gated Community': '🔒', 'Near Restaurants': '🍽️', 'Garden Seating': '🌿',
-    'Overnight Available': '🌙', 'DC Fast Charging': '⚡', 'Near Main Boulevard': '🛣️',
-    'Shopping Area': '🛍️', 'Food Court Nearby': '🍔', 'Well-Lit Area': '💡', 'Guarded Parking': '💂',
-    'Security Guard': '💂', 'Easy Access from Canal Road': '🛣️', 'Dedicated EV Parking': '🔌',
-    'Near Sea View': '🌊', 'Street Parking': '🅿️', 'Quiet Area': '🤫', 'Tea/Coffee Offered': '☕',
-    '22kW Fast AC': '⚡',
+  const amenityIconsMap = {
+    'wifi': <Wifi size={18} />,
+    'cctv security': <Video size={18} />,
+    'camera': <Video size={18} />,
+    'covered parking': <ParkingCircle size={18} />,
+    'parking': <ParkingCircle size={18} />,
+    'drinking water': <Droplets size={18} />,
+    'restroom access': <User size={18} />,
+    'gated community': <Shield size={18} />,
+    'near restaurants': <Utensils size={18} />,
+    'garden seating': <Trees size={18} />,
+    'overnight available': <Moon size={18} />,
+    'dc fast charging': <Zap size={18} />,
+    'near main boulevard': <Milestone size={18} />,
+    'shopping area': <ShoppingBag size={18} />,
+    'food court nearby': <Utensils size={18} />,
+    'well-lit area': <Lightbulb size={18} />,
+    'guarded parking': <ShieldCheck size={18} />,
+    'security guard': <ShieldCheck size={18} />,
+    'easy access from canal road': <Milestone size={18} />,
+    'dedicated ev parking': <Zap size={18} />,
+    'near sea view': <Waves size={18} />,
+    'street parking': <ParkingCircle size={18} />,
+    'quiet area': <Smartphone size={18} />,
+    'tea/coffee offered': <Coffee size={18} />,
+    '22kw fast ac': <Zap size={18} />,
   };
 
   return (
@@ -130,7 +193,7 @@ const ChargerDetail = () => {
           transition: 'background-image 0.3s',
         }} />
         <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(transparent 50%, rgba(11,15,25,0.95) 100%)' }} />
-        
+
         {/* Back button */}
         <button onClick={() => navigate(-1)} style={{
           position: 'absolute', top: '1.5rem', left: '1.5rem', zIndex: 10,
@@ -174,7 +237,7 @@ const ChargerDetail = () => {
       <div className="section" style={{ paddingTop: '2rem' }}>
         <div className="container" style={{ maxWidth: '1100px' }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 1fr)', gap: '2.5rem' }}>
-            
+
             {/* Left Column */}
             <div>
               <h1 style={{ fontSize: '2.2rem', marginBottom: '0.5rem' }}>{listing.title}</h1>
@@ -197,11 +260,16 @@ const ChargerDetail = () => {
                   background: 'var(--bg-card)', borderRadius: '14px', border: '1px solid var(--border-color)',
                   alignItems: 'center',
                 }}>
-                  <div style={{
-                    width: '56px', height: '56px', borderRadius: '50%', flexShrink: 0,
-                    background: listing.host.avatar ? `url(${listing.host.avatar}) center/cover` : '#333',
-                    border: isHostVerified ? '3px solid var(--brand-green)' : '3px solid var(--border-color)',
-                  }} />
+                  <div style={{ flexShrink: 0 }}>
+                    <Avatar
+                      src={listing.host.avatar}
+                      name={listing.host.name}
+                      size="56px"
+                      style={{
+                        border: isHostVerified ? '3px solid var(--brand-green)' : '3px solid var(--border-color)',
+                      }}
+                    />
+                  </div>
                   <div style={{ flex: 1 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.2rem' }}>
                       <span style={{ fontWeight: 600, fontSize: '1.05rem' }}>{listing.host.name}</span>
@@ -216,8 +284,8 @@ const ChargerDetail = () => {
                     </div>
                   </div>
                   <div>
-                    <button 
-                      className="btn btn-secondary" 
+                    <button
+                      className="btn btn-secondary"
                       onClick={handleAskHost}
                       disabled={isCreatingInquiry || (user && !userCanInquire)}
                       style={{ padding: '0.6rem 1rem', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '6px' }}
@@ -240,12 +308,15 @@ const ChargerDetail = () => {
                 <div style={{ marginBottom: '2rem' }}>
                   <h3 style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem', marginBottom: '1rem' }}>Amenities & Features</h3>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '0.75rem' }}>
-                    {listing.amenities.map((amenity, i) => (
-                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
-                        <span>{amenityIcons[amenity] || '✓'}</span>
-                        <span>{amenity}</span>
-                      </div>
-                    ))}
+                    {listing.amenities.map((amenity, i) => {
+                      const icon = amenityIconsMap[amenity.toLowerCase()] || <CheckCircle size={18} style={{ opacity: 0.5 }} />;
+                      return (
+                        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', color: 'var(--text-secondary)', fontSize: '0.95rem' }}>
+                          <span style={{ color: 'var(--brand-green)', display: 'flex' }}>{icon}</span>
+                          <span style={{ textTransform: 'capitalize' }}>{amenity}</span>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -274,16 +345,16 @@ const ChargerDetail = () => {
                   </div>
 
                   <div style={{ textAlign: 'right' }}>
-                    <button 
-                      className="btn" 
+                    <button
+                      className="btn"
                       disabled={!exactLocationUnlocked}
-                      style={{ 
-                        padding: '0.6rem 1.2rem', 
-                        fontSize: '0.9rem', 
-                        display: 'flex', 
-                        alignItems: 'center', 
-                        gap: '0.6rem', 
-                        border: exactLocationUnlocked ? '1px solid var(--brand-green)' : '1px solid var(--border-color)', 
+                      style={{
+                        padding: '0.6rem 1.2rem',
+                        fontSize: '0.9rem',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.6rem',
+                        border: exactLocationUnlocked ? '1px solid var(--brand-green)' : '1px solid var(--border-color)',
                         background: exactLocationUnlocked ? 'rgba(0, 210, 106, 0.08)' : 'rgba(255,255,255,0.03)',
                         color: exactLocationUnlocked ? 'var(--brand-green)' : 'var(--text-secondary)',
                         cursor: exactLocationUnlocked ? 'pointer' : 'not-allowed',
@@ -291,7 +362,7 @@ const ChargerDetail = () => {
                         fontWeight: 700,
                         transition: 'all 0.2s',
                         boxShadow: exactLocationUnlocked ? '0 0 15px rgba(0, 210, 106, 0.1)' : 'none'
-                      }} 
+                      }}
                       onMouseOver={e => {
                         if (exactLocationUnlocked) {
                           e.currentTarget.style.background = 'rgba(0, 210, 106, 0.15)';
@@ -306,7 +377,7 @@ const ChargerDetail = () => {
                       }}
                       onClick={() => exactLocationUnlocked && window.open(`https://maps.google.com/?q=${listing.lat},${listing.lng}`)}
                     >
-                      <MapPin size={16} color={exactLocationUnlocked ? 'var(--brand-green)' : 'currentColor'} /> 
+                      <MapPin size={16} color={exactLocationUnlocked ? 'var(--brand-green)' : 'currentColor'} />
                       Open in Google Maps
                       {exactLocationUnlocked && <ExternalLink size={14} />}
                     </button>
@@ -321,32 +392,32 @@ const ChargerDetail = () => {
                 <div style={{ height: '280px', borderRadius: '16px', overflow: 'hidden', border: '1px solid var(--border-color)', position: 'relative', background: 'var(--bg-secondary)' }}>
                   {!exactLocationUnlocked && (
                     <div style={{ position: 'absolute', inset: 0, zIndex: 1000, pointerEvents: 'none', background: 'rgba(0,0,0,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}>
-                       <div style={{ 
-                         background: 'rgba(11,15,25,0.9)', 
-                         padding: '0.75rem 1.25rem', 
-                         borderRadius: '12px', 
-                         backdropFilter: 'blur(8px)', 
-                         border: '1px solid var(--border-color)', 
-                         fontSize: '0.85rem', 
-                         display: 'flex', 
-                         flexDirection: 'column',
-                         alignItems: 'center', 
-                         gap: '0.5rem',
-                         boxShadow: '0 4px 20px rgba(0,0,0,0.4)'
-                       }}>
-                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                           <ShieldCheck size={18} color="#fbbf24" strokeWidth={2.5} />
-                           <span style={{ fontWeight: 600 }}>Privacy Protected</span>
-                         </div>
-                         <div style={{ fontSize: '0.75rem', opacity: 0.8 }}>Exact marker hidden for host safety</div>
-                       </div>
+                      <div style={{
+                        background: 'rgba(11,15,25,0.9)',
+                        padding: '0.75rem 1.25rem',
+                        borderRadius: '12px',
+                        backdropFilter: 'blur(8px)',
+                        border: '1px solid var(--border-color)',
+                        fontSize: '0.85rem',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        gap: '0.5rem',
+                        boxShadow: '0 4px 20px rgba(0,0,0,0.4)'
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <ShieldCheck size={18} color="#fbbf24" strokeWidth={2.5} />
+                          <span style={{ fontWeight: 600 }}>Privacy Protected</span>
+                        </div>
+                        <div style={{ fontSize: '0.75rem', opacity: 0.8 }}>Exact marker hidden for host safety</div>
+                      </div>
                     </div>
                   )}
-                  <MapContainer 
-                    center={exactLocationUnlocked ? [listing.lat, listing.lng] : [listing.lat + 0.003, listing.lng - 0.003]} 
-                    zoom={exactLocationUnlocked ? 16 : 13} 
-                    style={{ height: '100%', width: '100%' }} 
-                    zoomControl={false} 
+                  <MapContainer
+                    center={exactLocationUnlocked ? [listing.lat, listing.lng] : getFuzzyCoordinates(listing.city, listing.lat, listing.lng)}
+                    zoom={exactLocationUnlocked ? 16 : 13}
+                    style={{ height: '100%', width: '100%' }}
+                    zoomControl={false}
                     scrollWheelZoom={false}
                     dragging={exactLocationUnlocked}
                   >
@@ -358,19 +429,15 @@ const ChargerDetail = () => {
                     )}
                   </MapContainer>
                 </div>
-                
-                <div style={{ marginTop: '1.25rem', padding: '1rem', borderRadius: '12px', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border-color)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '0.5rem' }}>
-                    <MapPin size={18} color={exactLocationUnlocked ? 'var(--brand-green)' : 'var(--text-secondary)'} />
-                    <span style={{ fontWeight: 600, fontSize: '1rem' }}>
-                      {exactLocationUnlocked ? listing.address : `${listing.area}, ${listing.city}`}
-                    </span>
-                  </div>
-                  {!exactLocationUnlocked && (
-                    <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <Lock size={12} /> Exact address shared only after verification and booking confirmation.
+
+                <div className="glass-card" style={{ padding: '1.25rem', display: 'flex', alignItems: 'flex-start', gap: '1rem', border: '1px solid var(--border-color)', marginTop: '1rem' }}>
+                  <MapPin size={24} color="var(--brand-green)" style={{ flexShrink: 0, marginTop: '2px' }} />
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: '1.1rem', color: '#fff' }}>{listing.area}, {listing.city}</h3>
+                    <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', margin: '0.3rem 0 0', lineHeight: 1.5 }}>
+                      {exactLocationUnlocked ? listing.address : 'Exact address shared only after verification and booking confirmation.'}
                     </p>
-                  )}
+                  </div>
                 </div>
               </div>
 
@@ -383,10 +450,11 @@ const ChargerDetail = () => {
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
                     {listing.reviews.map(review => (
                       <div key={review.id} style={{ display: 'flex', gap: '1rem' }}>
-                        <div style={{
-                          width: '40px', height: '40px', borderRadius: '50%', flexShrink: 0,
-                          background: review.author?.avatar ? `url(${review.author.avatar}) center/cover` : '#333',
-                        }} />
+                        <Avatar
+                          src={review.author?.avatar}
+                          name={review.author?.name}
+                          size="40px"
+                        />
                         <div>
                           <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', marginBottom: '0.3rem' }}>
                             <span style={{ fontWeight: 500 }}>{review.author?.name || 'User'}</span>
@@ -405,194 +473,279 @@ const ChargerDetail = () => {
             </div>
 
             {/* Right Column — Booking Card */}
-            <div>
-              <div className="glass-card" style={{ padding: '2rem', position: 'sticky', top: '2rem' }}>
-                <div style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '1.5rem', color: 'var(--brand-green)' }}>
-                  {formatPKR(listing.pricePerHour)} <span style={{ fontSize: '1rem', color: 'var(--text-secondary)', fontWeight: 'normal' }}>/ hour</span>
-                </div>
+            <div className="col-lg-5">
+              <div style={{ position: 'sticky', top: '100px' }}>
+                <div className="glass-card" style={{ width: '100%', maxWidth: '620px', marginLeft: 'auto', padding: '2rem', borderRadius: '24px', position: 'relative', overflow: 'visible' }}>
+                  {/* Main Header / Pricing Summary */}
+                  <div style={{ marginBottom: '2rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <div>
+                        <h3 style={{ fontSize: '1.3rem', fontWeight: 800, color: '#fff', marginBottom: '0.4rem' }}>Reserve Session</h3>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                          {hasEnergyPricing ? (
+                            <div className="modern-pricing-pill" style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', background: 'rgba(255,255,255,0.03)', padding: '0.4rem 0.8rem', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
+                              <span style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--brand-green)' }}>{formatPKR(fees.rateUsed)} <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 400 }}>/ kWh</span></span>
+                              <div style={{ width: '1px', height: '12px', background: 'rgba(255,255,255,0.1)' }} />
+                              <span style={{ fontSize: '0.6rem', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '1px', color: currentBand === PRICING_BAND.DAY ? 'var(--brand-cyan)' : '#fbbf24', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                {currentBand === PRICING_BAND.DAY ? <Zap size={10} /> : <Moon size={10} />}
+                                {currentBand}
+                              </span>
+                            </div>
+                          ) : (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                              <span style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--brand-green)' }}>{formatPKR(listing.pricePerHour)} <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 400 }}>/ hr</span></span>
+                              <div style={{ fontSize: '0.6rem', color: 'var(--text-secondary)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '1px' }}>Legacy Hourly Rate</div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <div style={{
+                        position: 'absolute',
+                        top: '1rem',
+                        right: '1rem',
+                        background: 'rgba(0,210,106,0.1)',
+                        padding: '0.2rem 0.4rem',
+                        borderRadius: '4px',
+                        border: '1px solid rgba(0,210,106,0.2)',
+                        height: 'fit-content'
+                      }}>
+                        <span style={{ fontSize: '0.55rem', fontWeight: 800, color: 'var(--brand-green)', textTransform: 'uppercase' }}>Available Today</span>
+                      </div>
+                    </div>
+                  </div>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginBottom: '1.5rem' }}>
-                  <div style={{ border: '1px solid var(--border-color)', padding: '0.75rem 1rem', borderRadius: '10px', background: 'rgba(255,255,255,0.02)' }}>
-                    <label style={{ display: 'block', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-secondary)', marginBottom: '0.5rem', fontWeight: 600 }}>Date</label>
-                    <DatePicker 
-                      selected={selectedDate instanceof Date ? selectedDate : new Date(selectedDate)} 
-                      onChange={(date) => setSelectedDate(date)} 
-                      minDate={new Date()}
-                      dateFormat="MMM d, yyyy"
-                      customInput={
-                        <button className="custom-date-input">
-                          <Calendar size={18} color="var(--brand-green)" />
-                          {selectedDate instanceof Date ? selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : new Date(selectedDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', marginBottom: '2rem' }}>
+                    {/* Date — Full Width */}
+                    <div style={{ border: '1px solid var(--border-color)', padding: '1rem', borderRadius: '12px', background: 'rgba(255,255,255,0.02)', boxShadow: 'inset 0 1px 1px rgba(255,255,255,0.05)' }}>
+                      <label style={{ display: 'block', fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: '1.2px', color: 'var(--text-secondary)', marginBottom: '0.6rem', fontWeight: 800 }}>Choose Date</label>
+                      <DatePicker
+                        selected={selectedDate instanceof Date ? selectedDate : new Date(selectedDate)}
+                        onChange={(date) => setSelectedDate(date)}
+                        minDate={new Date()}
+                        dateFormat="EEEE, MMMM d, yyyy"
+                        customInput={
+                          <button className="custom-date-input" style={{ width: '100%', border: 'none', background: 'transparent', display: 'flex', alignItems: 'center', gap: '12px', color: '#fff', fontSize: '1rem', padding: 0, textAlign: 'left', cursor: 'pointer' }}>
+                            <div style={{ background: 'rgba(0,210,106,0.1)', padding: '8px', borderRadius: '8px' }}><Calendar size={20} color="var(--brand-green)" /></div>
+                            <span style={{ fontWeight: 600 }}>{selectedDate instanceof Date ? selectedDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }) : new Date(selectedDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                          </button>
+                        }
+                      />
+                    </div>
+
+                    {/* Row 2 — Time and (Conditional) Vehicle */}
+                    <div style={{ display: 'flex', gap: '16px' }}>
+                      {/* Start Time Dropdown */}
+                      <div className="custom-dropdown-container" style={{ flex: 1, position: 'relative' }}>
+                        <label style={{ display: 'block', fontSize: '0.65rem', color: 'var(--text-secondary)', marginBottom: '0.4rem', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 800 }}>Arrival</label>
+                        <button
+                          onClick={() => setIsStartOpen(!isStartOpen)}
+                          style={{
+                            width: '100%',
+                            height: '64px',
+                            background: 'rgba(255,255,255,0.03)',
+                            border: `1px solid ${isStartOpen ? 'var(--brand-green)' : 'var(--border-color)'}`,
+                            padding: '0.75rem 1rem',
+                            borderRadius: '12px',
+                            color: '#fff',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '12px',
+                            cursor: 'pointer',
+                            transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                            boxShadow: isStartOpen ? '0 8px 16px rgba(0,0,0,0.3)' : 'none'
+                          }}
+                        >
+                          <Clock size={18} color="var(--brand-green)" />
+                          <span style={{ fontSize: '1rem', fontWeight: 700 }}>{selectedStart ? formatTime12h(selectedStart) : 'Select'}</span>
+                          <ChevronDown size={16} style={{ opacity: 0.3, marginLeft: 'auto', transform: isStartOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
                         </button>
-                      }
-                    />
-                  </div>
-                  <div style={{ display: 'flex', gap: '10px' }}>
-                    {/* Start Time Dropdown */}
-                    <div className="custom-dropdown-container" style={{ flex: 1, position: 'relative' }}>
-                      <label style={{ display: 'block', fontSize: '0.7rem', color: 'var(--text-secondary)', marginBottom: '0.4rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Start Time</label>
-                      <button 
-                        onClick={() => setIsStartOpen(!isStartOpen)}
-                        style={{ 
-                          width: '100%', 
-                          background: 'rgba(255,255,255,0.03)', 
-                          border: `1px solid ${isStartOpen ? 'var(--brand-green)' : 'var(--border-color)'}`, 
-                          padding: '0.75rem', 
-                          borderRadius: '10px',
-                          color: '#fff',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          cursor: 'pointer',
-                          transition: 'all 0.2s'
-                        }}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <Clock size={14} color="var(--brand-green)" />
-                          <span style={{ fontSize: '0.9rem' }}>{selectedStart ? formatTime12h(selectedStart) : 'Select'}</span>
-                        </div>
-                        <ChevronDown size={14} style={{ transform: isStartOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
-                      </button>
 
-                      {isStartOpen && (
-                        <div style={{ 
-                          position: 'absolute', top: '100%', left: 0, right: 0, marginTop: '5px',
-                          background: 'var(--bg-card)', border: '1px solid var(--border-color)',
-                          borderRadius: '10px', overflow: 'hidden', zIndex: 100,
-                          boxShadow: '0 10px 30px rgba(0,0,0,0.5)', backdropFilter: 'blur(12px)'
-                        }}>
-                          <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
-                            {slots.filter(s => !s.isBooked).map(s => (
-                              <button 
-                                key={s.startTime}
-                                onClick={() => { setSelectedStart(s.startTime); setIsStartOpen(false); }}
-                                style={{ 
-                                  width: '100%', padding: '0.75rem 1rem', background: 'transparent',
-                                  border: 'none', color: selectedStart === s.startTime ? 'var(--brand-green)' : '#fff',
-                                  textAlign: 'left', cursor: 'pointer', fontSize: '0.9rem',
-                                  display: 'flex', alignItems: 'center', justifyContent: 'space-between'
-                                }}
-                                onMouseOver={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
-                                onMouseOut={e => e.currentTarget.style.background = 'transparent'}
-                              >
-                                {formatTime12h(s.startTime)}
-                                {selectedStart === s.startTime && <div style={{ width: '4px', height: '4px', borderRadius: '50%', background: 'var(--brand-green)' }} />}
-                              </button>
-                            ))}
-                            {slots.filter(s => !s.isBooked).length === 0 && (
-                              <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>No slots avail</div>
-                            )}
+                        {isStartOpen && (
+                          <div style={{
+                            position: 'absolute', top: '100%', left: 0, width: '100%', marginTop: '10px',
+                            background: 'rgba(23, 23, 23, 1)', border: '1px solid rgba(255,255,255,0.1)',
+                            borderRadius: '12px', overflow: 'hidden', zIndex: 1000,
+                            boxShadow: '0 20px 50px rgba(0,0,0,0.8)', backdropFilter: 'blur(30px)'
+                          }}>
+                            <div style={{ maxHeight: '240px', overflowY: 'auto', padding: '8px' }}>
+                              {slots.filter(s => !s.isBooked).map(s => (
+                                <button
+                                  key={s.startTime}
+                                  onClick={() => { setSelectedStart(s.startTime); setIsStartOpen(false); }}
+                                  style={{
+                                    width: '100%', padding: '0.9rem 1.2rem', background: 'transparent',
+                                    border: 'none', color: selectedStart === s.startTime ? 'var(--brand-green)' : '#fff',
+                                    textAlign: 'left', cursor: 'pointer', fontSize: '0.95rem',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                    borderRadius: '10px', transition: 'background 0.2s'
+                                  }}
+                                  onMouseOver={e => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
+                                  onMouseOut={e => e.currentTarget.style.background = 'transparent'}
+                                >
+                                  {formatTime12h(s.startTime)}
+                                  {selectedStart === s.startTime && <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--brand-green)' }} />}
+                                </button>
+                              ))}
+                            </div>
                           </div>
+                        )}
+                      </div>
+
+                      {/* Vehicle Size Selection — Responsive to Energy Pricing */}
+                      {hasEnergyPricing && (
+                        <div className="custom-dropdown-container" style={{ flex: 1.2, position: 'relative' }}>
+                          <label style={{ display: 'block', fontSize: '0.65rem', color: 'var(--text-secondary)', marginBottom: '0.4rem', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 800 }}>Vehicle</label>
+                          <button
+                            onClick={() => setIsVehicleOpen(!isVehicleOpen)}
+                            style={{
+                              width: '100%',
+                              height: '84px',
+                              background: 'rgba(255,255,255,0.03)',
+                              border: `1px solid ${isVehicleOpen ? 'var(--brand-green)' : 'var(--border-color)'}`,
+                              padding: '0.75rem',
+                              borderRadius: '12px',
+                              color: '#fff',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '6px',
+                              cursor: 'pointer',
+                              transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                              boxShadow: isVehicleOpen ? '0 8px 16px rgba(0,0,0,0.3)' : 'none'
+                            }}
+                          >
+                            <Zap size={16} color="var(--brand-green)" />
+                            <span style={{ fontSize: '1rem', fontWeight: 600 }}>{vehicleSize === 'MEDIUM' ? 'Medium' : vehicleSize.charAt(0) + vehicleSize.slice(1).toLowerCase()}</span>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--brand-cyan)', fontWeight: 600 }}>{ENERGY_BY_SIZE[vehicleSize]} kWh</div>
+                          </button>
+
+                          {isVehicleOpen && (
+                            <div style={{
+                              position: 'absolute', top: '100%', right: 0, width: '310px', marginTop: '10px',
+                              background: 'rgba(18, 18, 18, 1)', border: '1px solid rgba(255,255,255,0.15)',
+                              borderRadius: '16px', overflow: 'hidden', zIndex: 1000,
+                              boxShadow: '0 30px 80px rgba(0,0,0,0.95)', backdropFilter: 'blur(40px)'
+                            }}>
+                              <div style={{ padding: '8px' }}>
+                                {Object.keys(VEHICLE_SIZES).map(size => (
+                                  <button
+                                    key={size}
+                                    onClick={() => { setVehicleSize(size); setIsVehicleOpen(false); }}
+                                    style={{
+                                      width: '100%', padding: '1.25rem 1.5rem', background: 'transparent',
+                                      border: 'none', color: vehicleSize === size ? 'var(--brand-green)' : '#fff',
+                                      textAlign: 'left', cursor: 'pointer', fontSize: '0.95rem',
+                                      borderRadius: '12px', transition: 'all 0.2s',
+                                      display: 'flex', flexDirection: 'column', gap: '4px',
+                                      marginBottom: '6px'
+                                    }}
+                                    onMouseOver={e => e.currentTarget.style.background = 'rgba(255,255,255,0.08)'}
+                                    onMouseOut={e => e.currentTarget.style.background = 'transparent'}
+                                  >
+                                    <span style={{ fontWeight: 700, fontSize: '1.05rem', whiteSpace: 'nowrap', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                      {size === 'SMALL' ? 'Small Car (40 kWh)' : size === 'MEDIUM' ? 'Medium-size (60 kWh)' : 'Large SUV (80 kWh)'}
+                                      {vehicleSize === size && <CheckCircle size={14} color="var(--brand-green)" />}
+                                    </span>
+                                    <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: '1.4', opacity: 0.8 }}>
+                                      {size === 'SMALL' ? 'Ideal for Hatchbacks & small city EVs' : size === 'MEDIUM' ? 'Ideal for Sedans, Crossovers & compact SUVs' : 'Ideal for full-size SUVs, Trucks & Luxury EVs'}
+                                    </span>
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
+                  </div>
 
-                    {/* Duration Dropdown */}
-                    <div className="custom-dropdown-container" style={{ flex: 1, position: 'relative' }}>
-                      <label style={{ display: 'block', fontSize: '0.7rem', color: 'var(--text-secondary)', marginBottom: '0.4rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Duration</label>
-                      <button 
-                        onClick={() => setIsDurationOpen(!isDurationOpen)}
-                        style={{ 
-                          width: '100%', 
-                          background: 'rgba(255,255,255,0.03)', 
-                          border: `1px solid ${isDurationOpen ? 'var(--brand-green)' : 'var(--border-color)'}`, 
-                          padding: '0.75rem', 
-                          borderRadius: '10px',
-                          color: '#fff',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          cursor: 'pointer',
-                          transition: 'all 0.2s'
-                        }}
+                  {/* Microcopy Help Text */}
+                  {hasEnergyPricing && currentBand === PRICING_BAND.NIGHT && (
+                    <div style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(251, 191, 36, 0.05)', padding: '0.8rem 1rem', borderRadius: '12px', border: '1px solid rgba(251, 191, 36, 0.2)' }}>
+                      <Moon size={14} color="#fbbf24" />
+                      <span style={{ fontSize: '0.85rem', color: '#fbbf24', fontWeight: 600 }}>Night bookings are charged at a higher rate.</span>
+                    </div>
+                  )}
+
+                  {/* Pricing Breakdown */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: '1.5rem', background: 'rgba(255,255,255,0.02)', borderRadius: '16px', border: '1px solid var(--border-color)', marginBottom: '1.5rem' }}>
+                    {hasEnergyPricing ? (
+                      <>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.6rem', fontSize: '0.9rem' }}>
+                          <span style={{ color: 'var(--text-secondary)' }}>Rate ({currentBand})</span>
+                          <span style={{ fontWeight: 600 }}>{formatPKR(fees.rateUsed)}/kWh</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.6rem', fontSize: '0.9rem' }}>
+                          <span style={{ color: 'var(--text-secondary)' }}>Energy Estimate</span>
+                          <span style={{ fontWeight: 600 }}>{fees.energyKwh} kWh</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.6rem', fontSize: '0.9rem' }}>
+                          <span style={{ color: 'var(--text-secondary)' }}>Service Fee</span>
+                          <span style={{ fontWeight: 600 }}>{formatPKR(fees.userServiceFee)}</span>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.6rem', fontSize: '0.9rem', whiteSpace: 'nowrap' }}>
+                          <span style={{ color: 'var(--text-secondary)' }}>Base ({duration}hr window)</span>
+                          <span style={{ fontWeight: 600 }}>{formatPKR(fees.baseCharge || fees.baseFee)}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.6rem', fontSize: '0.9rem' }}>
+                          <span style={{ color: 'var(--text-secondary)' }}>Service fee</span>
+                          <span style={{ fontWeight: 600 }}>{formatPKR(fees.userServiceFee || fees.serviceFee)}</span>
+                        </div>
+                      </>
+                    )}
+
+                    <div style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      marginTop: '1.25rem',
+                      paddingTop: '1.25rem',
+                      borderTop: '1px dashed rgba(255,255,255,0.1)',
+                      width: '100%'
+                    }}>
+                      <span style={{ color: '#fff', fontSize: '1rem', fontWeight: 700 }}>Total Payable</span>
+                      <span style={{ color: 'var(--brand-green)', fontSize: '1.15rem', fontWeight: 800, marginLeft: 'auto' }}>{formatPKR(fees.userTotal || fees.totalFee)}</span>
+                    </div>
+                  </div>
+
+                  {!userCanBook ? (
+                    <>
+                      <button
+                        className="btn btn-secondary"
+                        style={{ width: '100%', fontSize: '1.05rem', padding: '0.8rem', border: '1px solid var(--brand-cyan)', color: 'var(--brand-cyan)' }}
+                        onClick={() => navigate(user ? '/app/verification' : '/login')}
                       >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <Timer size={14} color="var(--brand-green)" />
-                          <span style={{ fontSize: '0.9rem' }}>{duration} hour{duration > 1 ? 's' : ''}</span>
-                        </div>
-                        <ChevronDown size={14} style={{ transform: isDurationOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+                        {!user ? 'Login to Book' : user?.verificationStatus === 'under_review' ? 'Verification Pending...' : 'Complete Verification to Book'}
                       </button>
-
-                      {isDurationOpen && (
-                        <div style={{ 
-                          position: 'absolute', top: '100%', left: 0, right: 0, marginTop: '5px',
-                          background: 'var(--bg-card)', border: '1px solid var(--border-color)',
-                          borderRadius: '10px', overflow: 'hidden', zIndex: 100,
-                          boxShadow: '0 10px 30px rgba(0,0,0,0.5)', backdropFilter: 'blur(12px)'
-                        }}>
-                          {[1, 2, 3, 4].map(h => (
-                            <button 
-                              key={h}
-                              onClick={() => { setDuration(h); setIsDurationOpen(false); }}
-                              style={{ 
-                                width: '100%', padding: '0.75rem 1rem', background: 'transparent',
-                                border: 'none', color: duration === h ? 'var(--brand-green)' : '#fff',
-                                textAlign: 'left', cursor: 'pointer', fontSize: '0.9rem',
-                                display: 'flex', alignItems: 'center', justifyContent: 'space-between'
-                              }}
-                              onMouseOver={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
-                              onMouseOut={e => e.currentTarget.style.background = 'transparent'}
-                            >
-                              {h} hour{h > 1 ? 's' : ''}
-                              {duration === h && <div style={{ width: '4px', height: '4px', borderRadius: '50%', background: 'var(--brand-green)' }} />}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
+                      <div style={{ textAlign: 'center', marginTop: '0.75rem', fontSize: '0.8rem', color: '#fbbf24' }}>
+                        For host safety, booking is available only to verified EV users.
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        className="btn btn-primary"
+                        style={{ width: '100%', fontSize: '1.05rem', padding: '0.8rem' }}
+                        onClick={() => {
+                          const dStr = selectedDate instanceof Date ? selectedDate.toISOString().split('T')[0] : selectedDate;
+                          // If energy pricing is active, pass vehicleSize. If legacy, it's not needed for price but good for context.
+                          navigate(`/app/book/${id}?date=${dStr}&start=${selectedStart}&duration=${duration}&vehicleSize=${vehicleSize}`);
+                        }}
+                        disabled={!selectedStart || slots.filter(s => !s.isBooked).length === 0}
+                      >
+                        Reserve Slot
+                      </button>
+                      <div style={{ textAlign: 'center', marginTop: '0.75rem', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                        You won't be charged yet.
+                      </div>
+                    </>
+                  )}
                 </div>
-
-                {/* Fee Breakdown */}
-                <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '1rem', marginBottom: '1.5rem' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', fontSize: '0.9rem' }}>
-                    <span style={{ color: 'var(--text-secondary)' }}>Base fee ({duration}hr × {formatPKR(listing.pricePerHour)})</span>
-                    <span>{formatPKR(fees.baseFee)}</span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', fontSize: '0.9rem' }}>
-                    <span style={{ color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      Service fee 
-                      <span style={{ fontSize: '0.65rem', background: 'rgba(0,210,106,0.2)', color: 'var(--brand-green)', padding: '1px 5px', borderRadius: '3px' }}>10%</span>
-                    </span>
-                    <span>{formatPKR(fees.serviceFee)}</span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px dashed var(--border-color)', fontWeight: 'bold', fontSize: '1.1rem' }}>
-                    <span>Total</span>
-                    <span style={{ color: 'var(--brand-green)' }}>{formatPKR(fees.totalFee)}</span>
-                  </div>
-                </div>
-
-                {!userCanBook ? (
-                  <>
-                    <button 
-                      className="btn btn-secondary" 
-                      style={{ width: '100%', fontSize: '1.05rem', padding: '0.8rem', border: '1px solid var(--brand-cyan)', color: 'var(--brand-cyan)' }}
-                      onClick={() => navigate(user ? '/app/verification' : '/login')}
-                    >
-                      {!user ? 'Login to Book' : user?.verificationStatus === 'under_review' ? 'Verification Pending...' : 'Complete Verification to Book'}
-                    </button>
-                    <div style={{ textAlign: 'center', marginTop: '0.75rem', fontSize: '0.8rem', color: '#fbbf24' }}>
-                      For host safety, booking is available only to verified EV users.
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <button 
-                      className="btn btn-primary" 
-                      style={{ width: '100%', fontSize: '1.05rem', padding: '0.8rem' }}
-                      onClick={() => {
-                        const dStr = selectedDate instanceof Date ? selectedDate.toISOString().split('T')[0] : selectedDate;
-                        navigate(`/app/book/${id}?date=${dStr}&start=${selectedStart}&duration=${duration}`);
-                      }}
-                      disabled={!selectedStart || slots.filter(s => !s.isBooked).length === 0}
-                    >
-                      Reserve Slot
-                    </button>
-                    <div style={{ textAlign: 'center', marginTop: '0.75rem', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                      You won't be charged yet.
-                    </div>
-                  </>
-                )}
               </div>
             </div>
           </div>

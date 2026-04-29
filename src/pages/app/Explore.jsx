@@ -146,7 +146,22 @@ const Explore = () => {
                 </div>
 
                 <div className="cc-bottom">
-                  <div className="cc-price">Rs. {charger.pricePerHour.toLocaleString()}<span> / hr</span></div>
+                  <div className="cc-price" style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                    {charger.priceDay ? (
+                      <>
+                        <div style={{ fontSize: '1.1rem', color: 'var(--brand-green)', lineHeight: 1 }}>
+                          {formatPKR(charger.priceDay)} <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 400 }}>/ kWh (Day)</span>
+                        </div>
+                        <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 400 }}>
+                          {formatPKR(charger.priceNight)} <span style={{ fontSize: '0.65rem', opacity: 0.8 }}>/ kWh (Night)</span>
+                        </div>
+                      </>
+                    ) : (
+                      <div style={{ fontSize: '1.1rem', color: 'var(--brand-green)', lineHeight: 1 }}>
+                        {formatPKR(charger.pricePerHour)} <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 400 }}>/ hr</span>
+                      </div>
+                    )}
+                  </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                     {charger.rating > 0 && (
                       <div className="cc-rating">
@@ -190,8 +205,8 @@ const Explore = () => {
                   <Popup className="custom-popup">
                     <div className="mc-header">{charger.title}</div>
                     <div className="mc-details">{charger.chargerSpeed} • {charger.area}</div>
-                    <div style={{ color: 'var(--brand-green)', fontWeight: 'bold', marginBottom: '10px' }}>
-                      Rs. {(charger.pricePerHour || 0).toLocaleString()}/hr
+                    <div style={{ color: 'var(--brand-green)', fontWeight: 'bold', marginBottom: '10px', fontSize: '0.9rem' }}>
+                      {charger.priceDay ? `${formatPKR(charger.priceDay)}/${formatPKR(charger.priceNight)} per kWh` : `${formatPKR(charger.pricePerHour)} per hour`}
                     </div>
                     <button className="mc-btn" onClick={() => navigate(`/app/charger/${charger.id}`)}>
                       View Details

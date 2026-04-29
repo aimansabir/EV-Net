@@ -4,6 +4,7 @@ import { Calendar } from 'lucide-react';
 import useAuthStore from '../../store/authStore';
 import { bookingService } from '../../data/api';
 import { formatPKR } from '../../data/feeConfig';
+import { ListSkeleton } from '../../components/ui/Skeleton';
 
 const formatTime12h = (time24) => {
   if (!time24) return '';
@@ -51,8 +52,11 @@ const Bookings = () => {
 
   if (loading) {
     return (
-      <div className="section" style={{ minHeight: 'calc(100vh - 72px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{ color: 'var(--text-secondary)' }}>Loading bookings...</div>
+      <div className="section" style={{ minHeight: 'calc(100vh - 72px)' }}>
+        <div className="container" style={{ maxWidth: '900px' }}>
+          <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '2rem', marginBottom: '1.5rem', opacity: 0.1 }}>My Bookings</h2>
+          <ListSkeleton />
+        </div>
       </div>
     );
   }

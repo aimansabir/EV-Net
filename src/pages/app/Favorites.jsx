@@ -4,6 +4,7 @@ import { Heart } from 'lucide-react';
 import useAppStore from '../../store/appStore';
 import { listingService } from '../../data/api';
 import { formatPKR } from '../../data/feeConfig';
+import { CardSkeleton } from '../../components/ui/Skeleton';
 
 const Favorites = () => {
   const navigate = useNavigate();
@@ -52,8 +53,13 @@ const Favorites = () => {
 
   if (loading) {
     return (
-      <div className="section" style={{ minHeight: 'calc(100vh - 72px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{ color: 'var(--text-secondary)' }}>Loading saved chargers...</div>
+      <div className="section" style={{ minHeight: 'calc(100vh - 72px)' }}>
+        <div className="container" style={{ maxWidth: '1000px' }}>
+          <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '2rem', marginBottom: '1.5rem', opacity: 0.1 }}>Saved Chargers</h2>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1.5rem' }}>
+            {[1, 2, 3].map(i => <CardSkeleton key={i} />)}
+          </div>
+        </div>
       </div>
     );
   }
@@ -128,9 +134,14 @@ const Favorites = () => {
                     {listing.area}, {listing.city} • {listing.chargerType}
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ color: 'var(--brand-green)', fontWeight: 700 }}>
-                      {formatPKR(listing.pricePerHour)} <span style={{ fontWeight: 400, color: 'var(--text-secondary)', fontSize: '0.85rem' }}>/ hr</span>
-                    </span>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                      <span style={{ color: 'var(--brand-green)', fontWeight: 700, fontSize: '1.05rem', lineHeight: 1 }}>
+                        {formatPKR(listing.priceDay)} <span style={{ color: 'var(--text-secondary)', fontWeight: 400, fontSize: '0.7rem' }}>/ kWh (Day)</span>
+                      </span>
+                      <span style={{ color: 'var(--text-secondary)', fontWeight: 400, fontSize: '0.8rem' }}>
+                        {formatPKR(listing.priceNight)} <span style={{ fontSize: '0.65rem', opacity: 0.8 }}>/ kWh (Night)</span>
+                      </span>
+                    </div>
                     {listing.rating > 0 && (
                       <span style={{ color: '#fbbf24', fontSize: '0.85rem' }}>★ {listing.rating}</span>
                     )}

@@ -1,16 +1,17 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useAuthStore from '../../store/authStore';
 import { PakistanEVBrands, ConnectorType } from '../../data/schema';
-import FileUploadDropzone from '../../components/ui/FileUploadDropzone';
+import Avatar from '../../components/ui/Avatar';
+import { profileService } from '../../data/api';
+import { Camera, Loader2 } from 'lucide-react';
 import '../../styles/auth.css';
 
 const UserProfile = () => {
   const navigate = useNavigate();
   const { user, logout } = useAuthStore();
   const [editing, setEditing] = useState(false);
-  const [avatarEditing, setAvatarEditing] = useState(false);
-  const [avatarFile, setAvatarFile] = useState([]);
+  const fileInputRef = useRef(null);
   const [formData, setFormData] = useState({
     name: user?.name || '',
     phone: user?.phone || '',
@@ -18,6 +19,8 @@ const UserProfile = () => {
     evModel: user?.evModel || '',
     connectorPreference: user?.connectorPreference || '',
   });
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState('');
 
   const handleLogout = () => {
     logout();
@@ -29,52 +32,77 @@ const UserProfile = () => {
     setEditing(false);
   };
 
+  const handleAvatarClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file || !user) return;
+    
+    setIsUploading(true);
+    setUploadError('');
+    try {
+      await profileService.uploadAvatar(user.id, file, 'USER');
+      const { reloadUser } = useAuthStore.getState();
+      await reloadUser();
+    } catch (err) {
+      console.error("Avatar upload failed:", err);
+      setUploadError('Failed to upload image.');
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
   return (
     <div className="section" style={{ minHeight: 'calc(100vh - 72px)' }}>
       <div className="container" style={{ maxWidth: '600px' }}>
         <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '2rem', marginBottom: '2rem' }}>My Profile</h2>
 
         {/* Avatar & Name */}
-        <div className="glass-card" style={{ padding: '2rem', textAlign: 'center', marginBottom: '1.5rem', position: 'relative' }}>
-          
-          {!avatarEditing ? (
-            <>
-              <div style={{
-                position: 'absolute', top: '16px', right: '16px', cursor: 'pointer',
-                color: 'var(--brand-cyan)', fontSize: '0.85rem'
-              }} onClick={() => setAvatarEditing(true)}>
-                Edit Photo
-              </div>
-              
-              <div style={{
-                width: '90px', height: '90px', borderRadius: '50%', margin: '0 auto 1rem',
-                background: user?.avatar ? `url(${user.avatar}) center/cover` : 'var(--bg-secondary)',
+        <div className="glass-card" style={{ padding: '2.5rem 2rem', textAlign: 'center', marginBottom: '1.5rem', position: 'relative' }}>
+          <div style={{ position: 'relative', width: '120px', height: '120px', margin: '0 auto 1.5rem' }}>
+            <Avatar 
+              src={user?.avatar} 
+              name={user?.name} 
+              size="120px" 
+              style={{ border: '4px solid var(--brand-green)', boxShadow: '0 8px 24px rgba(0,0,0,0.3)', cursor: 'pointer' }}
+              onClick={handleAvatarClick}
+            />
+            {/* Hidden Input */}
+            <input 
+              type="file" 
+              ref={fileInputRef} 
+              onChange={handleFileChange} 
+              accept="image/jpeg, image/png" 
+              style={{ display: 'none' }} 
+            />
+            
+            {/* Premium Camera FAB */}
+            <button 
+              onClick={handleAvatarClick}
+              disabled={isUploading}
+              style={{
+                position: 'absolute', bottom: '4px', right: '4px',
+                width: '36px', height: '36px', borderRadius: '50%',
+                background: 'var(--brand-green)', border: 'none',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                color: '#fff', fontWeight: 'bold', fontSize: '2.5rem',
-                border: '3px solid var(--brand-green)',
-                boxShadow: '0 4px 12px rgba(0,210,106,0.2)'
-              }}>
-                {!user?.avatar && (user?.name?.[0] || 'U')}
-              </div>
-              <h3 style={{ margin: 0, fontSize: '1.4rem' }}>{user?.name || 'User'}</h3>
-              <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem', margin: '0.3rem 0' }}>{user?.email}</p>
-              <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>{user?.phone}</p>
-            </>
-          ) : (
-            <div style={{ textAlign: 'left' }}>
-               <h4 style={{ margin: '0 0 1rem 0' }}>Update Profile Photo</h4>
-               <FileUploadDropzone 
-                 mode="image"
-                 accept="image/jpeg, image/png"
-                 files={avatarFile}
-                 onChange={setAvatarFile}
-               />
-               <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
-                  <button className="btn btn-secondary" onClick={() => { setAvatarEditing(false); setAvatarFile([]); }} style={{ flex: 1 }}>Cancel</button>
-                  <button className="btn btn-primary" style={{ flex: 1 }} disabled={avatarFile.length === 0} onClick={() => setAvatarEditing(false)}>Save Photo</button>
-               </div>
-            </div>
-          )}
+                color: '#000', cursor: 'pointer',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+              }}
+              onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.1)'}
+              onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
+            >
+              {isUploading ? <Loader2 size={18} className="animate-spin" /> : <Camera size={18} strokeWidth={2.5} />}
+            </button>
+          </div>
+
+          <h3 style={{ margin: 0, fontSize: '1.4rem', fontFamily: 'var(--font-heading)' }}>{user?.name || 'User'}</h3>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem', margin: '0.3rem 0' }}>{user?.email}</p>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>{user?.phone}</p>
+          
+          {uploadError && <p style={{ color: '#f87171', fontSize: '0.75rem', marginTop: '0.5rem' }}>{uploadError}</p>}
         </div>
 
         {/* EV Details */}

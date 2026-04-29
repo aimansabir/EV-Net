@@ -1,19 +1,25 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Info, CheckCircle } from 'lucide-react';
 import useAuthStore from '../../store/authStore';
-import { hostService } from '../../data/api';
-import { ChargerType, PakistanCities } from '../../data/schema';
+import { hostService, listingService, profileService } from '../../data/api';
+import Avatar from '../../components/ui/Avatar';
+import { ChargerType } from '../../data/schema';
+import { PakistanCitiesSorted } from '../../data/pakistanLocations';
 import { getActivationFeeBreakdown, formatPKR } from '../../data/feeConfig';
 import ValidatedInput from '../../components/ui/ValidatedInput';
 import FileUploadDropzone from '../../components/ui/FileUploadDropzone';
-import AreaComboBox from '../../components/ui/AreaComboBox';
+import SearchableSelect from '../../components/ui/SearchableSelect';
+import TimePickerModal from '../../components/ui/TimePickerModal';
+import ListingLocationPicker from '../../components/ui/ListingLocationPicker';
 import '../../styles/auth.css';
 
 const HostOnboarding = () => {
   const navigate = useNavigate();
   const { user } = useAuthStore();
   const [step, setStep] = useState(1);
-  const totalSteps = 6;
+  const [showErrors, setShowErrors] = useState(false);
+  const totalSteps = 7;
   const feeBreakdown = getActivationFeeBreakdown();
 
   const [profile, setProfile] = useState({
@@ -21,77 +27,216 @@ const HostOnboarding = () => {
   });
   const [charger, setCharger] = useState({
     address: '', area: '', chargerType: '7kW AC Type 2', description: '',
+    amenities: [], houseRules: '',
+    lat: null, lng: null
   });
-  const [pricing, setPricing] = useState({ pricePerHour: 500 });
+  
+  // Track if user manually changed city/area to prevent reverse-geocoding overrides
+  const [manualCity, setManualCity] = useState(false);
+  const [manualArea, setManualArea] = useState(false);
+
+  const [pricing, setPricing] = useState({ priceDay: 40, priceNight: 60 });
+  
+  // Refined Time State: Store as HH:mm internally
+  const [timeState, setTimeState] = useState({
+    start: '09:00',
+    end: '18:00'
+  });
+
+  // Modal State for Time Picker
+  const [modalOpen, setModalOpen] = useState(false);
+  const [activePicker, setActivePicker] = useState('start');
+
   const [schedule, setSchedule] = useState({
-    Mon: true, Tue: true, Wed: true, Thu: true, Fri: true, Sat: true, Sun: false,
+    days: { Mon: true, Tue: true, Wed: true, Thu: true, Fri: true, Sat: true, Sun: false },
   });
   
   // File states
+  const [isUploading, setIsUploading] = useState(false);
   const [chargerPhotos, setChargerPhotos] = useState([]);
   const [propertyProofs, setPropertyProofs] = useState([]);
 
-  const handlePublish = async () => {
-    try {
-      // In a real app, we'd pass chargerPhotos[0].file and propertyProofs[0].file to hostService
-      await hostService.submitVerification(user?.id);
-    } catch (e) { /* ignore for MVP */ }
+  const amenityOptions = ['WiFi Available', 'CCTV Security', 'Covered Parking', 'Restroom Access', 'Drinking Water', 'Gated Community', 'Near Restaurants', 'Garden Seating', 'Overnight Available'];
+
+  const handleSaveAndExit = () => {
     navigate('/host/dashboard');
   };
 
-  const stepNames = ['Profile', 'Charger Info', 'Proof Upload', 'Pricing', 'Availability', 'Review & Pay'];
+  const handlePublish = async () => {
+    try {
+      // 1. Create the listing with coordinates
+      await listingService.create({
+        hostId: user?.id,
+        title: `${charger.chargerType} in ${charger.area}`,
+        description: charger.description,
+        city: profile.city,
+        area: charger.area,
+        chargerType: charger.chargerType,
+        priceDay: pricing.priceDay,
+        priceNight: pricing.priceNight,
+        amenities: charger.amenities,
+        houseRules: charger.houseRules.split('\n').filter(r => r.trim()),
+        address: charger.address, // for listing_locations
+        lat: charger.lat,
+        lng: charger.lng
+      });
+
+      // 2. Submit verification
+      await hostService.submitVerification(user?.id);
+      
+      navigate('/host/dashboard');
+    } catch (e) {
+      console.error("Failed to publish listing:", e);
+      alert("Failed to save listing details. Please check your connection and try again.");
+    }
+  };
+
+  const stepNames = ['Profile', 'Charger Info', 'Amenities & Rules', 'Proof Upload', 'Pricing', 'Availability', 'Review & Pay'];
+
+  const formatDisplayTime = (timeStr) => {
+    if (!timeStr) return '';
+    const [h, m] = timeStr.split(':');
+    let hour = parseInt(h);
+    const ampm = hour >= 12 ? 'PM' : 'AM';
+    hour = hour % 12 || 12;
+    return `${hour}:${m} ${ampm}`;
+  };
+
+  // Manual step validation
+  const validateStep = (s) => {
+    if (s === 1) return profile.phone && profile.identityDoc && profile.identityDoc.length === 15;
+    if (s === 2) return charger.address && charger.area && profile.city && charger.lat && charger.lng;
+    if (s === 3) return true;
+    if (s === 4) return chargerPhotos.length > 0 && propertyProofs.length > 0;
+    if (s === 5) return pricing.priceDay >= 10 && pricing.priceNight >= 10;
+    if (s === 6) {
+      const anyDaySelected = Object.values(schedule.days).some(d => d);
+      return anyDaySelected && timeState.start < timeState.end;
+    }
+    return true;
+  };
+
+  const handleContinue = (nextStep) => {
+    if (validateStep(step)) {
+      setStep(nextStep);
+      setShowErrors(false);
+      window.scrollTo(0, 0);
+    } else {
+      setShowErrors(true);
+    }
+  };
 
   return (
     <div className="auth-page" style={{ background: 'var(--bg-main)' }}>
       <div style={{ margin: 'auto', maxWidth: '600px', width: '100%', padding: '2rem 1.5rem' }}>
         
         {/* Progress Header */}
-        <div style={{ marginBottom: '2rem' }}>
-          <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '1.5rem', marginBottom: '0.5rem' }}>
-            Host Onboarding
-          </h2>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: '1rem' }}>
-            Step {step} of {totalSteps}: {stepNames[step - 1]}
-          </p>
-          <div style={{ display: 'flex', gap: '6px' }}>
-            {Array.from({ length: totalSteps }, (_, i) => (
-              <div key={i} style={{ height: '4px', flex: 1, borderRadius: '2px', background: step > i ? 'var(--brand-green)' : step === i + 1 ? 'var(--brand-cyan)' : 'rgba(255,255,255,0.1)', transition: 'background 0.3s' }} />
-            ))}
+        <div style={{ marginBottom: '2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <div>
+            <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '1.5rem', marginBottom: '0.25rem' }}>
+              Host Onboarding
+            </h2>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: '1rem' }}>
+              Step {step} of {totalSteps}: {stepNames[step - 1]}
+            </p>
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            <button onClick={handleSaveAndExit} className="btn-exit" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-color)', color: 'var(--text-main)', padding: '0.4rem 0.8rem', borderRadius: '6px', fontSize: '0.85rem', cursor: 'pointer', display: 'block', marginBottom: '0.5rem', fontWeight: 500 }}>
+              Save & Exit
+            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'flex-end' }}>
+              <CheckCircle size={10} color="var(--brand-green)" />
+              <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>Draft saved</span>
+            </div>
           </div>
         </div>
 
-        <div className="glass-card" style={{ padding: '2rem' }}>
+        <div style={{ display: 'flex', gap: '6px', marginBottom: '2.5rem' }}>
+          {Array.from({ length: totalSteps }, (_, i) => (
+            <div key={i} style={{ height: '4px', flex: 1, borderRadius: '2px', background: step > i ? 'var(--brand-green)' : step === i + 1 ? 'var(--brand-cyan)' : 'rgba(255,255,255,0.1)', transition: 'background 0.3s' }} />
+          ))}
+        </div>
+
+        <div className="glass-card" style={{ padding: '2.5rem' }}>
           
           {/* Step 1: Profile */}
           {step === 1 && (
-            <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <div className="animate-in" style={{ display: 'flex', flexDirection: 'column' }}>
               <h3 style={{ margin: '0 0 0.5rem 0' }}>Complete Your Profile</h3>
               <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', margin: '0 0 1.5rem 0' }}>Verify your identity to build trust with EV users.</p>
-              
+
               <ValidatedInput label="Full Name" value={user?.name || ''} disabled onChange={() => {}} />
-              <ValidatedInput label="Phone Number" format="phone" placeholder="03XXXXXXXXX" required value={profile.phone} onChange={v => setProfile({...profile, phone: v})} />
-              <ValidatedInput label="CNIC Number" format="cnic" placeholder="XXXXX-XXXXXXX-X" required value={profile.identityDoc} onChange={v => setProfile({...profile, identityDoc: v})} />
+              <ValidatedInput label="Phone Number" format="phone" placeholder="03XXXXXXXXX" required value={profile.phone} onChange={v => setProfile({...profile, phone: v})} forceError={showErrors} />
+              <ValidatedInput label="CNIC Number" format="cnic" placeholder="XXXXX-XXXXXXX-X" required value={profile.identityDoc} onChange={v => setProfile({...profile, identityDoc: v})} forceError={showErrors} />
               
-              <button className="btn btn-primary" onClick={() => setStep(2)} style={{ marginTop: '0.5rem' }} disabled={!profile.phone || !profile.identityDoc}>Continue</button>
+              <div style={{ display: 'flex', gap: '1rem', marginTop: '1.5rem' }}>
+                <button className="btn btn-secondary" onClick={handleSaveAndExit} style={{ flex: 1 }}>Exit</button>
+                <button className="btn btn-primary" onClick={() => handleContinue(2)} style={{ flex: 1 }}>
+                  Continue
+                </button>
+              </div>
             </div>
           )}
 
           {/* Step 2: Charger Info */}
           {step === 2 && (
-            <div style={{ display: 'flex', flexDirection: 'column' }}>
-              <h3 style={{ margin: '0 0 1.5rem 0' }}>Charger Details</h3>
-              
-              <ValidatedInput label="Charger Location / Address" placeholder="e.g. House 42, Street 1" required value={charger.address} onChange={v => setCharger({...charger, address: v})} />
-              
-              <div className="auth-row" style={{ display: 'flex', gap: '1rem', width: '100%' }}>
-                <div className="auth-field" style={{ flex: 1, marginBottom: '1.25rem' }}>
-                  <label>City <span style={{ color: 'var(--brand-cyan)' }}>*</span></label>
-                  <select className="auth-select" value={profile.city} onChange={e => setProfile({...profile, city: e.target.value})}>
-                    {PakistanCities.map(c => <option key={c.city}>{c.city}</option>)}
-                  </select>
+            <div className="animate-in" style={{ display: 'flex', flexDirection: 'column' }}>
+              <div style={{ marginBottom: '1.5rem' }}>
+                <h3 style={{ margin: '0 0 0.5rem 0' }}>Charger Location</h3>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Search for your address and drag the pin to your exact parking spot.</p>
+              </div>
+
+              <ListingLocationPicker 
+                initialValue={charger.address}
+                initialLat={charger.lat || 31.5204}
+                initialLng={charger.lng || 74.3587}
+                onLocationChange={(loc) => {
+                  const updates = { 
+                    address: loc.address || charger.address,
+                    lat: loc.lat, 
+                    lng: loc.lng 
+                  };
+                  
+                  // Only update city/area if they haven't been manually touched
+                  if (!manualCity && loc.city) {
+                    setProfile(p => ({ ...p, city: loc.city }));
+                  }
+                  if (!manualArea && loc.area) {
+                    updates.area = loc.area;
+                  }
+                  
+                  setCharger(prev => ({ ...prev, ...updates }));
+                }}
+              />
+
+              <div className="auth-row" style={{ display: 'flex', gap: '1rem', width: '100%', marginBottom: '1.25rem' }}>
+                <div style={{ flex: 1 }}>
+                  <SearchableSelect 
+                    label="City" 
+                    city={profile.city} 
+                    required 
+                    options={PakistanCitiesSorted.map(c => c.city)} 
+                    value={profile.city} 
+                    onChange={v => {
+                      setProfile({...profile, city: v, area: ''});
+                      setManualCity(true);
+                    }} 
+                  />
                 </div>
                 <div style={{ flex: 1 }}>
-                  <AreaComboBox label="Area" city={profile.city} required value={charger.area} onChange={v => setCharger({...charger, area: v})} />
+                  <SearchableSelect 
+                    label="Area" 
+                    required 
+                    options={PakistanCitiesSorted.find(c => c.city === profile.city)?.areas || []} 
+                    placeholder={profile.city ? "Select area" : "Select city first"} 
+                    value={charger.area} 
+                    onChange={v => {
+                      setCharger({...charger, area: v});
+                      setManualArea(true);
+                    }} 
+                    disabled={!profile.city} 
+                  />
+                  {showErrors && !charger.area && <p style={{ color: '#fb7185', fontSize: '0.75rem', marginTop: '0.4rem' }}>Area is required</p>}
                 </div>
               </div>
 
@@ -101,115 +246,199 @@ const HostOnboarding = () => {
                   {Object.values(ChargerType).map(t => <option key={t}>{t}</option>)}
                 </select>
               </div>
-
               <div className="auth-field" style={{ marginBottom: '1.25rem' }}>
                 <label>Description</label>
-                <textarea className="auth-input" rows={3} placeholder="Describe your setup, parking instructions..." value={charger.description} onChange={e => setCharger({...charger, description: e.target.value})} style={{ resize: 'vertical' }} />
+                <textarea className="auth-input" rows={3} placeholder="Describe your setup..." value={charger.description} onChange={e => setCharger({...charger, description: e.target.value})} style={{ resize: 'vertical' }} />
               </div>
-
-              <div style={{ display: 'flex', gap: '1rem', marginTop: '0.5rem' }}>
+              <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
                 <button className="btn btn-secondary" onClick={() => setStep(1)} style={{ flex: 1 }}>Back</button>
-                <button className="btn btn-primary" onClick={() => setStep(3)} style={{ flex: 1 }} disabled={!charger.address || !charger.area}>Continue</button>
+                <button className="btn btn-primary" onClick={() => handleContinue(3)} style={{ flex: 1 }}>Continue</button>
               </div>
             </div>
           )}
 
-          {/* Step 3: Proof Upload */}
+          {/* Step 3: Amenities & Rules */}
           {step === 3 && (
-            <div style={{ display: 'flex', flexDirection: 'column' }}>
-              <h3 style={{ margin: '0 0 0.5rem 0' }}>Upload Proof</h3>
-              <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', margin: '0 0 1.5rem 0' }}>Help us verify your property and charger setup.</p>
-              
-              <FileUploadDropzone 
-                label="Charger Setup Photo" 
-                description="Clear photo of the charger unit installed at the indicated location."
-                mode="image"
-                accept="image/jpeg, image/png"
-                files={chargerPhotos}
-                onChange={setChargerPhotos}
-              />
-
-              <FileUploadDropzone 
-                label="Property Proof" 
-                description="Recent utility bill or deed showing the address matches your listing."
-                accept="image/jpeg, image/png, application/pdf"
-                files={propertyProofs}
-                onChange={setPropertyProofs}
-              />
-
-              <div style={{ display: 'flex', gap: '1rem', marginTop: '0.5rem' }}>
+            <div className="animate-in" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+              <div>
+                <h3 style={{ margin: '0 0 0.5rem 0' }}>Details & Amenities</h3>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Show drivers what makes your spot convenient.</p>
+              </div>
+              <div className="auth-field">
+                <label style={{ marginBottom: '1rem', display: 'block' }}>Amenities</label>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                  {amenityOptions.map(a => {
+                    const isSelected = charger.amenities.includes(a);
+                    return (
+                      <button key={a} type="button" onClick={() => setCharger({...charger, amenities: isSelected ? charger.amenities.filter(x => x !== a) : [...charger.amenities, a]})}
+                        style={{ padding: '0.5rem 1rem', borderRadius: '20px', border: isSelected ? '1px solid var(--brand-green)' : '1px solid var(--border-color)', background: isSelected ? 'rgba(0,210,106,0.15)' : 'transparent', color: isSelected ? 'var(--brand-green)' : 'var(--text-secondary)', cursor: 'pointer', fontSize: '0.85rem', transition: 'all 0.2s' }}>
+                        {a}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className="auth-field">
+                <label>House Rules (one per line)</label>
+                <textarea className="auth-input" rows={3} placeholder="e.g. Park in designated spot" value={charger.houseRules} onChange={e => setCharger({...charger, houseRules: e.target.value})} style={{ resize: 'vertical' }} />
+              </div>
+              <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
                 <button className="btn btn-secondary" onClick={() => setStep(2)} style={{ flex: 1 }}>Back</button>
-                <button className="btn btn-primary" onClick={() => setStep(4)} style={{ flex: 1 }} disabled={chargerPhotos.length === 0 || propertyProofs.length === 0}>Continue</button>
+                <button className="btn btn-primary" onClick={() => handleContinue(4)} style={{ flex: 1 }}>Continue</button>
               </div>
             </div>
           )}
 
-          {/* Step 4: Pricing */}
+          {/* Step 4: Proof Upload */}
           {step === 4 && (
-            <div style={{ display: 'flex', flexDirection: 'column' }}>
-              <h3 style={{ margin: '0 0 1.5rem 0' }}>Set Your Pricing</h3>
-              
-              <ValidatedInput 
-                label="Price per Hour" 
-                format="money" 
-                min={100} max={5000} 
-                required 
-                value={pricing.pricePerHour} 
-                onChange={v => setPricing({pricePerHour: v})} 
-              />
+            <div className="animate-in" style={{ display: 'flex', flexDirection: 'column' }}>
+              <h3 style={{ margin: '0 0 0.5rem 0' }}>Upload Proof</h3>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', margin: '0 0 1.5rem 0' }}>Maintain trust by verifying property ownership.</p>
+              <FileUploadDropzone label="Charger Setup Photo" mode="image" files={chargerPhotos} onChange={setChargerPhotos} />
+              {showErrors && chargerPhotos.length === 0 && <p style={{ color: '#fb7185', fontSize: '0.75rem', marginTop: '-0.5rem', marginBottom: '1rem' }}>Charger photo is required</p>}
+              <FileUploadDropzone label="Property Proof (Bill/Deed)" files={propertyProofs} onChange={setPropertyProofs} />
+              {showErrors && propertyProofs.length === 0 && <p style={{ color: '#fb7185', fontSize: '0.75rem', marginTop: '-0.5rem', marginBottom: '1rem' }}>Property proof is required</p>}
+              <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
+                <button className="btn btn-secondary" onClick={() => setStep(3)} style={{ flex: 1 }}>Back</button>
+                <button className="btn btn-primary" onClick={() => handleContinue(5)} style={{ flex: 1 }}>Continue</button>
+              </div>
+            </div>
+          )}
 
-              <div style={{ background: 'rgba(0,210,106,0.05)', border: '1px solid rgba(0,210,106,0.2)', padding: '1rem', borderRadius: '8px', marginBottom: '1.5rem' }}>
-                <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                  <strong style={{ color: '#fff' }}>You'll earn ~85%</strong> of the base fee per booking. EV-Net takes a 15% platform commission. Your estimated hourly earning: <strong style={{ color: 'var(--brand-green)' }}>{formatPKR(Math.round((pricing.pricePerHour || 0) * 0.85))}</strong>
+          {/* Step 5: Pricing */}
+          {step === 5 && (
+            <div className="animate-in" style={{ display: 'flex', flexDirection: 'column' }}>
+              <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
+                <h3 style={{ margin: '0 0 0.5rem 0' }}>Set Your Pricing</h3>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Choose fair rates per kWh. Solar availability makes day rates cheaper.</p>
+              </div>
+              
+              <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem' }}>
+                <div style={{ flex: 1 }}>
+                  <ValidatedInput 
+                    label="Day Rate (per kWh)" 
+                    format="money" 
+                    min={5} max={500} 
+                    required 
+                    compact
+                    value={pricing.priceDay} 
+                    onChange={v => setPricing({...pricing, priceDay: v})} 
+                    forceError={showErrors}
+                  />
+                  <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '4px' }}>08:00 AM - 08:00 PM (Solar cheaper)</p>
+                </div>
+                <div style={{ flex: 1 }}>
+                  <ValidatedInput 
+                    label="Night Rate (per kWh)" 
+                    format="money" 
+                    min={5} max={500} 
+                    required 
+                    compact
+                    value={pricing.priceNight} 
+                    onChange={v => setPricing({...pricing, priceNight: v})} 
+                    forceError={showErrors}
+                  />
+                  <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '4px' }}>08:00 PM - 08:00 AM (Grid only)</p>
+                </div>
+              </div>
+
+              <div style={{ background: 'rgba(0,210,106,0.05)', border: '1px solid var(--border-color)', padding: '1.25rem', borderRadius: '12px', marginBottom: '2.5rem' }}>
+                <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text-secondary)', lineHeight: '1.6' }}>
+                  <strong style={{ color: '#fff' }}>Solar-First Network:</strong> Hosts typically set day rates ~30% lower to encourage daytime charging when solar yield is highest. 
+                  <br />
+                  <span style={{ display: 'block', marginTop: '0.5rem' }}>
+                    <strong style={{ color: '#fff' }}>You'll earn ~85%</strong> of the energy fee. Estimated day payout: <strong style={{ color: 'var(--brand-green)', fontSize: '1.1rem' }}>{formatPKR(Math.round((pricing.priceDay || 0) * 0.85))}/kWh</strong>
+                  </span>
                 </p>
               </div>
 
               <div style={{ display: 'flex', gap: '1rem' }}>
-                <button className="btn btn-secondary" onClick={() => setStep(3)} style={{ flex: 1 }}>Back</button>
-                <button className="btn btn-primary" onClick={() => setStep(5)} style={{ flex: 1 }}>Continue</button>
+                <button className="btn btn-secondary" onClick={() => setStep(4)} style={{ flex: 1 }}>Back</button>
+                <button className="btn btn-primary" onClick={() => handleContinue(6)} style={{ flex: 2 }}>Continue</button>
               </div>
             </div>
           )}
 
-          {/* Step 5: Availability */}
-          {step === 5 && (
-            <div style={{ display: 'flex', flexDirection: 'column' }}>
-              <h3 style={{ margin: '0 0 0.5rem 0' }}>Set Availability</h3>
-              <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', margin: '0 0 1.5rem 0' }}>Choose which days your charger is available.</p>
+          {/* Step 6: Availability (REFINED - PILLS + MODAL) */}
+          {step === 6 && (
+            <div className="animate-in" style={{ display: 'flex', flexDirection: 'column' }}>
+              <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
+                <h3 style={{ margin: '0 0 0.5rem 0' }}>Available Days</h3>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Choose which days drivers can book your spot.</p>
+              </div>
               
-              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '2rem' }}>
-                {Object.entries(schedule).map(([day, active]) => (
-                  <div key={day} onClick={() => setSchedule({...schedule, [day]: !active})}
-                    style={{ padding: '0.5rem 1rem', border: `1px solid ${active ? 'var(--brand-green)' : 'var(--border-color)'}`, background: active ? 'rgba(0,210,106,0.15)' : 'transparent', color: active ? 'var(--brand-green)' : 'var(--text-secondary)', borderRadius: '20px', cursor: 'pointer', fontWeight: 500, transition: 'all 0.2s' }}>
+              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', justifyContent: 'center', marginBottom: '2.5rem' }}>
+                {Object.entries(schedule.days).map(([day, active]) => (
+                  <div key={day} onClick={() => setSchedule({...schedule, days: {...schedule.days, [day]: !active}})}
+                    style={{ 
+                      padding: '0.8rem 1.4rem', border: `1px solid ${active ? 'var(--brand-green)' : 'var(--border-color)'}`, 
+                      background: active ? 'rgba(0,210,106,0.15)' : 'transparent', 
+                      color: active ? 'var(--brand-green)' : 'var(--text-secondary)', 
+                      borderRadius: '12px', cursor: 'pointer', fontWeight: 600, transition: 'all 0.2s', fontSize: '0.95rem' 
+                    }}>
                     {day}
                   </div>
                 ))}
               </div>
 
+              <div style={{ textAlign: 'center', marginBottom: '2.5rem' }}>
+                <h3 style={{ margin: '0 0 1.5rem 0' }}>Service Hours</h3>
+                
+                <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', justifyContent: 'center' }}>
+                  <div 
+                    onClick={() => { setActivePicker('start'); setModalOpen(true); }}
+                    style={{ 
+                      flex: 1, padding: '1.25rem', borderRadius: '16px', background: 'rgba(255,255,255,0.03)', 
+                      border: '1px solid var(--border-color)', cursor: 'pointer', transition: 'all 0.2s'
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--brand-cyan)'}
+                    onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border-color)'}
+                  >
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.4rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>From</span>
+                    <span style={{ fontSize: '1.25rem', fontWeight: 700 }}>{formatDisplayTime(timeState.start)}</span>
+                  </div>
+                  
+                  <div style={{ color: 'var(--border-color)', fontSize: '1.5rem', fontWeight: 300 }}>&mdash;</div>
+
+                  <div 
+                    onClick={() => { setActivePicker('end'); setModalOpen(true); }}
+                    style={{ 
+                      flex: 1, padding: '1.25rem', borderRadius: '16px', background: 'rgba(255,255,255,0.03)', 
+                      border: '1px solid var(--border-color)', cursor: 'pointer', transition: 'all 0.2s'
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--brand-cyan)'}
+                    onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border-color)'}
+                  >
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.4rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>To</span>
+                    <span style={{ fontSize: '1.25rem', fontWeight: 700 }}>{formatDisplayTime(timeState.end)}</span>
+                  </div>
+                </div>
+              </div>
+
+              {showErrors && timeState.start >= timeState.end && (
+                <p style={{ color: '#fb7185', fontSize: '0.85rem', marginBottom: '1.5rem', textAlign: 'center', marginTop: '-1.5rem' }}>End time must be after start time</p>
+              )}
+              
+              <div style={{ background: 'rgba(6, 182, 212, 0.05)', border: '1px solid rgba(6, 182, 212, 0.1)', padding: '1rem', borderRadius: '12px', display: 'flex', gap: '0.75rem', marginBottom: '2rem' }}>
+                <Info size={18} color="var(--brand-cyan)" style={{ flexShrink: 0, marginTop: '2px' }} />
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', margin: 0, lineHeight: '1.5' }}>
+                  You can fine-tune these hours or set custom schedules for specific days later in your host dashboard.
+                </p>
+              </div>
+
               <div style={{ display: 'flex', gap: '1rem' }}>
-                <button className="btn btn-secondary" onClick={() => setStep(4)} style={{ flex: 1 }}>Back</button>
-                <button className="btn btn-primary" onClick={() => setStep(6)} style={{ flex: 1 }}>Continue</button>
+                <button className="btn btn-secondary" onClick={() => setStep(5)} style={{ flex: 1 }}>Back</button>
+                <button className="btn btn-primary" onClick={() => handleContinue(7)} style={{ flex: 2 }}>Continue</button>
               </div>
             </div>
           )}
 
-          {/* Step 6: Review & Pay */}
-          {step === 6 && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+          {/* Step 7: Review & Pay */}
+          {step === 7 && (
+            <div className="animate-in" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
               <h3 style={{ margin: 0 }}>Review & Activate</h3>
-              
               <div style={{ padding: '1.5rem', background: 'rgba(0,0,0,0.3)', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
-                <h4 style={{ marginBottom: '1rem', fontSize: '1.1rem' }}>Host Verification / Listing Activation Fee</h4>
-                <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: '1.5rem' }}>
-                  To maintain quality and safety, a one-time activation fee is required. This covers:
-                </p>
-                <ul style={{ listStyleType: 'disc', paddingLeft: '20px', color: 'var(--text-secondary)', fontSize: '0.85rem', display: 'flex', flexDirection: 'column', gap: '0.3rem', marginBottom: '1.5rem' }}>
-                  <li>Profile and identity verification</li>
-                  <li>Listing review and quality assessment</li>
-                  <li>Platform onboarding and dedicated support</li>
-                  <li>Trust & safety background checks</li>
-                </ul>
-                
+                <h4 style={{ marginBottom: '1rem', fontSize: '1.1rem' }}>Verification & Activation Fee</h4>
                 <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '1rem' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
                     <span style={{ color: 'var(--text-secondary)' }}>Base Activation Fee</span>
@@ -225,16 +454,22 @@ const HostOnboarding = () => {
                   </div>
                 </div>
               </div>
-
               <div style={{ display: 'flex', gap: '1rem' }}>
-                <button className="btn btn-secondary" onClick={() => setStep(5)} style={{ flex: 1 }}>Back</button>
-                <button className="btn btn-primary" onClick={handlePublish} style={{ flex: 2 }}>Pay & Submit for Review</button>
+                <button className="btn btn-secondary" onClick={() => setStep(6)} style={{ flex: 1 }}>Back</button>
+                <button className="btn btn-primary" onClick={handlePublish} style={{ flex: 2 }}>Pay & Submit</button>
               </div>
             </div>
           )}
-
         </div>
       </div>
+      
+      <TimePickerModal 
+        isOpen={modalOpen} 
+        onClose={() => setModalOpen(false)}
+        activeValue={timeState[activePicker]}
+        onSelect={(val) => setTimeState({ ...timeState, [activePicker]: val })}
+        label={activePicker === 'start' ? 'Start Availability' : 'End Availability'}
+      />
     </div>
   );
 };

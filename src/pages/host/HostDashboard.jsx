@@ -4,6 +4,7 @@ import useAuthStore from '../../store/authStore';
 import { hostService } from '../../data/api';
 import { formatPKR } from '../../data/feeConfig';
 import { Clock, AlertCircle, FileText, CheckCircle, Star, Zap, CalendarDays } from 'lucide-react';
+import Skeleton, { ListSkeleton } from '../../components/ui/Skeleton';
 
 const HostDashboard = () => {
   const navigate = useNavigate();
@@ -27,8 +28,28 @@ const HostDashboard = () => {
     load();
   }, [user]);
 
-  if (loading) return <div className="section" style={{ minHeight: 'calc(100vh - 72px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><div style={{ color: 'var(--text-secondary)' }}>Loading...</div></div>;
-  if (!dashboard) return <div className="section" style={{ minHeight: 'calc(100vh - 72px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><div style={{ color: 'var(--text-secondary)' }}>Data unavailable. Please refresh or create a profile.</div></div>;
+  if (loading) {
+    return (
+      <div className="section" style={{ minHeight: 'calc(100vh - 72px)' }}>
+        <div className="container" style={{ maxWidth: '1200px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2rem' }}>
+            <div>
+              <Skeleton width="250px" height="2rem" style={{ marginBottom: '0.5rem' }} />
+              <Skeleton width="180px" height="1rem" />
+            </div>
+            <Skeleton width="120px" height="40px" />
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', marginBottom: '2.5rem' }}>
+            {[1, 2, 3, 4].map(i => <Skeleton key={i} height="100px" />)}
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '2rem' }}>
+            <ListSkeleton />
+            <Skeleton height="300px" />
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const verificationStatus = dashboard.profile?.verificationStatus;
   const showVerificationBanner = verificationStatus && verificationStatus !== 'approved';
@@ -104,7 +125,14 @@ const HostDashboard = () => {
                 {dashboard.listings.map(listing => (
                   <div key={listing.id} className="glass-card" style={{ padding: '1.2rem', display: 'flex', gap: '1rem', alignItems: 'center', cursor: 'pointer' }}
                     onClick={() => navigate('/host/listings')}>
-                    <div style={{ width: '80px', height: '60px', borderRadius: '8px', background: `url(${listing.images[0]}) center/cover`, backgroundColor: '#222', flexShrink: 0 }} />
+                    <div style={{ 
+                      width: '80px', 
+                      height: '60px', 
+                      borderRadius: '8px', 
+                      background: listing.images && listing.images[0] ? `url(${listing.images[0]}) center/cover` : '#222', 
+                      backgroundColor: '#222', 
+                      flexShrink: 0 
+                    }} />
                     <div style={{ flex: 1 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                         <h4 style={{ margin: 0, fontSize: '1rem' }}>{listing.title}</h4>
@@ -114,7 +142,9 @@ const HostDashboard = () => {
                           color: listing.isActive ? 'var(--brand-green)' : '#ef4444',
                         }}>{listing.isActive ? 'Active' : 'Offline'}</span>
                       </div>
-                      <p style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', margin: '0.2rem 0 0' }}>{listing.chargerType} • {formatPKR(listing.pricePerHour)}/hr</p>
+                      <p style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', margin: '0.2rem 0 0' }}>
+                        {listing.chargerType} • Day: {formatPKR(listing.priceDay)}/kWh • Night: {formatPKR(listing.priceNight)}/kWh
+                      </p>
                     </div>
                   </div>
                 ))}
