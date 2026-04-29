@@ -1488,20 +1488,20 @@ export const adminService = {
   },
 
   async verifyHost(userId, decision) {
-    const { error } = await supabase.rpc('admin_verify_host', {
-      p_user_id: userId,
+    const { error } = await supabase.rpc('admin_verify_host_v2', {
       p_approved: decision.approved,
-      p_notes: decision.notes || ''
+      p_notes: decision.notes || '',
+      p_user_id: userId
     });
     if (error) throw new Error(error.message);
     return { success: true };
   },
 
   async verifyUser(userId, decision) {
-    const { error } = await supabase.rpc('admin_verify_user', {
-      p_user_id: userId,
+    const { error } = await supabase.rpc('admin_verify_user_v2', {
       p_approved: decision.approved,
-      p_notes: decision.notes || ''
+      p_notes: decision.notes || '',
+      p_user_id: userId
     });
     if (error) throw new Error(error.message);
     return { success: true };
