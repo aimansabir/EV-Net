@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import useAuthStore from '../store/authStore';
 
 /**
@@ -12,6 +13,7 @@ import useAuthStore from '../store/authStore';
  * Labeled clearly as "Demo Mode" — non-production.
  */
 const DemoSwitcher = () => {
+  const navigate = useNavigate();
   const { role, isAuthenticated, switchRole, logout } = useAuthStore();
   const [isOpen, setIsOpen] = useState(false);
   const [switching, setSwitching] = useState(false);
@@ -27,11 +29,10 @@ const DemoSwitcher = () => {
     setSwitching(true);
     try {
       await switchRole(newRole);
-      // Force navigation based on role
       switch (newRole) {
-        case 'user': window.location.href = '/app/explore'; break;
-        case 'host': window.location.href = '/host/dashboard'; break;
-        case 'admin': window.location.href = '/admin'; break;
+        case 'user': navigate('/app/explore'); break;
+        case 'host': navigate('/host/dashboard'); break;
+        case 'admin': navigate('/admin'); break;
         default: break;
       }
     } catch (err) {
@@ -42,7 +43,7 @@ const DemoSwitcher = () => {
 
   const handleLogout = () => {
     logout();
-    window.location.href = '/';
+    navigate('/');
   };
 
   const roles = [

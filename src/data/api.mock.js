@@ -13,7 +13,7 @@ import {
   createConversation, createMessage,
   UserRole, VerificationStatus, BookingStatus 
 } from './schema.js';
-import { calculateBookingFees, calculateHostPayout, getPricingBand, calculateEnergyBookingFees } from './feeConfig.js';
+import { calculateHostPayout, getPricingBand, calculateEnergyBookingFees } from './feeConfig.js';
 
 // Simulate network delay
 const delay = (ms = 200) => new Promise(resolve => setTimeout(resolve, ms));
@@ -65,7 +65,7 @@ export const authService = {
 
   async verifyPhoneOTP(phone, token, role) {
     await delay(500);
-    console.log('[Mock] Verifying OTP for:', phone, 'Token:', token);
+    console.log('[Mock] Verifying OTP for:', phone, 'Token:', token, 'Role:', role);
     return { success: true, user: _users.find(u => u.phone === phone) };
   },
 
@@ -454,8 +454,17 @@ export const hostService = {
 // ─── VERIFICATION SERVICE ───────────────────────────────
 
 export const verificationService = {
+  getPublicUrl(path) {
+    return path;
+  },
+
+  async getSignedUrl(path) {
+    return path;
+  },
+
   async uploadDocument(userId, profileType, documentType, file) {
     await delay(500);
+    console.log('[Mock] Uploading verification document:', profileType, documentType, file?.name);
     const userIdx = _users.findIndex(u => u.id === userId);
     if (userIdx !== -1) {
       if (documentType === 'CNIC_FRONT') _users[userIdx].cnicSubmitted = true;
@@ -464,6 +473,7 @@ export const verificationService = {
     
     const hostIdx = _hostProfiles.findIndex(h => h.userId === userId);
     if (hostIdx !== -1) {
+      if (documentType === 'CNIC_FRONT') _hostProfiles[hostIdx].cnicSubmitted = true;
       if (documentType === 'PROPERTY_PROOF') _hostProfiles[hostIdx].propertyProofUploaded = true;
       if (documentType === 'CHARGER_PROOF') _hostProfiles[hostIdx].chargerProofUploaded = true;
     }
@@ -473,7 +483,7 @@ export const verificationService = {
 
   async submitForReview(userId, profileType) {
     await delay(300);
-    if (profileType === 'USER') {
+    if (profileType === 'USER' || profileType === 'EV_USER') {
       const idx = _users.findIndex(u => u.id === userId);
       if (idx !== -1) _users[idx].verificationStatus = VerificationStatus.UNDER_REVIEW;
     } else {
@@ -550,7 +560,9 @@ export const adminService = {
       totalHosts: _users.filter(u => u.role === UserRole.HOST).length,
       totalListings: _listings.length,
       activeListings: _listings.filter(l => l.isActive && l.isApproved).length,
-      pendingVerifications: _hostProfiles.filter(h => h.verificationStatus === VerificationStatus.PENDING).length,
+      pendingEvVerifications: _users.filter(u => u.role === UserRole.USER && u.verificationStatus === VerificationStatus.UNDER_REVIEW).length,
+      pendingHostVerifications: _hostProfiles.filter(h => h.verificationStatus === VerificationStatus.UNDER_REVIEW).length,
+      pendingPayments: 0,
       totalBookings: _bookings.length,
       totalRevenue: _bookings.filter(b => b.status === BookingStatus.COMPLETED).reduce((s, b) => s + b.serviceFee, 0),
     };
@@ -609,6 +621,59 @@ export const adminService = {
       _users[idx].canBook = true;
     }
     return _users[idx];
+  },
+
+  async getVerificationSubmissions() {
+    await delay(200);
+    const evSubmissions = _users
+      .filter(u => u.role === UserRole.USER && [VerificationStatus.UNDER_REVIEW, VerificationStatus.REJECTED, VerificationStatus.APPROVED].includes(u.verificationStatus))
+      .map(u => ({
+        id: `mock_ev_${u.id}`,
+        user_id: u.id,
+        user: u,
+        type: 'EV_USER',
+        profile_type: 'EV_USER',
+        status: u.verificationStatus === VerificationStatus.UNDER_REVIEW ? 'pending' : u.verificationStatus,
+        cnic_path: u.cnicPath || 'mock/cnic.jpg',
+        ev_proof_path: u.evProofPath || 'mock/ev-proof.jpg',
+        documentUrls: {
+          cnic_path: u.cnicPath || 'mock/cnic.jpg',
+          ev_proof_path: u.evProofPath || 'mock/ev-proof.jpg',
+        },
+        submittedAt: new Date().toISOString(),
+      }));
+
+    const hostSubmissions = _hostProfiles
+      .filter(h => [VerificationStatus.UNDER_REVIEW, VerificationStatus.REJECTED, VerificationStatus.APPROVED].includes(h.verificationStatus))
+      .map(h => ({
+        id: `mock_host_${h.userId}`,
+        user_id: h.userId,
+        user: _users.find(u => u.id === h.userId),
+        type: 'HOST',
+        profile_type: 'HOST',
+        status: h.verificationStatus === VerificationStatus.UNDER_REVIEW ? 'pending' : h.verificationStatus,
+        cnic_path: h.cnicPath || 'mock/host-cnic.jpg',
+        property_proof_path: h.propertyProofPath || 'mock/property-proof.jpg',
+        charger_proof_path: h.chargerProofPath || 'mock/charger-proof.jpg',
+        documentUrls: {
+          cnic_path: h.cnicPath || 'mock/host-cnic.jpg',
+          property_proof_path: h.propertyProofPath || 'mock/property-proof.jpg',
+          charger_proof_path: h.chargerProofPath || 'mock/charger-proof.jpg',
+        },
+        submittedAt: new Date().toISOString(),
+      }));
+
+    return [...evSubmissions, ...hostSubmissions];
+  },
+
+  async getOnboardingPayments() {
+    await delay(100);
+    return [];
+  },
+
+  async verifyOnboardingPayment() {
+    await delay(100);
+    return { success: true };
   },
 
   async getConversations() {
@@ -824,6 +889,7 @@ export const profileService = {
 
   async uploadAvatar(userId, file, role) {
     await delay(500);
+    console.log('[Mock] Uploading avatar for role:', role);
     const userIdx = _users.findIndex(u => u.id === userId);
     if (userIdx === -1) throw new Error('User not found');
     

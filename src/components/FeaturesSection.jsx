@@ -2,17 +2,20 @@ import React from 'react';
 import { MapPin, CalendarCheck, ShieldCheck, Wallet, BatteryCharging, Clock } from 'lucide-react';
 import './FeaturesSection.css';
 
-const FeatureCard = ({ icon: Icon, title, description }) => (
-  <div className="feature-card glass-card">
-    <div className="feature-icon-wrapper">
-      <Icon className="feature-icon" size={32} />
+const FeatureCard = ({ icon, title, description }) => {
+  const FeatureIcon = icon;
+  return (
+    <div className="feature-card glass-card">
+      <div className="feature-icon-wrapper">
+        <FeatureIcon className="feature-icon" size={32} />
+      </div>
+      <div className="feature-content">
+        <h4 className="feature-title">{title}</h4>
+        <p className="feature-desc">{description}</p>
+      </div>
     </div>
-    <div className="feature-content">
-      <h4 className="feature-title">{title}</h4>
-      <p className="feature-desc">{description}</p>
-    </div>
-  </div>
-);
+  );
+};
 
 const FeaturesSection = () => {
   return (

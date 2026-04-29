@@ -49,11 +49,10 @@ const ChargerDetail = () => {
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [slots, setSlots] = useState([]);
   const [selectedStart, setSelectedStart] = useState('');
-  const [duration, setDuration] = useState(2);
+  const duration = 2;
   const [vehicleSize, setVehicleSize] = useState(VEHICLE_SIZES.SMALL);
   const [userBookings, setUserBookings] = useState([]);
   const [isStartOpen, setIsStartOpen] = useState(false);
-  const [isDurationOpen, setIsDurationOpen] = useState(false);
   const [isVehicleOpen, setIsVehicleOpen] = useState(false);
   const [isCreatingInquiry, setIsCreatingInquiry] = useState(false);
   const { user } = useAuthStore();
@@ -88,7 +87,6 @@ const ChargerDetail = () => {
     const handleClickOutside = (e) => {
       if (!e.target.closest('.custom-dropdown-container')) {
         setIsStartOpen(false);
-        setIsDurationOpen(false);
         setIsVehicleOpen(false);
       }
     };

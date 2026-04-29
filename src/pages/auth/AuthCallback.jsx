@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useAuthStore from '../../store/authStore';
 
@@ -11,7 +11,7 @@ import useAuthStore from '../../store/authStore';
 const AuthCallback = () => {
   const navigate = useNavigate();
   const { isAuthenticated, role, isInitialized, initAuth } = useAuthStore();
-  const [error, setError] = useState(null);
+  const error = isInitialized && !isAuthenticated ? 'Authentication failed. Please try again.' : null;
 
   useEffect(() => {
     // Ensure auth is initialized (it may already be from App.jsx)
@@ -37,8 +37,8 @@ const AuthCallback = () => {
       }
     } else {
       // Auth init completed but no session — something went wrong
-      setError('Authentication failed. Please try again.');
-      setTimeout(() => navigate('/login', { replace: true }), 2000);
+      const timeoutId = setTimeout(() => navigate('/login', { replace: true }), 2000);
+      return () => clearTimeout(timeoutId);
     }
   }, [isInitialized, isAuthenticated, role, navigate]);
 

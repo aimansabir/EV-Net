@@ -180,7 +180,7 @@ export const hostProfiles = [
   },
   {
     userId: 'host_omar',
-    verificationStatus: VerificationStatus.PENDING,
+    verificationStatus: VerificationStatus.UNDER_REVIEW,
     phoneVerified: true,
     identityVerified: true,
     propertyProofUploaded: true,

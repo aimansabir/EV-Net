@@ -29,7 +29,7 @@ const Favorites = () => {
           listingService.getAll()
         ]),
         timeoutPromise
-      ]).then(async ([_, allListings]) => {
+      ]).then(async ([, allListings]) => {
          setListings(allListings || []);
       });
     } catch (err) {

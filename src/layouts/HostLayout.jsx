@@ -2,7 +2,6 @@ import React from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import useAuthStore from '../store/authStore';
 import logoUrl from '../assets/logo.png';
-import { getHomeRouteByRole } from '../utils/navigation';
 import NotificationCenter from '../components/NotificationCenter';
 import '../components/Navbar.css';
 

@@ -73,7 +73,7 @@ BEGIN
     v_pricing_band := 'NIGHT';
   END IF;
 
-  -- 5) Verification gating (approved EV profile + verified contact + submitted docs)
+  -- 5) Verification gating (approved EV profile + verified email + submitted docs)
   -- NOTE: This matches your confirmed schema expectations for ev_profiles fields.
   IF NOT EXISTS (
     SELECT 1
@@ -81,7 +81,6 @@ BEGIN
     WHERE ep.user_id = v_user_id
       AND ep.verification_status = 'approved'
       AND ep.email_verified IS TRUE
-      AND ep.phone_verified IS TRUE
       AND ep.cnic_submitted IS TRUE
       AND ep.ev_proof_submitted IS TRUE
   ) THEN

@@ -8,7 +8,7 @@
  * Set VITE_USE_MOCK=false in .env.production to use Supabase.
  */
 
-const USE_MOCK = import.meta.env.VITE_USE_MOCK !== 'false';
+const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true';
 
 let api;
 

@@ -14,13 +14,11 @@ import {
   Calendar, Clock, Zap, Moon, ShieldCheck, ArrowLeft, 
   Info, AlertTriangle, CheckCircle, Car, MapPin
 } from 'lucide-react';
-import useAuthStore from '../../store/authStore';
 
 const Checkout = () => {
   const { chargerId } = useParams();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { user } = useAuthStore();
   const [listing, setListing] = useState(null);
   const [confirmed, setConfirmed] = useState(false);
   const [error, setError] = useState('');

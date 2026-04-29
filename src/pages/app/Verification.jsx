@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { CheckCircle, Clock, AlertTriangle, FileText, UploadCloud, PartyPopper } from 'lucide-react';
+import { CheckCircle, Clock, AlertTriangle, FileText, PartyPopper } from 'lucide-react';
 import useAuthStore from '../../store/authStore';
 import { authService, verificationService } from '../../data/api';
 import { VerificationStatus } from '../../data/schema';
@@ -12,16 +12,41 @@ const Verification = () => {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState(null);
-  const [uploading, setUploading] = useState({ cnic: false, ev: false, property: false, charger: false, email: false, phone: false });
-  const [uploadFeedback, setUploadFeedback] = useState({ cnic: null, ev: null, property: null, charger: null, email: null, phone: null });
+  const [uploading, setUploading] = useState({ cnic: false, ev: false, property: false, charger: false, email: false });
+  const [uploadFeedback, setUploadFeedback] = useState({ cnic: null, ev: null, property: null, charger: null, email: null });
   const [replacing, setReplacing] = useState({ cnic: false, ev: false, property: false, charger: false });
-  const [otpSent, setOtpSent] = useState(false);
-  const [otpCode, setOtpCode] = useState('');
+  const [signedUrls, setSignedUrls] = useState({});
 
   // Auto-redirect if they are not a real user or not logged in
   useEffect(() => {
     if (!user) navigate('/login');
   }, [user, navigate]);
+
+  useEffect(() => {
+    let isMounted = true;
+    const loadSignedUrls = async () => {
+      const paths = {
+        identity: user?.cnicPath,
+        ev: user?.evProofPath,
+        property: user?.propertyProofPath,
+        charger: user?.chargerProofPath
+      };
+
+      const entries = await Promise.all(Object.entries(paths).map(async ([key, path]) => [
+        key,
+        path ? await verificationService.getSignedUrl(path) : null
+      ]));
+
+      if (isMounted) {
+        setSignedUrls(Object.fromEntries(entries));
+      }
+    };
+
+    if (user) loadSignedUrls();
+    return () => {
+      isMounted = false;
+    };
+  }, [user]);
 
   if (!user) return null;
 
@@ -82,44 +107,6 @@ const Verification = () => {
     }
   };
 
-  const handlePhoneVerifySend = async () => {
-    if (!user?.phone) {
-      setUploadFeedback(prev => ({ ...prev, phone: 'No phone number found in profile. Please add one in Settings.' }));
-      return;
-    }
-    setUploading(prev => ({ ...prev, phone: true }));
-    setUploadFeedback(prev => ({ ...prev, phone: null }));
-    try {
-      await authService.sendPhoneOTP(user.phone);
-      setOtpSent(true);
-      setUploadFeedback(prev => ({ ...prev, phone: 'OTP sent to WhatsApp!' }));
-    } catch (err) {
-      setUploadFeedback(prev => ({ ...prev, phone: err.message || 'Failed to send OTP.' }));
-    } finally {
-      setUploading(prev => ({ ...prev, phone: false }));
-    }
-  };
-
-  const handlePhoneVerifySubmit = async () => {
-    if (!otpCode || otpCode.length < 6) {
-      setUploadFeedback(prev => ({ ...prev, phone: 'Please enter a valid 6-digit code.' }));
-      return;
-    }
-    setUploading(prev => ({ ...prev, phone: true }));
-    setUploadFeedback(prev => ({ ...prev, phone: null }));
-    try {
-      await authService.verifyPhoneOTP(user.phone, otpCode, user.role);
-      setUploadFeedback(prev => ({ ...prev, phone: 'Phone verified successfully!' }));
-      setOtpSent(false);
-      setOtpCode('');
-      await reloadUser();
-    } catch (err) {
-      setUploadFeedback(prev => ({ ...prev, phone: err.message || 'Invalid OTP code.' }));
-    } finally {
-      setUploading(prev => ({ ...prev, phone: false }));
-    }
-  };
-
   const handleSubmit = async () => {
     // Role-specific validation (Phone is now optional)
     if (user?.role === 'HOST') {
@@ -162,12 +149,6 @@ const Verification = () => {
         ? 'Verified through Google sign-in' 
         : `Check your inbox (${user?.email}) for a magic link.`,
       status: user?.emailVerified ? 'completed' : 'pending',
-    },
-    {
-      id: 'phone',
-      title: 'Phone Verification (Optional)',
-      description: 'We will send a 6-digit OTP code to your registered mobile.',
-      status: user?.phoneVerified ? 'completed' : 'pending',
     },
     {
       id: 'identity',
@@ -299,8 +280,6 @@ const Verification = () => {
                               onClick={() => {
                                 if (step.id === 'email') {
                                   handleEmailVerify();
-                                } else if (step.id === 'phone') {
-                                  handlePhoneVerifySend();
                                 } else {
                                   setUploadFeedback(prev => ({ ...prev, [step.id]: 'Verification request sent. Check your device.' }));
                                 }
@@ -320,36 +299,6 @@ const Verification = () => {
                         )}
                       </div>
 
-                      {/* Phone OTP Input */}
-                      {step.id === 'phone' && otpSent && !isCompleted && !isUnderReview && !isApproved && (
-                        <div style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.8rem', maxWidth: '250px', alignSelf: 'flex-end' }}>
-                          <input 
-                            type="text" 
-                            className="input" 
-                            placeholder="6-digit OTP" 
-                            maxLength={6}
-                            value={otpCode}
-                            onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ''))}
-                            style={{ textAlign: 'center', fontSize: '1.2rem', letterSpacing: '4px', padding: '0.6rem' }}
-                          />
-                          <button 
-                            className="btn btn-primary" 
-                            style={{ padding: '0.6rem' }}
-                            onClick={handlePhoneVerifySubmit}
-                            disabled={uploading.phone}
-                          >
-                            {uploading.phone ? 'Verifying...' : 'Submit OTP'}
-                          </button>
-                          <button 
-                            className="btn-text" 
-                            style={{ fontSize: '0.75rem', color: 'var(--brand-cyan)' }}
-                            onClick={handlePhoneVerifySend}
-                            disabled={uploading.phone}
-                          >
-                            Resend Code
-                          </button>
-                        </div>
-                      )}
                       {/* Document Preview & Replace UI (Only for actual document steps) */}
                       {!isUnderReview && !isApproved && !success && step.status === 'completed' && !replacing[step.id] && 
                        ['identity', 'ev', 'property', 'charger'].includes(step.id) && (
@@ -357,7 +306,7 @@ const Verification = () => {
                           <div style={{ width: '80px', height: '60px', borderRadius: '8px', overflow: 'hidden', background: 'var(--bg-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                             {step.path ? (
                               <img 
-                                src={verificationService.getPublicUrl(step.path)} 
+                                src={signedUrls[step.id] || verificationService.getPublicUrl(step.path)} 
                                 alt="Preview" 
                                 style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
                                 onError={(e) => { e.target.src = ''; e.target.parentElement.innerHTML = '<span style="font-size: 0.6rem; color: var(--text-secondary)">PDF / Doc</span>'; }}
@@ -392,7 +341,7 @@ const Verification = () => {
                       )}
 
                       {/* Action Triggers for Uploads */}
-                      {!isUnderReview && !isApproved && !success && (step.status === 'action_required' || replacing[step.id]) && step.id !== 'email' && step.id !== 'phone' && step.id !== 'account' && (
+                      {!isUnderReview && !isApproved && !success && (step.status === 'action_required' || replacing[step.id]) && step.id !== 'email' && step.id !== 'account' && (
                          <div style={{ marginTop: '1rem' }}>
                            <FileUploadDropzone 
                              accept="image/jpeg, image/png, application/pdf"

@@ -32,12 +32,8 @@ const Explore = () => {
   const [chargers, setChargers] = useState([]);
   const [search, setSearch] = useState('');
   const [selectedId, setSelectedId] = useState(null);
-  const [isMounted, setIsMounted] = useState(false);
+  const isMounted = true;
   const { favorites, loadFavorites, toggleFavorite } = useAppStore();
-
-  useEffect(() => {
-    setIsMounted(true);
-  }, []);
 
   const customIcon = useMemo(() => new L.DivIcon({
     className: 'custom-map-marker',

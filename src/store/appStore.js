@@ -39,12 +39,21 @@ const useAppStore = create((set, get) => ({
   notificationsLoaded: false,
 
   loadNotifications: async (userId) => {
-    const notifs = await notificationService.getByUser(userId);
-    set({ notifications: notifs, notificationsLoaded: true });
+    try {
+      const notifs = await notificationService.getByUser(userId);
+      set({ notifications: notifs, notificationsLoaded: true });
+    } catch (err) {
+      console.warn('[EV-Net] Notification load failed:', err.message);
+      set({ notifications: [], notificationsLoaded: true });
+    }
   },
 
   markNotificationRead: async (notifId) => {
-    await notificationService.markRead(notifId);
+    try {
+      await notificationService.markRead(notifId);
+    } catch (err) {
+      console.warn('[EV-Net] Notification mark-read failed:', err.message);
+    }
     set({
       notifications: get().notifications.map(n =>
         n.id === notifId ? { ...n, isRead: true } : n

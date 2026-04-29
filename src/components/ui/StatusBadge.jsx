@@ -8,14 +8,16 @@ import { Clock, ShieldCheck, AlertCircle, XCircle, FileText } from 'lucide-react
  * Centralized badge rendering for standard entity states.
  */
 const StatusBadge = ({ status, type = 'verification' }) => {
+  const normalizedStatus = typeof status === 'string' ? status.toLowerCase() : status;
   let config = { label: status, color: '#9CA3AF', bg: 'rgba(255,255,255,0.1)', icon: FileText };
 
   if (type === 'verification') {
-    switch (status) {
+    switch (normalizedStatus) {
       case VerificationStatus.DRAFT:
         config = { label: 'Draft', color: '#9CA3AF', bg: 'rgba(255,255,255,0.05)', icon: FileText };
         break;
       case VerificationStatus.PENDING_DOCS:
+      case 'pending':
         config = { label: 'Action Required', color: '#fbbf24', bg: 'rgba(251,191,36,0.1)', icon: AlertCircle };
         break;
       case VerificationStatus.UNDER_REVIEW:
@@ -33,17 +35,17 @@ const StatusBadge = ({ status, type = 'verification' }) => {
   }
 
   if (type === 'booking') {
-    switch (status) {
-        case BookingStatus.PENDING:
+    switch (normalizedStatus) {
+        case BookingStatus.PENDING.toLowerCase():
           config = { label: 'Pending', color: '#fbbf24', bg: 'rgba(251,191,36,0.1)', icon: Clock };
           break;
-        case BookingStatus.CONFIRMED:
+        case BookingStatus.CONFIRMED.toLowerCase():
           config = { label: 'Confirmed', color: 'var(--brand-cyan)', bg: 'rgba(0,240,255,0.1)', icon: ShieldCheck };
           break;
-        case BookingStatus.COMPLETED:
+        case BookingStatus.COMPLETED.toLowerCase():
           config = { label: 'Completed', color: 'var(--brand-green)', bg: 'rgba(0,210,106,0.1)', icon: ShieldCheck };
           break;
-        case BookingStatus.CANCELLED:
+        case BookingStatus.CANCELLED.toLowerCase():
           config = { label: 'Cancelled', color: '#ef4444', bg: 'rgba(239,68,68,0.1)', icon: XCircle };
           break;
         default:

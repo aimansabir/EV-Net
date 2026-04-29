@@ -10,13 +10,10 @@ import {
   ArrowLeft,
   MessageSquare
 } from 'lucide-react';
-import useAuthStore from '../store/authStore';
 import logoUrl from '../assets/logo.png';
-import { getHomeRouteByRole } from '../utils/navigation';
 import '../components/Navbar.css';
 
 const AdminLayout = ({ children }) => {
-  const { user } = useAuthStore();
   const location = useLocation();
   const navItems = [
     { path: '/admin', label: 'Dashboard', icon: LayoutDashboard },

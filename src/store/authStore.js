@@ -9,6 +9,7 @@ import { create } from 'zustand';
 import { authService } from '../data/api.js';
 
 const STORAGE_KEY = 'EV-Net_auth';
+const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true';
 
 // Load persisted auth state
 function loadPersistedAuth() {
@@ -22,7 +23,7 @@ function loadPersistedAuth() {
         isAuthenticated: !!parsed.user,
       };
     }
-  } catch (e) {
+  } catch {
     // Ignore corrupt localStorage
   }
   return { user: null, role: 'guest', isAuthenticated: false };
@@ -34,7 +35,7 @@ function persistAuth(state) {
       user: state.user,
       role: state.role,
     }));
-  } catch (e) {
+  } catch {
     // Ignore storage errors
   }
 }
@@ -100,7 +101,12 @@ const useAuthStore = create((set, get) => ({
           set({ isAuthHydrating: false });
         });
       } else {
-        // 2. No Supabase session — fall back to localStorage (mock mode)
+        // 2. No Supabase session - fall back to localStorage only in explicit mock mode
+        if (!USE_MOCK) {
+          get()._clearAuth();
+          return;
+        }
+
         const persisted = loadPersistedAuth();
         if (persisted.user) {
           // Provisionally trust persisted state for mock speed
@@ -308,7 +314,9 @@ const useAuthStore = create((set, get) => ({
         set(state);
         persistAuth({ ...get(), ...state });
       }
-    } catch (err) {}
+    } catch (err) {
+      console.warn('[EV-Net] Failed to reload current user:', err.message);
+    }
   },
 
   /**

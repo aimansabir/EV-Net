@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import { AlertCircle, Plus, Minus } from 'lucide-react';
 
 /**
@@ -26,12 +26,41 @@ const ValidatedInput = ({
   const [error, setError] = useState('');
   const [touched, setTouched] = useState(false);
 
-  // Trigger validation if parent forces it
-  useEffect(() => {
-    if (forceError) {
-      handleBlur();
+  const getValidationError = useCallback(() => {
+    let newError = '';
+
+    if (required && (!value || String(value).trim() === '')) {
+      newError = 'This field is required';
+    } else if (value) {
+      if (format === 'phone' && value.length < 11) {
+        newError = 'Invalid phone format (e.g. 03XXXXXXXXX)';
+      } else if (format === 'email') {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(value)) newError = 'Please enter a valid email';
+      } else if (format === 'cnic' && value.length !== 15) {
+        newError = 'CNIC must be 13 digits (XXXXX-XXXXXXX-X)';
+      } else if (format === 'password' && value.length < 8) {
+        newError = 'Password must be at least 8 characters';
+      }
+      
+      if (format === 'money' || format === 'numeric') {
+          const numValue = Number(value);
+          if (min !== undefined && numValue < min) newError = `Minimum value is ${min}`;
+          if (max !== undefined && numValue > max) newError = `Maximum value is ${max}`;
+      }
     }
-  }, [forceError]);
+
+    return newError;
+  }, [format, max, min, required, value]);
+
+  // Run final validation passes when user leaves the field
+  const handleBlur = useCallback(() => {
+    setTouched(true);
+    const newError = getValidationError();
+    setError(newError);
+  }, [getValidationError]);
+
+  const displayError = error || (forceError ? getValidationError() : '');
 
   // Strip invalid characters immediately upon typing
   const handleChange = (e) => {
@@ -58,35 +87,6 @@ const ValidatedInput = ({
     }
 
     onChange(val);
-  };
-
-  // Run final validation passes when user leaves the field
-  const handleBlur = () => {
-    setTouched(true);
-    let newError = '';
-
-    if (required && (!value || String(value).trim() === '')) {
-      newError = 'This field is required';
-    } else if (value) {
-      if (format === 'phone' && value.length < 11) {
-        newError = 'Invalid phone format (e.g. 03XXXXXXXXX)';
-      } else if (format === 'email') {
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(value)) newError = 'Please enter a valid email';
-      } else if (format === 'cnic' && value.length !== 15) {
-        newError = 'CNIC must be 13 digits (XXXXX-XXXXXXX-X)';
-      } else if (format === 'password' && value.length < 8) {
-        newError = 'Password must be at least 8 characters';
-      }
-      
-      if (format === 'money' || format === 'numeric') {
-          const numValue = Number(value);
-          if (min !== undefined && numValue < min) newError = `Minimum value is ${min}`;
-          if (max !== undefined && numValue > max) newError = `Maximum value is ${max}`;
-      }
-    }
-
-    setError(newError);
   };
 
   const handleStep = (amount) => {
@@ -142,7 +142,7 @@ const ValidatedInput = ({
         
         <input
           type={type}
-          className={`auth-input ${error ? 'input-error' : ''}`}
+          className={`auth-input ${displayError ? 'input-error' : ''}`}
           placeholder={placeholder}
           value={value}
           onChange={handleChange}
@@ -182,7 +182,7 @@ const ValidatedInput = ({
         )}
       </div>
 
-      {error && (
+      {displayError && (
         <div style={{
           display: 'flex', alignItems: 'center', gap: '0.4rem',
           color: '#fb7185', fontSize: '0.8rem', marginTop: '0.4rem',
@@ -191,7 +191,7 @@ const ValidatedInput = ({
           justifyContent: compact ? 'center' : 'flex-start'
         }}>
           <AlertCircle size={14} />
-          {error}
+          {displayError}
         </div>
       )}
     </div>

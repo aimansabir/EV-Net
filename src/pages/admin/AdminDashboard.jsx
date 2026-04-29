@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { adminService } from '../../data/api';
 import { formatPKR } from '../../data/feeConfig';
 import { 
@@ -11,7 +12,8 @@ import {
   Flag, 
   AlertTriangle,
   CreditCard,
-  ArrowRight
+  ArrowRight,
+  Receipt
 } from 'lucide-react';
 
 const AdminDashboard = () => {
@@ -39,10 +41,10 @@ const AdminDashboard = () => {
   ];
 
   const moderationCards = [
-    { label: 'Pending EV Verifications', value: Math.floor(stats.pendingVerifications / 2), color: '#fbbf24', icon: UserCheck, path: '/admin/verifications' },
-    { label: 'Pending Host Verifications', value: Math.ceil(stats.pendingVerifications / 2), color: '#f59e0b', icon: ShieldCheck, path: '/admin/verifications' },
+    { label: 'Pending EV Verifications', value: stats.pendingEvVerifications, color: '#fbbf24', icon: UserCheck, path: '/admin/verifications' },
+    { label: 'Pending Host Verifications', value: stats.pendingHostVerifications, color: '#f59e0b', icon: ShieldCheck, path: '/admin/verifications' },
+    { label: 'Onboarding Payments', value: stats.pendingPayments, color: '#00F0FF', icon: Receipt, path: '/admin/verifications' },
     { label: 'Flagged Listings', value: '0', color: '#f87171', icon: Flag, path: '/admin/listings' },
-    { label: 'Open Reports / Disputes', value: '0', color: '#ef4444', icon: AlertTriangle, path: '/admin/reports' },
   ];
 
   return (
@@ -91,7 +93,7 @@ const AdminDashboard = () => {
             {moderationCards.map((card, i) => {
               const Icon = card.icon;
               return (
-                <a href={card.path} key={i} className="glass-card" style={{ 
+                <Link to={card.path} key={i} className="glass-card" style={{ 
                   padding: '1.75rem', 
                   border: card.value > 0 ? `1px solid ${card.color}40` : '1px solid var(--border-color)', 
                   background: card.value > 0 ? `${card.color}05` : 'rgba(255,255,255,0.02)',
@@ -111,7 +113,7 @@ const AdminDashboard = () => {
                   </div>
                   <div style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '0.5rem', fontWeight: 500 }}>{card.label}</div>
                   <div style={{ fontSize: '2rem', fontWeight: 800, color: card.value > 0 ? card.color : '#fff' }}>{card.value}</div>
-                </a>
+                </Link>
               );
             })}
           </div>
@@ -121,18 +123,18 @@ const AdminDashboard = () => {
         <div className="glass-card" style={{ padding: '2rem', border: '1px solid var(--border-color)' }}>
           <h3 style={{ marginBottom: '1.5rem', fontSize: '1.1rem' }}>Administrative Actions</h3>
           <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-            <a href="/admin/listings" className="btn btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '0.8rem 1.5rem' }}>
+            <Link to="/admin/listings" className="btn btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '0.8rem 1.5rem' }}>
               <Zap size={18} /> Review Listings
-            </a>
-            <a href="/admin/users" className="btn btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '0.8rem 1.5rem' }}>
+            </Link>
+            <Link to="/admin/users" className="btn btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '0.8rem 1.5rem' }}>
               <Users size={18} /> User Management
-            </a>
-            <a href="/admin/bookings" className="btn btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '0.8rem 1.5rem' }}>
+            </Link>
+            <Link to="/admin/bookings" className="btn btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '0.8rem 1.5rem' }}>
               <CalendarDays size={18} /> Booking Audit
-            </a>
-            <a href="/admin/verifications" className="btn btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '0.8rem 1.5rem', color: '#fb7185', borderColor: 'rgba(225, 29, 72, 0.3)' }}>
+            </Link>
+            <Link to="/admin/verifications" className="btn btn-secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '0.8rem 1.5rem', color: '#fb7185', borderColor: 'rgba(225, 29, 72, 0.3)' }}>
               Open Queue <ArrowRight size={18} />
-            </a>
+            </Link>
           </div>
         </div>
       </div>

@@ -17,7 +17,7 @@ const Login = () => {
     try {
       const { role } = await login(email, password);
       navigateByRole(role);
-    } catch (err) {
+    } catch {
       // error is set in store
     }
   };
@@ -27,7 +27,7 @@ const Login = () => {
     try {
       await demoLogin(role);
       navigateByRole(role);
-    } catch (err) {
+    } catch {
       // error is set in store
     }
   };
@@ -36,7 +36,7 @@ const Login = () => {
     clearError();
     try {
       await loginWithGoogle();
-    } catch (err) {
+    } catch {
       // error is set in store
     }
   };

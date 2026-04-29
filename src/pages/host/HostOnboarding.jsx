@@ -2,8 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Info, CheckCircle } from 'lucide-react';
 import useAuthStore from '../../store/authStore';
-import { hostService, listingService, profileService } from '../../data/api';
-import Avatar from '../../components/ui/Avatar';
+import { hostService, listingService, verificationService } from '../../data/api';
 import { ChargerType } from '../../data/schema';
 import { PakistanCitiesSorted, normalizeCityName } from '../../data/pakistanLocations';
 import { getActivationFeeBreakdown, formatPKR } from '../../data/feeConfig';
@@ -52,7 +51,7 @@ const HostOnboarding = () => {
   });
   
   // File states
-  const [isUploading, setIsUploading] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [payment, setPayment] = useState({
     method: 'BANK_TRANSFER', // default
     screenshot: null,
@@ -69,9 +68,11 @@ const HostOnboarding = () => {
   };
 
   const handlePublish = async () => {
+    if (isSubmitting) return;
+    setIsSubmitting(true);
     try {
       // 1. Create the listing
-      const listing = await listingService.create({
+      await listingService.create({
         hostId: user?.id,
         title: `${charger.chargerType} in ${charger.area}`,
         description: charger.description,
@@ -88,7 +89,15 @@ const HostOnboarding = () => {
         images: chargerPhotos // Now passing photos to creation
       });
 
-      // 2. Handle Payment Submission
+      // 2. Upload verification proofs to the private verification bucket.
+      if (propertyProofs[0]?.file) {
+        await verificationService.uploadDocument(user.id, 'HOST', 'PROPERTY_PROOF', propertyProofs[0].file);
+      }
+      if (chargerPhotos[0]?.file) {
+        await verificationService.uploadDocument(user.id, 'HOST', 'CHARGER_PROOF', chargerPhotos[0].file);
+      }
+
+      // 3. Handle Payment Submission
       await hostService.submitOnboardingPayment(user?.id, {
         method: payment.method,
         amount: feeBreakdown.total,
@@ -96,13 +105,15 @@ const HostOnboarding = () => {
         card: payment.card
       });
 
-      // 3. Submit overall verification
+      // 4. Submit overall verification
       await hostService.submitVerification(user?.id);
       
       navigate('/host/dashboard');
     } catch (e) {
       console.error("Failed to publish listing:", e);
-      alert("Failed to save listing details. Please check your connection and try again.");
+      alert(e.message || "Failed to save listing details. Please check your connection and try again.");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -496,7 +507,7 @@ const HostOnboarding = () => {
                   onClick={() => setPayment({...payment, method: 'CARD'})}
                   style={{ flex: 1, fontSize: '0.85rem' }}
                 >
-                  Credit/Debit Card
+                  Credit/Debit Card (Demo)
                 </button>
               </div>
 
@@ -521,6 +532,9 @@ const HostOnboarding = () => {
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                  <div style={{ padding: '0.9rem 1rem', borderRadius: '10px', border: '1px solid rgba(251, 191, 36, 0.3)', background: 'rgba(251, 191, 36, 0.08)', color: '#fbbf24', fontSize: '0.85rem', lineHeight: 1.5 }}>
+                    Demo only: no real card charge will be processed in the internal beta.
+                  </div>
                   <ValidatedInput 
                     label="Card Number" 
                     placeholder="4242 4242 4242 4242" 
@@ -557,7 +571,9 @@ const HostOnboarding = () => {
 
               <div style={{ display: 'flex', gap: '1rem' }}>
                 <button className="btn btn-secondary" onClick={() => setStep(7)} style={{ flex: 1 }}>Back</button>
-                <button className="btn btn-primary" onClick={handlePublish} style={{ flex: 2 }}>Pay & Submit</button>
+                <button className="btn btn-primary" onClick={handlePublish} disabled={isSubmitting} style={{ flex: 2 }}>
+                  {isSubmitting ? 'Submitting...' : 'Pay & Submit'}
+                </button>
               </div>
             </div>
           )}

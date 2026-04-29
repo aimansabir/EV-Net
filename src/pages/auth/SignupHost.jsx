@@ -10,7 +10,7 @@ const passwordRules = [
   { key: 'upper', label: 'One uppercase letter (A-Z)', test: (p) => /[A-Z]/.test(p) },
   { key: 'lower', label: 'One lowercase letter (a-z)', test: (p) => /[a-z]/.test(p) },
   { key: 'number', label: 'One number (0-9)', test: (p) => /[0-9]/.test(p) },
-  { key: 'special', label: 'One special character (!@#$%^&*)', test: (p) => /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(p) },
+  { key: 'special', label: 'One special character (!@#$%^&*)', test: (p) => /[^A-Za-z0-9]/.test(p) },
 ];
 
 const SignupHost = () => {
@@ -74,7 +74,7 @@ const SignupHost = () => {
       } else {
         navigate('/host/onboarding');
       }
-    } catch (err) {
+    } catch {
       // error is set in store
     }
   };
