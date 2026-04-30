@@ -58,7 +58,7 @@ const PhotoGridManager = ({
         Listing Photos <span style={{ color: 'var(--brand-cyan)' }}>*</span>
       </label>
       <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
-        Showcase your charger setup, parking space, and the driveway. Min 3 photos required for publishing.
+        The first photo must be the <strong>Charger Setup</strong>. Add others for socket, driveway, or signs.
       </div>
 
       <div style={{
@@ -80,9 +80,20 @@ const PhotoGridManager = ({
                     <div style={{
                         position: 'absolute', bottom: 0, left: 0, right: 0,
                         background: 'rgba(0, 240, 255, 0.9)', color: '#000',
-                        fontSize: '0.7rem', fontWeight: 700, textAlign: 'center', padding: '4px'
+                        fontSize: '0.65rem', fontWeight: 800, textAlign: 'center', padding: '4px',
+                        textTransform: 'uppercase'
                     }}>
-                       COVER PHOTO
+                       Charger Setup (Mandatory)
+                    </div>
+                )}
+                {idx === 1 && (
+                    <div style={{
+                        position: 'absolute', bottom: 0, left: 0, right: 0,
+                        background: 'rgba(255, 255, 255, 0.8)', color: '#000',
+                        fontSize: '0.65rem', fontWeight: 800, textAlign: 'center', padding: '4px',
+                        textTransform: 'uppercase'
+                    }}>
+                       Socket View
                     </div>
                 )}
                 <button 

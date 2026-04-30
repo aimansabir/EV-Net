@@ -8,13 +8,15 @@ import {
   Users, 
   AlertTriangle,
   ArrowLeft,
-  MessageSquare
-} from 'lucide-react';
+  MessageSquare, LogOut } from 'lucide-react';
 import logoUrl from '../assets/logo.png';
+import useAuthStore from '../store/authStore';
 import '../components/Navbar.css';
 
 const AdminLayout = ({ children }) => {
   const location = useLocation();
+  const { logout } = useAuthStore();
+
   const navItems = [
     { path: '/admin', label: 'Dashboard', icon: LayoutDashboard },
     { path: '/admin/verifications', label: 'Verification Queue', icon: ShieldCheck },
@@ -84,17 +86,17 @@ const AdminLayout = ({ children }) => {
         </nav>
 
         <div style={{ padding: '1rem 1.25rem', borderTop: '1px solid var(--border-color)', marginTop: 'auto' }}>
-          <Link to="/" style={{ 
+          <button onClick={() => logout()} style={{ 
             display: 'flex', alignItems: 'center', gap: '8px',
             fontSize: '0.85rem', color: 'var(--text-secondary)', 
-            textDecoration: 'none', transition: 'color 0.2s' 
+            textDecoration: 'none', transition: 'color 0.2s', background: 'transparent', border: 'none', cursor: 'pointer', padding: 0, fontFamily: 'inherit'
           }}
           onMouseEnter={(e) => e.currentTarget.style.color = 'var(--text-main)'}
           onMouseLeave={(e) => e.currentTarget.style.color = 'var(--text-secondary)'}
           >
-            <ArrowLeft size={14} />
-            <span>Back to Site</span>
-          </Link>
+            <LogOut size={14} />
+            <span>Logout</span>
+          </button>
         </div>
       </aside>
 
@@ -108,3 +110,4 @@ const AdminLayout = ({ children }) => {
 };
 
 export default AdminLayout;
+

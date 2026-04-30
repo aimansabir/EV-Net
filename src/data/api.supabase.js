@@ -75,6 +75,20 @@ async function withTimeout(promise, ms = 15000) {
   ]).finally(() => clearTimeout(timeoutId));
 }
 
+async function withOperationTimeout(promise, ms, message) {
+  let timeoutId;
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error(message)), ms);
+  });
+
+  return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timeoutId));
+}
+
+function isMissingColumnError(error, columnName) {
+  const message = error?.message || '';
+  return (error?.code === '42703' || error?.code === 'PGRST204') && message.includes(columnName);
+}
+
 /**
  * Robustly poll for a record in any table (used after signup to wait for trigger).
  */
@@ -170,6 +184,28 @@ function mergeDocumentPath(paths, row, field, documentType) {
   }
 }
 
+/**
+ * Best-effort notification helper used by admin actions.
+ * Catches and logs errors silently so admin workflows never break due to notification failures.
+ */
+async function safeSendNotification(userId, type, message) {
+  try {
+    const payload = { user_id: userId, type, message, is_read: false };
+    const { error: upsertError } = await supabase
+      .from('notifications')
+      .upsert(payload, { onConflict: 'user_id,type,message', ignoreDuplicates: true });
+
+    if (upsertError) {
+      const { error: insertError } = await supabase
+        .from('notifications')
+        .insert(payload);
+      if (insertError) throw insertError;
+    }
+  } catch (err) {
+    console.warn('[EV-Net] safeSendNotification failed:', err.message);
+  }
+}
+
 async function getLatestVerificationDocuments(userId, profileType) {
   try {
     const { data, error } = await supabase
@@ -184,6 +220,7 @@ async function getLatestVerificationDocuments(userId, profileType) {
       .filter(row => (row.type || row.profile_type) === profileType)
       .reduce((paths, row) => {
         mergeDocumentPath(paths, row, 'cnic_path', 'CNIC_FRONT');
+        mergeDocumentPath(paths, row, 'cnic_back_path', 'CNIC_BACK');
         mergeDocumentPath(paths, row, 'ev_proof_path', 'EV_PROOF');
         mergeDocumentPath(paths, row, 'property_proof_path', 'PROPERTY_PROOF');
         mergeDocumentPath(paths, row, 'charger_proof_path', 'CHARGER_PROOF');
@@ -226,6 +263,7 @@ function mergeUserShape(profile, evProfile, hostProfile, authUser = null, verifi
   if (profile.role === 'USER' && evProfile) {
     const avatar = resolveAvatarUrl(evProfile.avatar_path);
     const cnicSubmitted = !!(evProfile.cnic_submitted || verificationDocs.cnic_path);
+    const cnicBackSubmitted = !!(evProfile.cnic_back_submitted || verificationDocs.cnic_back_path);
     const evProofSubmitted = !!(evProfile.ev_proof_submitted || verificationDocs.ev_proof_path);
     return {
       ...base,
@@ -239,18 +277,21 @@ function mergeUserShape(profile, evProfile, hostProfile, authUser = null, verifi
                          (cnicSubmitted && evProofSubmitted) ? 'under_review' :
                          evProfile.verification_status,
       cnicSubmitted,
+      cnicBackSubmitted,
       cnicPath: verificationDocs.cnic_path || evProfile.cnic_path,
+      cnicBackPath: verificationDocs.cnic_back_path || evProfile.cnic_back_path,
       evProofSubmitted,
       evProofPath: verificationDocs.ev_proof_path || evProfile.ev_proof_path,
       isRestrictedFromInquiry: evProfile.is_restricted_from_inquiry,
       // Derived
-      canBook: emailVerified && cnicSubmitted && evProofSubmitted && evProfile.verification_status === 'approved',
+      canBook: emailVerified && cnicSubmitted && cnicBackSubmitted && evProofSubmitted && evProfile.verification_status === 'approved',
     };
   }
 
   if (profile.role === 'HOST' && hostProfile) {
     const avatar = resolveAvatarUrl(hostProfile.avatar_path);
     const cnicSubmitted = isHostIdentitySubmitted(hostProfile, verificationDocs);
+    const cnicBackSubmitted = !!(hostProfile.cnic_back_submitted || verificationDocs.cnic_back_path);
     const propertyProofUploaded = !!(hostProfile.property_proof_uploaded || verificationDocs.property_proof_path);
     const chargerProofUploaded = !!(hostProfile.charger_proof_uploaded || verificationDocs.charger_proof_path);
     return {
@@ -262,7 +303,9 @@ function mergeUserShape(profile, evProfile, hostProfile, authUser = null, verifi
                          (cnicSubmitted && propertyProofUploaded && chargerProofUploaded) ? 'under_review' :
                          hostProfile.verification_status,
       cnicSubmitted,
+      cnicBackSubmitted,
       cnicPath: verificationDocs.cnic_path || hostProfile.cnic_path,
+      cnicBackPath: verificationDocs.cnic_back_path || hostProfile.cnic_back_path,
       propertyProofUploaded,
       propertyProofPath: verificationDocs.property_proof_path || hostProfile.property_proof_path,
       chargerProofUploaded,
@@ -615,6 +658,8 @@ export const profileService = {
 // ─── LISTING SERVICE ────────────────────────────────────
 
 export const listingService = {
+  resolveListingPhotoUrl,
+
   async getAll(filters = {}) {
     let query = supabase
       .from('listings')
@@ -764,6 +809,7 @@ export const listingService = {
   },
 
   async create(data) {
+    console.log("[EV-Net] listingService.create: Inserting listing row...", data.title);
     const { data: listing, error } = await supabase
       .from('listings')
       .insert({
@@ -782,27 +828,41 @@ export const listingService = {
       })
       .select()
       .single();
-    if (error) throw error;
+    
+    if (error) {
+      console.error("[EV-Net] Error inserting listing row:", error);
+      throw error;
+    }
+    console.log("[EV-Net] listingService.create: Listing row created ID:", listing.id);
 
     // 2. Insert location separately
     if (data.address && data.lat && data.lng) {
+      console.log("[EV-Net] listingService.create: Inserting location...", data.address);
       const { error: locError } = await supabase.from('listing_locations').insert({
         listing_id: listing.id,
         address: data.address,
         lat: data.lat,
         lng: data.lng
       });
-      if (locError) console.error("[EV-Net] Failed to insert listing location:", locError);
+      if (locError) {
+        console.error("[EV-Net] Failed to insert listing location:", locError);
+        // We don't throw here to avoid blocking the whole flow, but we log it.
+      } else {
+        console.log("[EV-Net] listingService.create: Location inserted.");
+      }
     }
 
     // 3. Upload and insert photos
     if (data.images && data.images.length > 0) {
+      console.log(`[EV-Net] listingService.create: Starting upload for ${data.images.length} photos...`);
       const uploadedPaths = await Promise.all(data.images.map(async (image, index) => {
         const file = image?.file || image;
         if (typeof file === 'string') return file;
 
         const extension = file.name?.split('.').pop() || 'jpg';
         const filePath = `${data.hostId}/${listing.id}/${Date.now()}_${index}.${extension}`;
+        
+        console.log(`[EV-Net] Uploading photo ${index + 1} to 'listing_photos' bucket at: ${filePath}`);
         const { error: uploadError } = await supabase.storage
           .from('listing_photos')
           .upload(filePath, file, {
@@ -810,30 +870,153 @@ export const listingService = {
             contentType: file.type || 'image/jpeg'
           });
 
-        if (uploadError) throw uploadError;
+        if (uploadError) {
+          console.error(`[EV-Net] Error uploading photo ${index + 1}:`, uploadError);
+          throw uploadError;
+        }
+        console.log(`[EV-Net] Photo ${index + 1} uploaded successfully.`);
         return filePath;
       }));
 
+      console.log("[EV-Net] listingService.create: Inserting photo metadata rows...");
       const photoRows = uploadedPaths.map((path, index) => ({
         listing_id: listing.id,
         storage_path: path,
         display_order: index
       }));
       const { error: photoError } = await supabase.from('listing_photos').insert(photoRows);
-      if (photoError) console.error("[EV-Net] Failed to insert listing photos:", photoError);
+      if (photoError) {
+        console.error("[EV-Net] Failed to insert listing photos metadata:", photoError);
+        throw photoError;
+      }
+      console.log("[EV-Net] listingService.create: Photos metadata inserted.");
     }
 
     return listing;
+  },
+
+  async getOwnedById(listingId, hostId) {
+    if (!listingId || !hostId) return null;
+
+    const { data, error } = await supabase
+      .from('listings')
+      .select('*, listing_photos ( id, storage_path, display_order )')
+      .eq('id', listingId)
+      .eq('host_id', hostId)
+      .maybeSingle();
+
+    if (error) {
+      console.warn("[EV-Net] listingService.getOwnedById failed:", error.message);
+      return null;
+    }
+
+    if (!data) return null;
+    return {
+      ...data,
+      priceDay: data.price_day_per_kwh,
+      priceNight: data.price_night_per_kwh,
+      chargerType: data.charger_type,
+      chargerSpeed: data.charger_speed,
+      hostId: data.host_id,
+      isActive: data.is_active,
+      isApproved: data.is_approved,
+      setupFeePaid: data.setup_fee_paid,
+      images: (data.listing_photos || [])
+        .sort((a, b) => a.display_order - b.display_order)
+        .map(p => resolveListingPhotoUrl(p.storage_path))
+    };
+  },
+
+  async findExistingOnboardingListing({ hostId, title, city, area, chargerType }) {
+    console.log("[EV-Net] Checking for existing onboarding listing", {
+      hostId,
+      title,
+      city,
+      area,
+      chargerType
+    });
+
+    let query = supabase
+      .from('listings')
+      .select('id, host_id, title, city, area, charger_type, is_active, is_approved, setup_fee_paid, created_at')
+      .eq('host_id', hostId)
+      .eq('is_approved', false);
+
+    if (title) query = query.eq('title', title);
+    if (city) query = query.eq('city', city);
+    if (area) query = query.eq('area', area);
+    if (chargerType) query = query.eq('charger_type', chargerType);
+
+    const { data, error } = await query
+      .order('setup_fee_paid', { ascending: false })
+      .order('created_at', { ascending: true })
+      .limit(1);
+
+    if (error) {
+      console.error("[EV-Net] Error finding existing onboarding listing:", error);
+      throw new Error(`Could not check for an existing listing: ${error.message}`);
+    }
+
+    return data?.[0] || null;
+  },
+
+  async findExistingDraft(hostId, title) {
+    return this.findExistingOnboardingListing({ hostId, title });
+  },
+
+  async demoteDuplicateOnboardingListings({ hostId, keepId, title, city, area, chargerType }) {
+    if (!hostId || !keepId) return { success: true, demoted: 0 };
+
+    let query = supabase
+      .from('listings')
+      .select('id')
+      .eq('host_id', hostId)
+      .eq('is_approved', false)
+      .neq('id', keepId);
+
+    if (title) query = query.eq('title', title);
+    if (city) query = query.eq('city', city);
+    if (area) query = query.eq('area', area);
+    if (chargerType) query = query.eq('charger_type', chargerType);
+
+    const { data: duplicates, error: lookupError } = await query;
+    if (lookupError) {
+      console.warn("[EV-Net] Could not check duplicate onboarding listings:", lookupError.message);
+      return { success: false, demoted: 0, error: lookupError.message };
+    }
+
+    const duplicateIds = (duplicates || []).map(row => row.id);
+    if (duplicateIds.length === 0) return { success: true, demoted: 0 };
+
+    console.warn("[EV-Net] Demoting duplicate onboarding listings:", duplicateIds);
+    const { error } = await supabase
+      .from('listings')
+      .update({ setup_fee_paid: false, is_active: false, is_approved: false })
+      .in('id', duplicateIds)
+      .eq('host_id', hostId);
+
+    if (error) {
+      console.warn("[EV-Net] Could not demote duplicate onboarding listings:", error.message);
+      return { success: false, demoted: 0, error: error.message };
+    }
+
+    return { success: true, demoted: duplicateIds.length };
   },
 
   async update(id, data) {
     const updates = {};
     if (data.title !== undefined) updates.title = data.title;
     if (data.description !== undefined) updates.description = data.description;
+    if (data.city !== undefined) updates.city = data.city;
+    if (data.area !== undefined) updates.area = data.area;
+    if (data.chargerType !== undefined) updates.charger_type = data.chargerType;
+    if (data.chargerSpeed !== undefined) updates.charger_speed = data.chargerSpeed;
     if (data.pricePerHour !== undefined) updates.price_per_hour = data.pricePerHour;
     if (data.priceDay !== undefined) updates.price_day_per_kwh = data.priceDay;
     if (data.priceNight !== undefined) updates.price_night_per_kwh = data.priceNight;
     if (data.isActive !== undefined) updates.is_active = data.isActive;
+    if (data.isApproved !== undefined) updates.is_approved = data.isApproved;
+    if (data.setupFeePaid !== undefined) updates.setup_fee_paid = data.setupFeePaid;
     if (data.amenities !== undefined) updates.amenities = data.amenities;
     if (data.houseRules !== undefined) updates.house_rules = data.houseRules;
 
@@ -844,7 +1027,141 @@ export const listingService = {
       .select()
       .single();
     if (error) throw error;
+
+    if (data.address && data.lat && data.lng) {
+      const locationPayload = {
+        listing_id: id,
+        address: data.address,
+        lat: data.lat,
+        lng: data.lng
+      };
+
+      const { data: existingLocation, error: lookupError } = await supabase
+        .from('listing_locations')
+        .select('listing_id')
+        .eq('listing_id', id)
+        .maybeSingle();
+
+      if (lookupError) {
+        console.warn("[EV-Net] Could not check existing listing location:", lookupError.message);
+      } else if (existingLocation) {
+        const { error: locError } = await supabase
+          .from('listing_locations')
+          .update({ address: data.address, lat: data.lat, lng: data.lng })
+          .eq('listing_id', id);
+        if (locError) console.warn("[EV-Net] Could not update listing location:", locError.message);
+      } else {
+        const { error: locError } = await supabase
+          .from('listing_locations')
+          .insert(locationPayload);
+        if (locError) console.warn("[EV-Net] Could not insert listing location:", locError.message);
+      }
+    }
+
     return listing;
+  },
+
+  async uploadListingPhotos(listingId, hostId, files) {
+    if (!files || files.length === 0) return [];
+    
+    // 1. Get current max display order
+    const { data: currentPhotos } = await supabase
+      .from('listing_photos')
+      .select('display_order')
+      .eq('listing_id', listingId)
+      .order('display_order', { ascending: false })
+      .limit(1);
+    
+    let nextOrder = currentPhotos && currentPhotos.length > 0 ? currentPhotos[0].display_order + 1 : 0;
+
+    // 2. Upload files
+    const uploadedPaths = await Promise.all(files.map(async (image, index) => {
+      const file = image?.file || image;
+      if (!file || typeof file === 'string') return file;
+      const extension = file.name?.split('.').pop() || 'jpg';
+      const filePath = `${hostId}/${listingId}/${Date.now()}_added_${index}.${extension}`;
+      const { error: uploadError } = await supabase.storage
+        .from('listing_photos')
+        .upload(filePath, file, {
+          upsert: true,
+          contentType: file.type || 'image/jpeg'
+        });
+
+      if (uploadError) throw uploadError;
+      return filePath;
+    }));
+
+    // 3. Insert rows
+    const photoRows = uploadedPaths.map((path, index) => ({
+      listing_id: listingId,
+      storage_path: path,
+      display_order: nextOrder + index
+    }));
+    
+    const { data, error } = await supabase.from('listing_photos').insert(photoRows).select();
+    if (error) throw error;
+    return data;
+  },
+
+  async ensureOnboardingPhotos(listingId, hostId, files) {
+    if (!files || files.length === 0) {
+      throw new Error('At least one charger setup photo is required.');
+    }
+
+    const { data: existingPhotos, error: existingError } = await supabase
+      .from('listing_photos')
+      .select('id, storage_path, display_order')
+      .eq('listing_id', listingId)
+      .order('display_order', { ascending: true });
+
+    if (existingError) {
+      throw new Error(`Could not check existing listing photos: ${existingError.message}`);
+    }
+
+    if ((existingPhotos || []).length > 0) {
+      console.log("[EV-Net] Listing photos already exist for reused listing; skipping duplicate upload.", {
+        listingId,
+        count: existingPhotos.length
+      });
+      return existingPhotos;
+    }
+
+    return this.uploadListingPhotos(listingId, hostId, files);
+  },
+
+  async markOnboardingSubmitted(listingId, hostId) {
+    console.log("[EV-Net] Marking onboarding listing pending review:", listingId);
+    const { data, error } = await supabase
+      .from('listings')
+      .update({
+        setup_fee_paid: true,
+        is_active: false,
+        is_approved: false
+      })
+      .eq('id', listingId)
+      .eq('host_id', hostId)
+      .select()
+      .single();
+
+    if (error) {
+      console.error("[EV-Net] Could not mark listing pending review:", error);
+      throw new Error(`Could not mark listing pending review: ${error.message}`);
+    }
+
+    return data;
+  },
+
+  async deleteListingPhoto(photoId) {
+    // 1. Get photo to find storage path
+    const { data: photo } = await supabase.from('listing_photos').select('storage_path').eq('id', photoId).single();
+    if (photo) {
+      // 2. Delete from storage
+      await supabase.storage.from('listing_photos').remove([photo.storage_path]);
+    }
+    // 3. Delete row
+    const { error } = await supabase.from('listing_photos').delete().eq('id', photoId);
+    if (error) throw error;
+    return { success: true };
   },
 
   async delete(id) {
@@ -871,6 +1188,11 @@ export const listingService = {
       hostId: l.host_id,
       isActive: l.is_active,
       isApproved: l.is_approved,
+      setupFeePaid: l.setup_fee_paid,
+      chargerType: l.charger_type,
+      chargerSpeed: l.charger_speed,
+      reviewCount: l.review_count,
+      sessionsCompleted: l.sessions_completed,
       createdAt: l.created_at,
     }));
   },
@@ -1302,6 +1624,14 @@ export const messagingService = {
       .single();
     
     if (cError) throw cError;
+    
+    // Notification Trigger for new inquiry
+    try {
+      const { data: list } = await supabase.from('listings').select('title').eq('id', listingId).single();
+      await safeSendNotification(listing.host_id, 'MESSAGE', `You have a new inquiry about ${list?.title || 'your listing'}.`);
+    } catch (err) {
+      console.warn('[EV-Net] Failed to notify host of new inquiry:', err);
+    }
 
     return {
       ...created,
@@ -1330,6 +1660,22 @@ export const messagingService = {
       .from('conversations')
       .update({ updated_at: new Date().toISOString() })
       .eq('id', conversationId);
+
+    // Notification Trigger: notify the OTHER party
+    try {
+      const { data: conv } = await supabase
+        .from('conversations')
+        .select('user_id, host_id, listing:listings(title)')
+        .eq('id', conversationId)
+        .single();
+      if (conv) {
+        const recipientId = senderId === conv.user_id ? conv.host_id : conv.user_id;
+        const listingTitle = conv.listing?.title || 'a listing';
+        await safeSendNotification(recipientId, 'MESSAGE', `You have a new message regarding ${listingTitle}.`);
+      }
+    } catch (err) {
+      console.warn('[EV-Net] Failed to create message notification:', err);
+    }
 
     return {
       ...data,
@@ -1483,37 +1829,99 @@ export const adminService = {
     if (error) throw new Error(error.message);
     
     // refetch updated listing
-    const { data } = await supabase.from('listings').select('*').eq('id', listingId).single();
+    const { data } = await supabase.from('listings').select('*, host_id').eq('id', listingId).single();
+
+    // Notification → Host
+    if (data?.host_id) {
+      const msg = decision.approved
+        ? `Your listing "${data.title}" has been approved and is now live!`
+        : `Your listing "${data.title}" was not approved. ${decision.notes || 'Please review and resubmit.'}`;
+      await safeSendNotification(data.host_id, 'VERIFICATION', msg);
+    }
+
     return { ...data, isApproved: data.is_approved, isActive: data.is_active };
   },
 
   async verifyHost(userId, decision) {
-    const { error } = await supabase.rpc('admin_verify_host_v2', {
+    console.log("[EV-Net] Admin approve/reject started", {
+      target: 'HOST',
+      userId,
+      approved: decision.approved
+    });
+    const { data, error } = await supabase.rpc('admin_verify_host_v2', {
       p_approved: decision.approved,
       p_notes: decision.notes || '',
       p_user_id: userId
     });
+    console.log("[EV-Net] admin_verify_host_v2 response:", { data, error });
     if (error) throw new Error(error.message);
+
+    // Notification → Host
+    const msg = decision.approved
+      ? 'Your host verification has been approved! You can now receive bookings.'
+      : `Your host verification was rejected. ${decision.notes || 'Please review and resubmit your documents.'}`;
+    await safeSendNotification(userId, 'VERIFICATION', msg);
+
+    console.log("[EV-Net] Admin decision complete", { target: 'HOST', userId });
     return { success: true };
   },
 
   async verifyUser(userId, decision) {
-    const { error } = await supabase.rpc('admin_verify_user_v2', {
+    console.log("[EV-Net] Admin approve/reject started", {
+      target: 'EV_USER',
+      userId,
+      approved: decision.approved
+    });
+    const { data, error } = await supabase.rpc('admin_verify_user_v2', {
       p_approved: decision.approved,
       p_notes: decision.notes || '',
       p_user_id: userId
     });
+    console.log("[EV-Net] admin_verify_user_v2 response:", { data, error });
     if (error) throw new Error(error.message);
+
+    // Notification → EV User
+    const msg = decision.approved
+      ? 'Your verification has been approved! You can now book EV chargers on EV-Net.'
+      : `Your verification was rejected. ${decision.notes || 'Please review and resubmit your documents.'}`;
+    await safeSendNotification(userId, 'VERIFICATION', msg);
+
+    console.log("[EV-Net] Admin decision complete", { target: 'EV_USER', userId });
     return { success: true };
   },
 
   async getVerificationSubmissions() {
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from('verification_submissions')
       .select('*, user:profiles!user_id(*)')
       .order('submitted_at', { ascending: false });
     
-    if (error) throw error;
+    if (error) {
+      console.warn('[EV-Net] Verification submissions profile join failed; retrying without join:', error.message);
+      const fallback = await supabase
+        .from('verification_submissions')
+        .select('*')
+        .order('submitted_at', { ascending: false });
+
+      if (fallback.error) throw fallback.error;
+      data = fallback.data || [];
+
+      const userIds = [...new Set(data.map(row => row.user_id).filter(Boolean))];
+      const { data: users, error: usersError } = userIds.length > 0
+        ? await supabase.from('profiles').select('*').in('id', userIds)
+        : { data: [], error: null };
+
+      if (usersError) {
+        console.warn('[EV-Net] Could not hydrate verification users:', usersError.message);
+      }
+
+      const usersById = (users || []).reduce((acc, user) => {
+        acc[user.id] = user;
+        return acc;
+      }, {});
+
+      data = data.map(row => ({ ...row, user: usersById[row.user_id] || null }));
+    }
     
     const grouped = (data || []).reduce((acc, s) => {
       const profileType = s.type || s.profile_type;
@@ -1536,6 +1944,7 @@ export const adminService = {
       }
 
       mergeDocumentPath(acc[key], s, 'cnic_path', 'CNIC_FRONT');
+      mergeDocumentPath(acc[key], s, 'cnic_back_path', 'CNIC_BACK');
       mergeDocumentPath(acc[key], s, 'ev_proof_path', 'EV_PROOF');
       mergeDocumentPath(acc[key], s, 'property_proof_path', 'PROPERTY_PROOF');
       mergeDocumentPath(acc[key], s, 'charger_proof_path', 'CHARGER_PROOF');
@@ -1548,49 +1957,28 @@ export const adminService = {
       return acc;
     }, {});
     
-    return Promise.all(Object.values(grouped).map(async submission => ({
-      ...submission,
-      documentUrls: {
-        cnic_path: await createVerificationSignedUrl(submission.cnic_path),
-        ev_proof_path: await createVerificationSignedUrl(submission.ev_proof_path),
-        property_proof_path: await createVerificationSignedUrl(submission.property_proof_path),
-        charger_proof_path: await createVerificationSignedUrl(submission.charger_proof_path)
-      }
-    })));
-  },
+    return Promise.all(Object.values(grouped).map(async submission => {
+      const statuses = submission.documentRows.map(row => (row.status || '').toLowerCase());
+      const normalizedStatus = statuses.includes('pending')
+        ? 'pending'
+        : statuses.includes('rejected')
+          ? 'rejected'
+          : statuses.includes('approved')
+            ? 'approved'
+            : (submission.status || 'pending').toLowerCase();
 
-  async getOnboardingPayments() {
-    const { data, error } = await supabase
-      .from('onboarding_payments')
-      .select('*, user:profiles!user_id(*)')
-      .order('created_at', { ascending: false });
-    
-    if (error) {
-      if (error.code === 'PGRST205') {
-        console.warn('[EV-Net] onboarding_payments table missing. Skipping.');
-        return [];
-      }
-      throw error;
-    }
-    return data;
-  },
-
-  async verifyOnboardingPayment(paymentId, approved, notes) {
-    const status = approved ? 'verified' : 'failed';
-    const { error } = await supabase
-      .from('onboarding_payments')
-      .update({ 
-        status, 
-        admin_notes: notes,
-        verified_at: new Date().toISOString()
-      })
-      .eq('id', paymentId);
-    
-    if (error) {
-      if (error.code === 'PGRST205') return { success: true };
-      throw error;
-    }
-    return { success: true };
+      return {
+        ...submission,
+        status: normalizedStatus,
+        documentUrls: {
+          cnic_path: await createVerificationSignedUrl(submission.cnic_path),
+          cnic_back_path: await createVerificationSignedUrl(submission.cnic_back_path),
+          ev_proof_path: await createVerificationSignedUrl(submission.ev_proof_path),
+          property_proof_path: await createVerificationSignedUrl(submission.property_proof_path),
+          charger_proof_path: await createVerificationSignedUrl(submission.charger_proof_path)
+        }
+      };
+    }));
   },
 
   async getConversations() {
@@ -1668,17 +2056,15 @@ export const adminService = {
 
 // ─── ONBOARDING PAYMENT SERVICE ─────────────────────────
 
-async function markHostPaymentSetupComplete(userId) {
-  const { error: hostError } = await supabase
-    .from('host_profiles')
-    .update({ payout_setup_complete: true })
-    .eq('user_id', userId);
-  if (hostError) throw hostError;
-
-  const { error: listingError } = await supabase
+async function markHostPaymentSetupComplete(userId, listingId = null) {
+  let query = supabase
     .from('listings')
-    .update({ setup_fee_paid: true })
+    .update({ setup_fee_paid: true, is_active: false, is_approved: false })
     .eq('host_id', userId);
+
+  if (listingId) query = query.eq('id', listingId);
+
+  const { error: listingError } = await query;
   if (listingError) throw listingError;
 }
 
@@ -1690,14 +2076,34 @@ function mapPaymentStatus(status) {
 
 export const onboardingPaymentService = {
   async submitPayment(userId, data) {
-    let screenshotPath = null;
+    console.log("[EV-Net] onboardingPaymentService.submitPayment: Initializing...", data.method);
+    if (!userId) throw new Error('User session is required before submitting payment.');
+    if (!data?.listingId) throw new Error('Listing ID is required before submitting payment proof.');
+    if (data.method !== 'BANK_TRANSFER') {
+      throw new Error('Pay Online is coming soon. Please use Bank Transfer for this beta.');
+    }
+
+    const existingPayment = await this.getExistingPayment(userId, data.listingId);
+    let screenshotPath = existingPayment?.screenshot_path || null;
     
     // 1. Upload screenshot if bank transfer
     if (data.method === 'BANK_TRANSFER' && data.screenshot) {
+      console.log("[EV-Net] Uploading payment proof");
       const screenshotFile = data.screenshot?.file || data.screenshot;
+      const isAllowedProof = screenshotFile?.type?.startsWith('image/')
+        || screenshotFile?.type === 'application/pdf'
+        || screenshotFile?.name?.toLowerCase().endsWith('.pdf');
+
+      if (!isAllowedProof) {
+        throw new Error('Payment proof must be an image or PDF.');
+      }
+
       const extension = screenshotFile.name?.split('.').pop() || 'png';
-      const fileName = `${userId}_${Date.now()}.${extension}`;
-      const filePath = `payments/${fileName}`;
+      const safeListingId = data.listingId || 'general';
+      const fileName = `${safeListingId}_${Date.now()}.${extension}`;
+      const filePath = `payments/${userId}/${fileName}`;
+      
+      console.log(`[EV-Net] onboardingPaymentService.submitPayment: Uploading screenshot to '${VERIFICATION_BUCKET}' at: ${filePath}`);
       const { error: uploadError } = await supabase.storage
         .from(VERIFICATION_BUCKET)
         .upload(filePath, screenshotFile, {
@@ -1705,32 +2111,110 @@ export const onboardingPaymentService = {
           contentType: screenshotFile.type || 'image/png'
         });
       
-      if (uploadError) throw uploadError;
+      if (uploadError) {
+        console.error("[EV-Net] Error uploading payment screenshot:", uploadError);
+        throw uploadError;
+      }
       screenshotPath = filePath;
+      console.log("[EV-Net] onboardingPaymentService.submitPayment: Screenshot uploaded.");
     }
 
-    // 2. Insert payment record
-    const { error } = await supabase
+    const paymentPayload = {
+      user_id: userId,
+      listing_id: data.listingId,
+      amount: data.amount,
+      method: data.method,
+      screenshot_path: screenshotPath,
+      status: 'pending'
+    };
+
+    if (existingPayment) {
+      console.log("[EV-Net] onboardingPaymentService.submitPayment: Reusing existing payment:", existingPayment.id);
+      const { data: payment, error } = await supabase
+        .from('onboarding_payments')
+        .update({
+          amount: paymentPayload.amount,
+          method: paymentPayload.method,
+          screenshot_path: paymentPayload.screenshot_path,
+          status: 'pending',
+          admin_notes: null
+        })
+        .eq('id', existingPayment.id)
+        .select()
+        .single();
+
+      if (error) {
+        console.error("[EV-Net] Error updating onboarding payment record:", error);
+        throw new Error(`Could not update payment proof: ${error.message}`);
+      }
+
+      console.log("[EV-Net] Payment record created", payment.id);
+      return { success: true, payment, reused: true };
+    }
+
+    console.log("[EV-Net] onboardingPaymentService.submitPayment: Inserting record into 'onboarding_payments' table...");
+    let insertPayload = paymentPayload;
+    let response = await supabase
       .from('onboarding_payments')
-      .insert({
-        user_id: userId,
-        amount: data.amount,
-        method: data.method,
-        screenshot_path: screenshotPath,
-        status: data.method === 'CARD' ? 'verified' : 'pending', // Card verified instantly for demo
-      });
+      .insert(insertPayload)
+      .select()
+      .single();
 
-    if (error) throw error;
-
-    if (data.method === 'CARD') {
-      await markHostPaymentSetupComplete(userId);
+    if (response.error && isMissingColumnError(response.error, 'listing_id')) {
+      console.warn("[EV-Net] onboarding_payments.listing_id missing; retrying insert without listing_id. Run latest migrations.");
+      const fallbackPayload = { ...paymentPayload };
+      delete fallbackPayload.listing_id;
+      insertPayload = fallbackPayload;
+      response = await supabase
+        .from('onboarding_payments')
+        .insert(insertPayload)
+        .select()
+        .single();
     }
 
-    return { success: true };
+    if (response.error) {
+      console.error("[EV-Net] Error inserting onboarding payment record:", response.error);
+      throw new Error(`Could not record payment proof: ${response.error.message}`);
+    }
+
+    console.log("[EV-Net] Payment record created", response.data?.id);
+    return { success: true, payment: response.data, reused: false };
+  },
+
+  async getExistingPayment(userId, listingId = null) {
+    console.log("[EV-Net] onboardingPaymentService.getExistingPayment: Checking for existing payment", { userId, listingId });
+    let query = supabase
+      .from('onboarding_payments')
+      .select('*')
+      .eq('user_id', userId)
+      .in('status', ['pending', 'verified'])
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    if (listingId) query = query.eq('listing_id', listingId);
+
+    let { data, error } = await query;
+
+    if (error && listingId && isMissingColumnError(error, 'listing_id')) {
+      console.warn("[EV-Net] onboarding_payments.listing_id missing; falling back to user-level payment lookup.");
+      ({ data, error } = await supabase
+        .from('onboarding_payments')
+        .select('*')
+        .eq('user_id', userId)
+        .in('status', ['pending', 'verified'])
+        .order('created_at', { ascending: false })
+        .limit(1));
+    }
+    
+    if (error) {
+      console.error("[EV-Net] Error checking existing payment:", error);
+      throw new Error(`Could not check existing payment: ${error.message}`);
+    }
+    return data?.[0] || null;
   },
 
   async getAllSubmissions() {
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from('onboarding_payments')
       .select(`
         *,
@@ -1738,7 +2222,36 @@ export const onboardingPaymentService = {
       `)
       .order('created_at', { ascending: false });
     
-    if (error) throw error;
+    if (error) {
+      if (error.code === 'PGRST205') {
+        console.warn('[EV-Net] onboarding_payments table missing. Skipping payment queue.');
+        return [];
+      }
+      console.warn('[EV-Net] Onboarding payments profile join failed; retrying without join:', error.message);
+      const fallback = await supabase
+        .from('onboarding_payments')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (fallback.error) throw fallback.error;
+      data = fallback.data || [];
+
+      const userIds = [...new Set(data.map(row => row.user_id).filter(Boolean))];
+      const { data: users, error: usersError } = userIds.length > 0
+        ? await supabase.from('profiles').select('id, name, email, avatar_url').in('id', userIds)
+        : { data: [], error: null };
+
+      if (usersError) {
+        console.warn('[EV-Net] Could not hydrate onboarding payment users:', usersError.message);
+      }
+
+      const usersById = (users || []).reduce((acc, user) => {
+        acc[user.id] = user;
+        return acc;
+      }, {});
+
+      data = data.map(row => ({ ...row, user: usersById[row.user_id] || null }));
+    }
 
     return Promise.all((data || []).map(async payment => ({
       ...payment,
@@ -1751,11 +2264,20 @@ export const onboardingPaymentService = {
   },
 
   async verifyPayment(paymentId, approved, notes) {
-    const { data: payment, error: fetchError } = await supabase
+    let { data: payment, error: fetchError } = await supabase
       .from('onboarding_payments')
-      .select('id, user_id')
+      .select('id, user_id, listing_id')
       .eq('id', paymentId)
       .single();
+
+    if (fetchError && isMissingColumnError(fetchError, 'listing_id')) {
+      ({ data: payment, error: fetchError } = await supabase
+        .from('onboarding_payments')
+        .select('id, user_id')
+        .eq('id', paymentId)
+        .single());
+    }
+
     if (fetchError) throw fetchError;
 
     const { error } = await supabase
@@ -1770,8 +2292,14 @@ export const onboardingPaymentService = {
     if (error) throw error;
 
     if (approved) {
-      await markHostPaymentSetupComplete(payment.user_id);
+      await markHostPaymentSetupComplete(payment.user_id, payment.listing_id);
     }
+
+    // Notification → Host
+    const msg = approved
+      ? 'Your onboarding payment has been verified! Your listing setup is now complete.'
+      : `Your onboarding payment was not verified. ${notes || 'Please contact support.'}`;
+    await safeSendNotification(payment.user_id, 'PAYMENT', msg);
 
     return { success: true };
   }
@@ -1857,6 +2385,59 @@ export const hostService = {
     };
   },
 
+  async getEarnings(hostId) {
+    if (!hostId) return null;
+
+    const { data: listings, error: lError } = await supabase
+      .from('listings')
+      .select('id')
+      .eq('host_id', hostId);
+    
+    if (lError) throw lError;
+    const hostListingIds = (listings || []).map(l => l.id);
+
+    const { data: bookings, error: bError } = await (hostListingIds.length > 0 
+      ? supabase
+          .from('bookings')
+          .select('*')
+          .in('listing_id', hostListingIds)
+          .eq('status', 'COMPLETED')
+      : Promise.resolve({ data: [], error: null }));
+
+    if (bError) throw bError;
+
+    let totalRevenue = 0;
+    let totalPayout = 0;
+    let totalCommission = 0;
+    const byMonth = {};
+
+    (bookings || []).forEach(b => {
+      const revenue = b.base_fee || 0;
+      const { hostPayout, hostPlatformFee } = calculateHostPayout(revenue);
+      
+      totalRevenue += revenue;
+      totalPayout += hostPayout;
+      totalCommission += hostPlatformFee;
+
+      const monthKey = b.date ? b.date.substring(0, 7) : 'Unknown';
+      if (!byMonth[monthKey]) {
+        byMonth[monthKey] = { revenue: 0, payout: 0, commission: 0, sessions: 0 };
+      }
+      byMonth[monthKey].revenue += revenue;
+      byMonth[monthKey].payout += hostPayout;
+      byMonth[monthKey].commission += hostPlatformFee;
+      byMonth[monthKey].sessions += 1;
+    });
+
+    return {
+      totalRevenue,
+      totalPayout,
+      totalCommission,
+      totalSessions: bookings?.length || 0,
+      byMonth
+    };
+  },
+
   async getProfile(userId) {
     const profile = await getProfile(userId);
     if (!profile) return null;
@@ -1884,13 +2465,39 @@ export const hostService = {
     return this.getProfile(userId);
   },
 
-  async submitVerification(userId) {
-    const { error } = await supabase
-      .from('host_profiles')
-      .update({ verification_status: 'under_review' })
-      .eq('user_id', userId);
-    if (error) throw error;
-    return this.getProfile(userId);
+  async promote(userId) {
+    if (!userId) throw new Error('User session is required before host promotion.');
+    console.log("[EV-Net] Promoting user to host", userId);
+    const response = await withOperationTimeout(
+      supabase.rpc('promote_to_host', { target_user_id: userId }),
+      15000,
+      'Host promotion timed out after 15 seconds. Please try again.'
+    );
+    const { data, error } = response;
+    console.log("[EV-Net] promote_to_host response:", { data, error });
+    if (error) {
+      console.error("[EV-Net] Error in promote_to_host:", error);
+      throw new Error(`Host promotion failed: ${error.message}`);
+    }
+    console.log("[EV-Net] Host promotion successful");
+    return { success: true };
+  },
+
+  async finalizeOnboarding() {
+    console.log('[EV-Net] Step 4: Finalizing verification via RPC...');
+    const { data, error } = await supabase.rpc('finalize_host_onboarding');
+    console.log('[EV-Net] finalize_host_onboarding response:', { data, error });
+    
+    if (error) {
+      console.error('[EV-Net] finalize_host_onboarding failed:', error);
+      throw error;
+    }
+    console.log('[EV-Net] Step 4 complete: Host onboarding finalized');
+    return { success: true };
+  },
+
+  async getExistingOnboardingPayment(userId, listingId) {
+    return onboardingPaymentService.getExistingPayment(userId, listingId);
   },
 
   async submitOnboardingPayment(userId, data) {
@@ -2010,7 +2617,7 @@ export const verificationService = {
    * Uploads a document to Supabase Storage and records it in verification_submissions.
    * Also updates the corresponding profile flag.
    */
-  async uploadDocument(userId, profileType, documentType, file) {
+  async uploadDocument(userId, profileType, documentType, file, options = {}) {
     if (!file) throw new Error("No file provided");
     
     // 0. Ensure session exists
@@ -2027,6 +2634,7 @@ export const verificationService = {
     const filePath = `${sessionUserId}/${documentType}_${Date.now()}.${fileExt}`;
     const normalizedProfileType = profileType === 'HOST' ? 'HOST' : 'EV_USER';
     const table = normalizedProfileType === 'HOST' ? 'host_profiles' : 'ev_profiles';
+    const shouldUpdateProfileFlags = options.updateProfileFlags !== false;
 
     // 1. Upload to Storage with a 30s timeout
     console.log(`[EV-Net] Uploading to bucket '${VERIFICATION_BUCKET}' at path: ${filePath}`);
@@ -2069,6 +2677,7 @@ export const verificationService = {
     // Map documentType to legacy path columns
     const legacyPathMap = {
       'CNIC_FRONT': 'cnic_path',
+      'CNIC_BACK': 'cnic_back_path',
       'EV_PROOF': 'ev_proof_path',
       'PROPERTY_PROOF': 'property_proof_path',
       'CHARGER_PROOF': 'charger_proof_path'
@@ -2097,15 +2706,41 @@ export const verificationService = {
       return Promise.race([promise, tPromise]);
     };
 
-    const { error: submissionError } = await withDbTimeout(supabase
+    const { data: existingRows, error: existingError } = await withDbTimeout(supabase
       .from('verification_submissions')
-      .insert(submissionPayload));
+      .select('id')
+      .eq('user_id', sessionUserId)
+      .eq('profile_type', normalizedProfileType)
+      .eq('document_type', documentType)
+      .eq('status', 'pending')
+      .order('submitted_at', { ascending: false })
+      .limit(1));
+
+    if (existingError) {
+      console.error('[EV-Net] Existing submission lookup error:', existingError);
+      throw new Error(`Could not check existing document submission: ${existingError.message}`);
+    }
+
+    const existingSubmissionId = existingRows?.[0]?.id;
+    const submissionRequest = existingSubmissionId
+      ? supabase
+          .from('verification_submissions')
+          .update(submissionPayload)
+          .eq('id', existingSubmissionId)
+      : supabase
+          .from('verification_submissions')
+          .insert(submissionPayload);
+
+    const { error: submissionError } = await withDbTimeout(submissionRequest);
     
     if (submissionError) {
       console.error('[EV-Net] Submission record error:', submissionError);
       throw new Error(`Database error: ${submissionError.message}`);
     }
-    console.log(`[EV-Net] Submission recorded.`);
+    console.log(`[EV-Net] Submission recorded.`, {
+      mode: existingSubmissionId ? 'updated' : 'inserted',
+      id: existingSubmissionId || null
+    });
 
     // 3. Update profile boolean flags
     const updateData = {};
@@ -2116,11 +2751,14 @@ export const verificationService = {
         updateData.cnic_submitted = true;
       }
     }
+    if (documentType === 'CNIC_BACK') {
+      updateData.cnic_back_submitted = true;
+    }
     if (documentType === 'EV_PROOF') updateData.ev_proof_submitted = true;
     if (documentType === 'PROPERTY_PROOF') updateData.property_proof_uploaded = true;
     if (documentType === 'CHARGER_PROOF') updateData.charger_proof_uploaded = true;
 
-    if (Object.keys(updateData).length > 0) {
+    if (shouldUpdateProfileFlags && Object.keys(updateData).length > 0) {
       console.log(`[EV-Net] Updating profile flags:`, updateData);
       const { error: dbError } = await withDbTimeout(supabase
         .from(table)
@@ -2132,6 +2770,8 @@ export const verificationService = {
         throw dbError;
       }
       console.log(`[EV-Net] Profile flags updated.`);
+    } else if (!shouldUpdateProfileFlags) {
+      console.log(`[EV-Net] Skipping profile flag update; caller will finalize via RPC.`);
     }
 
     return { success: true, path: filePath };

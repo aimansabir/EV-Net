@@ -12,9 +12,9 @@ const Verification = () => {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState(null);
-  const [uploading, setUploading] = useState({ cnic: false, ev: false, property: false, charger: false, email: false });
-  const [uploadFeedback, setUploadFeedback] = useState({ cnic: null, ev: null, property: null, charger: null, email: null });
-  const [replacing, setReplacing] = useState({ cnic: false, ev: false, property: false, charger: false });
+  const [uploading, setUploading] = useState({ cnic: false, cnic_back: false, ev: false, property: false, charger: false, email: false });
+  const [uploadFeedback, setUploadFeedback] = useState({ cnic: null, cnic_back: null, ev: null, property: null, charger: null, email: null });
+  const [replacing, setReplacing] = useState({ cnic: false, cnic_back: false, ev: false, property: false, charger: false });
   const [signedUrls, setSignedUrls] = useState({});
 
   // Auto-redirect if they are not a real user or not logged in
@@ -27,6 +27,7 @@ const Verification = () => {
     const loadSignedUrls = async () => {
       const paths = {
         identity: user?.cnicPath,
+        identity_back: user?.cnicBackPath,
         ev: user?.evProofPath,
         property: user?.propertyProofPath,
         charger: user?.chargerProofPath
@@ -59,6 +60,7 @@ const Verification = () => {
     
     const docMap = {
       cnic: 'CNIC_FRONT',
+      cnic_back: 'CNIC_BACK',
       ev: 'EV_PROOF',
       property: 'PROPERTY_PROOF',
       charger: 'CHARGER_PROOF'
@@ -115,8 +117,8 @@ const Verification = () => {
         return;
       }
     } else {
-      if (!user.cnicSubmitted || !user.evProofSubmitted) {
-        setError('Please upload both CNIC and EV ownership proof before submitting for review.');
+      if (!user.cnicSubmitted || !user.cnicBackSubmitted || !user.evProofSubmitted) {
+        setError('Please upload CNIC front, CNIC back, and EV ownership proof before submitting for review.');
         return;
       }
     }
@@ -152,10 +154,18 @@ const Verification = () => {
     },
     {
       id: 'identity',
-      title: 'Identity (CNIC) Upload',
+      title: 'Identity (CNIC) Front Side',
       description: 'Upload the front picture of your CNIC.',
       status: user?.cnicSubmitted ? 'completed' : 'action_required',
       path: user?.cnicPath,
+      canEdit: true
+    },
+    {
+      id: 'identity_back',
+      title: 'Identity (CNIC) Back Side',
+      description: 'Upload the back picture of your CNIC.',
+      status: user?.cnicBackSubmitted ? 'completed' : 'action_required',
+      path: user?.cnicBackPath,
       canEdit: true
     },
     ...(user?.role === 'HOST' ? [
@@ -301,7 +311,7 @@ const Verification = () => {
 
                       {/* Document Preview & Replace UI (Only for actual document steps) */}
                       {!isUnderReview && !isApproved && !success && step.status === 'completed' && !replacing[step.id] && 
-                       ['identity', 'ev', 'property', 'charger'].includes(step.id) && (
+                       ['identity', 'identity_back', 'ev', 'property', 'charger'].includes(step.id) && (
                         <div style={{ marginTop: '1rem', display: 'flex', alignItems: 'center', gap: '1.5rem', background: 'rgba(255,255,255,0.03)', padding: '1rem', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
                           <div style={{ width: '80px', height: '60px', borderRadius: '8px', overflow: 'hidden', background: 'var(--bg-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                             {step.path ? (
@@ -346,11 +356,11 @@ const Verification = () => {
                            <FileUploadDropzone 
                              accept="image/jpeg, image/png, application/pdf"
                              files={[]}
-                             onChange={(files) => handleFileUpload(step.id === 'identity' ? 'cnic' : step.id, files)}
+                             onChange={(files) => handleFileUpload(step.id === 'identity' ? 'cnic' : step.id === 'identity_back' ? 'cnic_back' : step.id, files)}
                              mode="document"
-                             disabled={uploading[step.id === 'identity' ? 'cnic' : step.id]}
+                             disabled={uploading[step.id === 'identity' ? 'cnic' : step.id === 'identity_back' ? 'cnic_back' : step.id]}
                            />
-                           {uploading[step.id === 'identity' ? 'cnic' : step.id] && <p style={{ fontSize: '0.8rem', color: 'var(--brand-cyan)', marginTop: '0.5rem' }}>Uploading document...</p>}
+                           {uploading[step.id === 'identity' ? 'cnic' : step.id === 'identity_back' ? 'cnic_back' : step.id] && <p style={{ fontSize: '0.8rem', color: 'var(--brand-cyan)', marginTop: '0.5rem' }}>Uploading document...</p>}
                            
                            {replacing[step.id] && (
                              <button 

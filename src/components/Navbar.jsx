@@ -65,7 +65,12 @@ const Navbar = () => {
               </button>
               
               <div 
-                onClick={() => navigate(role?.toUpperCase() === 'HOST' ? '/host/profile' : '/app/profile')} 
+                onClick={() => {
+                  const r = role?.toUpperCase();
+                  if (r === 'HOST') navigate('/host/profile');
+                  else if (r === 'ADMIN') navigate('/admin');
+                  else navigate('/app/profile');
+                }} 
                 style={{ cursor: 'pointer', transition: 'transform 0.2s' }}
                 onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.05)'}
                 onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}

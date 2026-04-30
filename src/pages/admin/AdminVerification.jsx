@@ -10,7 +10,7 @@ const AdminVerification = () => {
   const [selectedSubmission, setSelectedSubmission] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [warning, setWarning] = useState(null);
   const [submissions, setSubmissions] = useState([]);
   const [payments, setPayments] = useState([]);
 
@@ -22,16 +22,32 @@ const AdminVerification = () => {
 
   const loadSubmissions = async () => {
     setLoading(true);
+    setError(null);
+    setWarning(null);
     try {
-      const [subData, payData] = await Promise.all([
+      const [subResult, payResult] = await Promise.allSettled([
         adminService.getVerificationSubmissions(),
         adminService.getOnboardingPayments()
       ]);
-      setSubmissions(subData);
-      setPayments(payData);
+
+      if (subResult.status === 'fulfilled') {
+        setSubmissions(subResult.value);
+      } else {
+        console.error('[EV-Net] Verification queue load failed:', subResult.reason);
+        setSubmissions([]);
+        setError(`Verification queue error: ${subResult.reason?.message || subResult.reason}`);
+      }
+
+      if (payResult.status === 'fulfilled') {
+        setPayments(payResult.value);
+      } else {
+        console.warn('[EV-Net] Payment queue load failed:', payResult.reason);
+        setPayments([]);
+        setWarning(`Payment queue error: ${payResult.reason?.message || payResult.reason}`);
+      }
     } catch (err) {
       console.error('[EV-Net] Failed to load queue:', err);
-      setError('Could not load verification queue.');
+      setError(`Could not load verification queue: ${err.message || err}`);
     } finally {
       setLoading(false);
     }
@@ -67,8 +83,8 @@ const AdminVerification = () => {
       return { success: false, error: 'No submission selected' };
     }
     setLoading(true);
-    setIsSubmitting(true);
-    console.log('[Admin] Submitting review for', { id: selectedSubmission.id, action, notes });
+    setError(null);
+    console.log('[EV-Net] Admin approve/reject started', { id: selectedSubmission.id, action, notes });
     try {
       const decision = { approved: action === 'APPROVED', notes };
       const userId = selectedSubmission.user_id;
@@ -84,16 +100,14 @@ const AdminVerification = () => {
       await loadSubmissions(); // Refresh list
       setModalOpen(false);
       setSelectedSubmission(null);
-      console.log('[Admin] Review processed successfully for', selectedSubmission.id);
+      console.log('[EV-Net] Admin decision complete', selectedSubmission.id);
       return { success: true };
     } catch (err) {
       console.error('[EV-Net] Review failed:', err);
       setError('Failed to process review: ' + (err.message || err));
-      alert('Failed to process review: ' + (err.message || err));
       return { success: false, error: err?.message || String(err) };
     } finally {
       setLoading(false);
-      setIsSubmitting(false);
     }
   };
 
@@ -128,6 +142,11 @@ const AdminVerification = () => {
 
         {/* Filters & Content */}
         <div className="glass-card" style={{ padding: '0', overflow: 'hidden' }}>
+          {warning && (
+            <div style={{ padding: '0.75rem 1.5rem', borderBottom: '1px solid rgba(251,191,36,0.2)', background: 'rgba(251,191,36,0.08)', color: '#fbbf24', fontSize: '0.85rem' }}>
+              {warning}
+            </div>
+          )}
           <div style={{ padding: '1.5rem', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
             <div style={{ display: 'flex', gap: '0.5rem', overflowX: 'auto', paddingBottom: '0.25rem' }}>
               {tabs.map(tab => (

@@ -21,6 +21,9 @@ const ReviewActionModal = ({ isOpen, onClose, user, targetType = 'evType', submi
   if (submission?.cnic_path) {
     realDocs.push({ id: 'cnic', name: 'CNIC Front', path: submission.cnic_path, url: submission.documentUrls?.cnic_path });
   }
+  if (submission?.cnic_back_path) {
+    realDocs.push({ id: 'cnic_back', name: 'CNIC Back', path: submission.cnic_back_path, url: submission.documentUrls?.cnic_back_path });
+  }
   if (submission?.ev_proof_path) {
     realDocs.push({ id: 'ev', name: 'EV Ownership Proof', path: submission.ev_proof_path, url: submission.documentUrls?.ev_proof_path });
   }
@@ -78,6 +81,9 @@ const ReviewActionModal = ({ isOpen, onClose, user, targetType = 'evType', submi
         user,
       });
       console.log('[Admin] ReviewActionModal parent onSubmit resolved:', result);
+      if (result?.success === false) {
+        throw new Error(result.error || 'Review failed.');
+      }
     } catch (err) {
       console.error('[Admin] ReviewActionModal submit failed:', err);
       setSubmitError(err?.message || String(err));
@@ -237,8 +243,8 @@ const ReviewActionModal = ({ isOpen, onClose, user, targetType = 'evType', submi
         {/* Footer */}
         <div style={{ padding: '1.5rem', borderTop: '1px solid var(--border-color)', display: 'flex', gap: '1rem', justifyContent: 'flex-end', background: 'rgba(0,0,0,0.2)' }}>
           <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" disabled={isSubmitDisabled} onClick={handleSubmit}>
-              Submit Decision
+          <button className="btn btn-primary" disabled={isSubmitDisabled || isSubmitting} onClick={handleSubmit}>
+              {isSubmitting ? <><Loader2 size={16} className="animate-spin" /> Submitting...</> : 'Submit Decision'}
           </button>
         </div>
 

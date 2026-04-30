@@ -32,3 +32,4 @@ export const favoriteService = api.favoriteService;
 export const notificationService = api.notificationService;
 export const profileService = api.profileService;
 export const verificationService = api.verificationService;
+export const onboardingPaymentService = api.onboardingPaymentService;

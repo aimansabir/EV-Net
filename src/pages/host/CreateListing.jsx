@@ -18,14 +18,13 @@ const CreateListing = () => {
   const [showErrors, setShowErrors] = useState(false);
   const [photos, setPhotos] = useState([]);
   const [formData, setFormData] = useState({
-    title: '', description: '', address: '', city: 'Karachi', area: '',
+    title: '', description: '', address: '', houseNo: '', city: 'Karachi', area: '',
     chargerType: '7kW AC Type 2', chargerSpeed: '7kW', priceDay: 40, priceNight: 60,
     amenities: [], houseRules: '',
     lat: null, lng: null
   });
 
-  const [manualCity, setManualCity] = useState(false);
-  const [manualArea, setManualArea] = useState(false);
+
 
   const amenityOptions = ['WiFi Available', 'CCTV Security', 'Covered Parking', 'Restroom Access', 'Drinking Water', 'Gated Community', 'Near Restaurants', 'Garden Seating', 'Overnight Available'];
   const totalSteps = 4;
@@ -67,9 +66,13 @@ const CreateListing = () => {
     }
 
     const isDraft = photos.length < 3;
+    const fullAddress = formData.houseNo
+      ? `${formData.houseNo}, ${formData.address}`
+      : formData.address;
     
     await listingService.create({
       ...formData,
+      address: fullAddress,
       hostId: user?.id || 'host_ahsan',
       images: ['https://images.unsplash.com/photo-1593941707882-a5bba14938cb?w=800&h=450&fit=crop'],
       houseRules: formData.houseRules.split('\n').filter(r => r.trim()),
@@ -117,11 +120,11 @@ const CreateListing = () => {
                     lng: loc.lng 
                   };
                   
-                  if (!manualCity && loc.city) {
+                  if (loc.city) {
                     const normalized = normalizeCityName(loc.city);
                     setFormData(prev => ({ ...prev, city: normalized }));
                   }
-                  if (!manualArea && loc.area) {
+                  if (loc.area) {
                     updates.area = loc.area;
                   }
                   
@@ -131,6 +134,24 @@ const CreateListing = () => {
               {showErrors && (!formData.lat || !formData.lng) && (
                 <p style={{ color: '#fb7185', fontSize: '0.75rem', marginTop: '-0.8rem' }}>Please select a valid location on the map.</p>
               )}
+
+              {/* House / Unit Number */}
+              <div className="auth-field">
+                <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>House / Flat / Unit No.</span>
+                  <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 400 }}>Optional</span>
+                </label>
+                <input
+                  type="text"
+                  className="auth-input"
+                  placeholder="e.g. House 42, Street 5 or Flat 3B, Block C"
+                  value={formData.houseNo}
+                  onChange={e => setFormData({ ...formData, houseNo: e.target.value })}
+                />
+                <p style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                  Shared with confirmed bookings only — not shown publicly.
+                </p>
+              </div>
 
               <div className="auth-row" style={{ display: 'flex', gap: '1rem', width: '100%' }}>
                 <div style={{ flex: 1 }}>
@@ -142,7 +163,6 @@ const CreateListing = () => {
                     value={formData.city} 
                     onChange={v => {
                       setFormData({...formData, city: v, area: ''});
-                      setManualCity(true);
                     }} 
                   />
                 </div>
@@ -154,7 +174,6 @@ const CreateListing = () => {
                     value={formData.area} 
                     onChange={v => {
                       setFormData({...formData, area: v});
-                      setManualArea(true);
                     }} 
                     disabled={!formData.city}
                   />
@@ -162,30 +181,40 @@ const CreateListing = () => {
                 </div>
               </div>
 
-              <div className="auth-row">
-                <div className="auth-field" style={{ flex: 1 }}>
-                  <label>Charger Type</label>
-                  <select className="auth-select" value={formData.chargerType} onChange={e => setFormData({...formData, chargerType: e.target.value})}>
+              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1.2fr 1.2fr', gap: '1rem', marginBottom: '1.25rem', alignItems: 'flex-start' }}>
+                <div className="auth-field">
+                  <label style={{ display: 'block', marginBottom: '0.8rem', opacity: 0.8, fontSize: '0.9rem' }}>Charger Type <span style={{ color: 'var(--brand-cyan)' }}>*</span></label>
+                  <select className="auth-select" value={formData.chargerType} onChange={e => setFormData({...formData, chargerType: e.target.value})} style={{ height: '44px' }}>
                     {Object.values(ChargerType).map(t => <option key={t} value={t}>{t}</option>)}
                   </select>
                 </div>
-                <div className="auth-field" style={{ flex: 1 }}>
-                  <label>Day Rate (per kWh)</label>
-                  <div className="stepper-input">
-                    <button type="button" onClick={() => setFormData({...formData, priceDay: Math.max(0, formData.priceDay - 5)})}>-</button>
-                    <input type="number" className="auth-input" value={formData.priceDay} onChange={e => setFormData({...formData, priceDay: Number(e.target.value)})} />
-                    <button type="button" onClick={() => setFormData({...formData, priceDay: formData.priceDay + 5})}>+</button>
-                  </div>
-                  <p style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '4px' }}>08:00 AM - 08:00 PM (Solar cheaper)</p>
+                
+                <div>
+                  <ValidatedInput 
+                    label="Day Rate" 
+                    format="money" 
+                    min={5} max={500} 
+                    required 
+                    compact
+                    value={formData.priceDay} 
+                    onChange={v => setFormData({...formData, priceDay: Number(v)})} 
+                    forceError={showErrors}
+                  />
+                  <p style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '-0.8rem', textAlign: 'center' }}>08:00 AM - 08:00 PM</p>
                 </div>
-                <div className="auth-field" style={{ flex: 1 }}>
-                  <label>Night Rate (per kWh)</label>
-                  <div className="stepper-input">
-                    <button type="button" onClick={() => setFormData({...formData, priceNight: Math.max(0, formData.priceNight - 5)})}>-</button>
-                    <input type="number" className="auth-input" value={formData.priceNight} onChange={e => setFormData({...formData, priceNight: Number(e.target.value)})} />
-                    <button type="button" onClick={() => setFormData({...formData, priceNight: formData.priceNight + 5})}>+</button>
-                  </div>
-                  <p style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '4px' }}>08:00 PM - 08:00 AM (Grid only)</p>
+
+                <div>
+                  <ValidatedInput 
+                    label="Night Rate" 
+                    format="money" 
+                    min={5} max={500} 
+                    required 
+                    compact
+                    value={formData.priceNight} 
+                    onChange={v => setFormData({...formData, priceNight: Number(v)})} 
+                    forceError={showErrors}
+                  />
+                  <p style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '-0.8rem', textAlign: 'center' }}>08:00 PM - 08:00 AM</p>
                 </div>
               </div>
 
@@ -243,7 +272,12 @@ const CreateListing = () => {
               <h3 style={{ margin: 0 }}>Review & Submit</h3>
               <div style={{ background: 'rgba(255,255,255,0.03)', padding: '1rem', borderRadius: '8px' }}>
                 <p style={{ fontSize: '0.9rem', marginBottom: '0.3rem' }}><strong>{formData.title || 'Untitled'}</strong></p>
-                <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{formData.address}, {formData.area}, {formData.city}</p>
+                {formData.houseNo && (
+                  <p style={{ fontSize: '0.8rem', color: 'var(--brand-cyan)', margin: '0 0 0.2rem' }}>📍 {formData.houseNo}</p>
+                )}
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                  {formData.houseNo ? `${formData.houseNo}, ` : ''}{formData.address}{formData.area ? `, ${formData.area}` : ''}{formData.city ? `, ${formData.city}` : ''}
+                </p>
                 <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '0.5rem' }}>{formData.chargerType} • Day: PKR {formData.priceDay}/kWh • Night: PKR {formData.priceNight}/kWh</p>
                 <p style={{ fontSize: '0.85rem', color: 'var(--brand-cyan)', marginTop: '0.5rem' }}>{photos.length} Photos Attached (Min 3 required to publish)</p>
               </div>

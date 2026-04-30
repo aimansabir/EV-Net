@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Bell, Check, Info, AlertTriangle, CreditCard, Calendar } from 'lucide-react';
+import { Bell, Check, Info, AlertTriangle, CreditCard, Calendar, MessageSquare } from 'lucide-react';
 import useAppStore from '../store/appStore';
 import useAuthStore from '../store/authStore';
 import './NotificationCenter.css';
@@ -29,9 +29,14 @@ const NotificationCenter = () => {
 
   const getIcon = (type) => {
     switch (type) {
-      case 'BOOKING_UPDATE': return <Calendar size={16} color="var(--brand-cyan)" />;
+      case 'BOOKING_UPDATE':
+      case 'BOOKING_SUBMITTED':
+      case 'NEW_BOOKING_REQUEST':
+      case 'BOOKING_STATUS_UPDATE':
+        return <Calendar size={16} color="var(--brand-cyan)" />;
       case 'PAYMENT': return <CreditCard size={16} color="var(--brand-green)" />;
       case 'VERIFICATION': return <AlertTriangle size={16} color="#fbbf24" />;
+      case 'MESSAGE': return <MessageSquare size={16} color="#a78bfa" />;
       case 'SYSTEM': return <Info size={16} color="#94a3b8" />;
       default: return <Bell size={16} color="var(--text-secondary)" />;
     }

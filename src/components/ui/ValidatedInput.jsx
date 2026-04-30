@@ -109,31 +109,29 @@ const ValidatedInput = ({
         </label>
       )}
       
-      <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+      <div style={{ position: 'relative', display: 'flex', alignItems: 'center', width: '100%' }}>
         {(format === 'money' || format === 'numeric') && !disabled && (
           <button 
             type="button"
-            onClick={() => handleStep(-(format === 'money' ? 50 : 1))}
+            onClick={() => handleStep(-(format === 'money' ? 5 : 1))} // Smaller steps for money
             style={{
-              position: 'absolute', left: '6px', zIndex: 5,
-              width: compact ? '42px' : '32px', height: compact ? '42px' : '32px', borderRadius: '6px',
-              background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-color)',
+              position: 'absolute', left: '4px', zIndex: 5,
+              width: compact ? '34px' : '28px', height: compact ? '34px' : '28px', borderRadius: '6px',
+              background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.1)',
               color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
               cursor: 'pointer', transition: 'all 0.1s'
             }}
-            onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
-            onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
           >
-            <Minus size={14} />
+            <Minus size={12} />
           </button>
         )}
 
-        {format === 'money' && (
+        {format === 'money' && !compact && (
            <span style={{
              position: 'absolute', 
-             left: compact ? '76px' : '48px', 
+             left: '42px', 
              top: '50%', transform: 'translateY(-50%)',
-             color: 'var(--text-main)', fontSize: '1rem', fontWeight: '500', zIndex: 2,
+             color: 'var(--text-main)', fontSize: '0.9rem', fontWeight: '500', zIndex: 2,
              opacity: 0.4
            }}>
              PKR
@@ -150,48 +148,44 @@ const ValidatedInput = ({
           maxLength={maxLength || (format === 'cnic' ? 15 : undefined)}
           disabled={disabled}
           style={{
-            ...(compact ? { height: '56px' } : {}),
+            ...(compact ? { height: '44px' } : {}),
             textAlign: compact ? 'center' : 'left',
-            fontWeight: compact ? '700' : '500',
-            fontSize: compact ? '1.25rem' : '1rem',
-            paddingLeft: compact ? '0' : (format === 'money' ? '90px' : (format === 'numeric' ? '48px' : '12px')),
-            paddingRight: compact ? '0' : ((format === 'money' || format === 'numeric') ? '48px' : '12px'),
-            textIndent: compact && format === 'money' ? '2.8rem' : '0',
-            letterSpacing: compact ? '0.05em' : 'normal',
-            background: compact ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.05)',
-            border: compact ? '1px solid rgba(255,255,255,0.1)' : '1px solid var(--border-color)'
+            fontWeight: compact ? '600' : '500',
+            fontSize: compact ? '1rem' : '1rem',
+            paddingLeft: compact ? '38px' : (format === 'money' ? '82px' : (format === 'numeric' ? '42px' : '12px')),
+            paddingRight: compact ? '38px' : ((format === 'money' || format === 'numeric') ? '42px' : '12px'),
+            background: compact ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.03)',
+            border: '1px solid rgba(255,255,255,0.1)'
           }}
         />
 
         {(format === 'money' || format === 'numeric') && !disabled && (
           <button 
             type="button"
-            onClick={() => handleStep(format === 'money' ? 50 : 1)}
+            onClick={() => handleStep(format === 'money' ? 5 : 1)}
             style={{
-              position: 'absolute', right: '6px', zIndex: 5,
-              width: compact ? '42px' : '32px', height: compact ? '42px' : '32px', borderRadius: '6px',
-              background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-color)',
+              position: 'absolute', right: '4px', zIndex: 5,
+              width: compact ? '34px' : '28px', height: compact ? '34px' : '28px', borderRadius: '6px',
+              background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.1)',
               color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
               cursor: 'pointer', transition: 'all 0.1s'
             }}
-            onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
-            onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
           >
-            <Plus size={14} />
+            <Plus size={12} />
           </button>
         )}
       </div>
 
       {displayError && (
         <div style={{
-          display: 'flex', alignItems: 'center', gap: '0.4rem',
-          color: '#fb7185', fontSize: '0.8rem', marginTop: '0.4rem',
-          background: 'rgba(225, 29, 72, 0.1)', padding: '0.4rem 0.6rem',
-          borderRadius: '4px', border: '1px solid rgba(225, 29, 72, 0.2)',
+          display: 'flex', alignItems: 'center', gap: '0.5rem',
+          color: '#fb7185', fontSize: '0.8rem', marginTop: '0.6rem',
+          background: 'rgba(251, 113, 133, 0.08)', padding: '0.6rem 0.8rem',
+          borderRadius: '8px', border: '1px solid rgba(251, 113, 133, 0.15)',
           justifyContent: compact ? 'center' : 'flex-start'
         }}>
           <AlertCircle size={14} />
-          {displayError}
+          <span style={{ fontWeight: 500 }}>{displayError}</span>
         </div>
       )}
     </div>

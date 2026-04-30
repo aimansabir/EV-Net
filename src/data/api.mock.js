@@ -27,6 +27,7 @@ let _bookings = [...seed.bookings];
 let _reviews = [...seed.reviews];
 let _notifications = [...seed.notifications];
 let _favorites = new Set(['listing_1', 'listing_3']); // Default favorites for demo
+let _onboardingPayments = [];
 
 // ─── AUTH SERVICE ───────────────────────────────────────
 
@@ -130,6 +131,10 @@ export const authService = {
 // ─── LISTING SERVICE ────────────────────────────────────
 
 export const listingService = {
+  resolveListingPhotoUrl(path) {
+    return path;
+  },
+
   async getAll(filters = {}) {
     await delay(200);
     let result = [..._listings];
@@ -177,7 +182,11 @@ export const listingService = {
       ...data,
       price_day_per_kwh: data.priceDay,
       price_night_per_kwh: data.priceNight,
-      pricePerHour: data.pricePerHour || 0
+      pricePerHour: data.pricePerHour || 1,
+      images: data.images || [],
+      isActive: data.isActive ?? false,
+      isApproved: data.isApproved ?? false,
+      setupFeePaid: data.setupFeePaid ?? false
     });
     _listings.push(listing);
     return {
@@ -196,6 +205,89 @@ export const listingService = {
       ...data,
       price_day_per_kwh: data.priceDay !== undefined ? data.priceDay : _listings[idx].price_day_per_kwh,
       price_night_per_kwh: data.priceNight !== undefined ? data.priceNight : _listings[idx].price_night_per_kwh
+    };
+    return _listings[idx];
+  },
+
+  async getOwnedById(listingId, hostId) {
+    await delay(100);
+    return _listings.find(l => l.id === listingId && (l.hostId === hostId || l.host_id === hostId)) || null;
+  },
+
+  async findExistingOnboardingListing({ hostId, title, city, area, chargerType }) {
+    await delay(100);
+    return _listings.find(l =>
+      (l.hostId === hostId || l.host_id === hostId)
+      && l.title === title
+      && l.city === city
+      && l.area === area
+      && (l.chargerType === chargerType || l.charger_type === chargerType)
+      && !(l.isApproved ?? l.is_approved)
+    ) || null;
+  },
+
+  async findExistingDraft(hostId, title) {
+    await delay(100);
+    return _listings.find(l =>
+      (l.hostId === hostId || l.host_id === hostId)
+      && l.title === title
+      && !(l.isApproved ?? l.is_approved)
+    ) || null;
+  },
+
+  async demoteDuplicateOnboardingListings({ hostId, keepId, title, city, area, chargerType }) {
+    await delay(100);
+    let demoted = 0;
+    _listings = _listings.map(l => {
+      const isDuplicate = (l.hostId === hostId || l.host_id === hostId)
+        && l.id !== keepId
+        && l.title === title
+        && l.city === city
+        && l.area === area
+        && (l.chargerType === chargerType || l.charger_type === chargerType)
+        && !(l.isApproved ?? l.is_approved);
+      if (!isDuplicate) return l;
+      demoted += 1;
+      return { ...l, setupFeePaid: false, setup_fee_paid: false, isActive: false, is_active: false, isApproved: false, is_approved: false };
+    });
+    return { success: true, demoted };
+  },
+
+  async uploadListingPhotos(listingId, hostId, files) {
+    await delay(200);
+    const idx = _listings.findIndex(l => l.id === listingId);
+    if (idx === -1) throw new Error('Listing not found');
+    const newPhotos = (files || []).map((fileObj, index) => fileObj.preview || fileObj.url || fileObj.name || `${hostId}/${listingId}/mock-photo-${index}`);
+    _listings[idx].images = [...(_listings[idx].images || []), ...newPhotos];
+    _listings[idx].listing_photos = (_listings[idx].images || []).map((path, index) => ({
+      id: `${listingId}_photo_${index}`,
+      storage_path: path,
+      display_order: index
+    }));
+    return _listings[idx].listing_photos;
+  },
+
+  async ensureOnboardingPhotos(listingId, hostId, files) {
+    const listing = await this.getOwnedById(listingId, hostId);
+    if (!listing) throw new Error('Listing not found');
+    if ((listing.images || []).length > 0 || (listing.listing_photos || []).length > 0) {
+      return listing.listing_photos || [];
+    }
+    return this.uploadListingPhotos(listingId, hostId, files);
+  },
+
+  async markOnboardingSubmitted(listingId, hostId) {
+    const listing = await this.getOwnedById(listingId, hostId);
+    if (!listing) throw new Error('Listing not found');
+    const idx = _listings.findIndex(l => l.id === listingId);
+    _listings[idx] = {
+      ..._listings[idx],
+      setupFeePaid: true,
+      setup_fee_paid: true,
+      isActive: false,
+      is_active: false,
+      isApproved: false,
+      is_approved: false
     };
     return _listings[idx];
   },
@@ -367,7 +459,91 @@ export const bookingService = {
 
 // ─── HOST SERVICE ───────────────────────────────────────
 
+export const onboardingPaymentService = {
+  async submitPayment(userId, data) {
+    await delay(200);
+    if (data.method !== 'BANK_TRANSFER') {
+      throw new Error('Pay Online is coming soon. Please use Bank Transfer for this beta.');
+    }
+
+    const existing = await this.getExistingPayment(userId, data.listingId);
+    const payment = {
+      id: existing?.id || `payment_${Date.now()}`,
+      user_id: userId,
+      listing_id: data.listingId,
+      amount: data.amount,
+      method: 'BANK_TRANSFER',
+      screenshot_path: data.screenshot?.file?.name || data.screenshot?.name || 'mock-payment-proof',
+      status: 'pending',
+      created_at: existing?.created_at || new Date().toISOString()
+    };
+
+    if (existing) {
+      _onboardingPayments = _onboardingPayments.map(row => row.id === existing.id ? payment : row);
+      return { success: true, payment, reused: true };
+    }
+
+    _onboardingPayments.push(payment);
+    return { success: true, payment, reused: false };
+  },
+
+  async getExistingPayment(userId, listingId = null) {
+    await delay(100);
+    return _onboardingPayments.find(row =>
+      row.user_id === userId
+      && (!listingId || row.listing_id === listingId)
+      && ['pending', 'verified'].includes(row.status)
+    ) || null;
+  },
+
+  async getAllSubmissions() {
+    await delay(100);
+    return _onboardingPayments.map(row => ({
+      ...row,
+      user: _users.find(u => u.id === row.user_id),
+      submittedAt: row.created_at,
+      receiptUrl: row.screenshot_path
+    }));
+  },
+
+  async verifyPayment(paymentId, approved, notes) {
+    await delay(100);
+    const idx = _onboardingPayments.findIndex(row => row.id === paymentId);
+    if (idx === -1) throw new Error('Payment not found');
+    _onboardingPayments[idx] = {
+      ..._onboardingPayments[idx],
+      status: approved ? 'verified' : 'failed',
+      admin_notes: notes,
+      verified_at: new Date().toISOString()
+    };
+    return { success: true };
+  }
+};
+
 export const hostService = {
+  async promote(userId) {
+    await delay(150);
+    let user = _users.find(u => u.id === userId);
+    if (user) user.role = UserRole.HOST;
+    if (!_hostProfiles.find(h => h.userId === userId)) {
+      _hostProfiles.push(createHostProfile({ userId }));
+    }
+    return { success: true };
+  },
+
+  async finalizeOnboarding() {
+    await delay(150);
+    return { success: true };
+  },
+
+  async getExistingOnboardingPayment(userId, listingId) {
+    return onboardingPaymentService.getExistingPayment(userId, listingId);
+  },
+
+  async submitOnboardingPayment(userId, data) {
+    return onboardingPaymentService.submitPayment(userId, data);
+  },
+
   async getDashboard(hostId) {
     await delay(200);
     const hostListings = _listings.filter(l => l.hostId === hostId);
@@ -609,6 +785,19 @@ export const adminService = {
     if (idx === -1) throw new Error('Host profile not found');
     _hostProfiles[idx].verificationStatus = decision.approved ? VerificationStatus.APPROVED : VerificationStatus.REJECTED;
     if (decision.notes) _hostProfiles[idx].moderationNotes = decision.notes;
+    _hostProfiles[idx].payoutSetupComplete = !!decision.approved;
+    _listings = _listings.map(listing => {
+      if (listing.hostId !== userId && listing.host_id !== userId) return listing;
+      return {
+        ...listing,
+        isActive: !!decision.approved,
+        is_active: !!decision.approved,
+        isApproved: !!decision.approved,
+        is_approved: !!decision.approved,
+        setupFeePaid: decision.approved ? true : listing.setupFeePaid,
+        setup_fee_paid: decision.approved ? true : listing.setup_fee_paid
+      };
+    });
     return _hostProfiles[idx];
   },
 
@@ -667,13 +856,11 @@ export const adminService = {
   },
 
   async getOnboardingPayments() {
-    await delay(100);
-    return [];
+    return onboardingPaymentService.getAllSubmissions();
   },
 
-  async verifyOnboardingPayment() {
-    await delay(100);
-    return { success: true };
+  async verifyOnboardingPayment(paymentId, approved, notes) {
+    return onboardingPaymentService.verifyPayment(paymentId, approved, notes);
   },
 
   async getConversations() {

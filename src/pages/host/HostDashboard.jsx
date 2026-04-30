@@ -51,6 +51,19 @@ const HostDashboard = () => {
     );
   }
 
+  if (!dashboard) {
+    return (
+      <div className="section" style={{ minHeight: 'calc(100vh - 72px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ textAlign: 'center' }}>
+          <AlertCircle size={48} color="#f87171" style={{ marginBottom: '1rem' }} />
+          <h3>Failed to load dashboard</h3>
+          <p style={{ color: 'var(--text-secondary)' }}>Please check your internet connection and try again.</p>
+          <button className="btn btn-secondary" style={{ marginTop: '1rem' }} onClick={() => window.location.reload()}>Retry</button>
+        </div>
+      </div>
+    );
+  }
+
   const verificationStatus = dashboard.profile?.verificationStatus;
   const showVerificationBanner = verificationStatus && verificationStatus !== 'approved';
 

@@ -187,11 +187,13 @@ const FileUploadDropzone = ({
       {/* Error State */}
       {displayError && (
         <div style={{
-          display: 'flex', alignItems: 'center', gap: '0.4rem',
-          color: '#fb7185', fontSize: '0.8rem', marginTop: '0.75rem'
+          display: 'flex', alignItems: 'center', gap: '0.5rem',
+          color: '#fb7185', fontSize: '0.8rem', marginTop: '0.75rem',
+          background: 'rgba(251, 113, 133, 0.08)', padding: '0.6rem 0.8rem',
+          borderRadius: '8px', border: '1px solid rgba(251, 113, 133, 0.15)'
         }}>
           <AlertCircle size={14} />
-          {displayError}
+          <span style={{ fontWeight: 500 }}>{displayError}</span>
         </div>
       )}
     </div>
