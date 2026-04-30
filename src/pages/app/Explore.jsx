@@ -1,16 +1,96 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import { useNavigate } from 'react-router-dom';
 import { listingService } from '../../data/api';
 import useAppStore from '../../store/appStore';
 import { formatPKR } from '../../data/feeConfig';
-import { Search, MapPin, SlidersHorizontal, Settings2 } from 'lucide-react';
+import { getFuzzyCoordinates } from '../../data/cityCoordinates';
+import { Search, MapPin, Settings2 } from 'lucide-react';
 import 'leaflet/dist/leaflet.css';
 import './Explore.css';
 
 const DEFAULT_CENTER = [24.8607, 67.0011]; // default Karachi
 const DEFAULT_ZOOM = 12;
+const MARKER_OPTIONS = {
+  color: '#00F0A8',
+  fillColor: '#00D26A',
+  fillOpacity: 0.95,
+  opacity: 1,
+  weight: 3,
+};
+const SELECTED_MARKER_OPTIONS = {
+  ...MARKER_OPTIONS,
+  color: '#00F0FF',
+  fillColor: '#00F0FF',
+};
+const MARKER_HALO_OPTIONS = {
+  color: '#00F0A8',
+  fillColor: '#00F0A8',
+  fillOpacity: 0.18,
+  opacity: 0.55,
+  weight: 1,
+};
+
+const parseCoordinate = (value) => {
+  const coord = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(coord) ? coord : null;
+};
+
+const hashString = (value) => {
+  const text = String(value || '');
+  let hash = 0;
+  for (let i = 0; i < text.length; i += 1) {
+    hash = ((hash << 5) - hash + text.charCodeAt(i)) | 0;
+  }
+  return Math.abs(hash);
+};
+
+const getStableOffset = (key, radius) => {
+  const hash = hashString(key);
+  const angle = (hash % 360) * (Math.PI / 180);
+  const ring = 0.45 + ((hash % 7) / 12);
+
+  return [
+    Math.sin(angle) * radius * ring,
+    Math.cos(angle) * radius * ring,
+  ];
+};
+
+const getListingMapPosition = (listing) => {
+  const lat = parseCoordinate(listing.lat);
+  const lng = parseCoordinate(listing.lng);
+  const hasPublicCoords = lat !== null && lng !== null;
+  const [baseLat, baseLng] = getFuzzyCoordinates(
+    listing.city,
+    hasPublicCoords ? lat : null,
+    hasPublicCoords ? lng : null
+  );
+  const key = listing.id || `${listing.city}-${listing.area}-${listing.title}`;
+  const [offsetLat, offsetLng] = getStableOffset(key, hasPublicCoords ? 0.0015 : 0.008);
+
+  return [baseLat + offsetLat, baseLng + offsetLng];
+};
+
+const MapBoundsUpdater = ({ positions }) => {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!positions.length) return;
+
+    if (positions.length === 1) {
+      map.setView(positions[0], DEFAULT_ZOOM, { animate: true });
+      return;
+    }
+
+    map.fitBounds(L.latLngBounds(positions), {
+      padding: [80, 80],
+      maxZoom: DEFAULT_ZOOM,
+    });
+  }, [map, positions]);
+
+  return null;
+};
 
 // Fake "available now" times for demo realism
 const getAvailabilityText = (listing) => {
@@ -35,13 +115,6 @@ const Explore = () => {
   const isMounted = true;
   const { favorites, loadFavorites, toggleFavorite } = useAppStore();
 
-  const customIcon = useMemo(() => new L.DivIcon({
-    className: 'custom-map-marker',
-    html: `<div class="marker-pin"></div>`,
-    iconSize: [24, 24],
-    iconAnchor: [12, 12],
-  }), []);
-
   useEffect(() => {
     const load = async () => {
       await loadFavorites();
@@ -49,7 +122,7 @@ const Explore = () => {
       setChargers(data);
     };
     load();
-  }, []);
+  }, [loadFavorites]);
 
   const filters = [
     { key: 'All', label: 'All Chargers' },
@@ -58,13 +131,24 @@ const Explore = () => {
     { key: 'TopRated', label: 'Top Rated Hosts' },
   ];
 
-  const filtered = chargers.filter(c => {
+  const filtered = useMemo(() => chargers.filter(c => {
     if (search && !c.title.toLowerCase().includes(search.toLowerCase()) && !c.area.toLowerCase().includes(search.toLowerCase()) && !c.city.toLowerCase().includes(search.toLowerCase())) return false;
     if (activeFilter === 'Fast') return c.chargerSpeed === '22kW' || c.chargerSpeed === '50kW';
     if (activeFilter === 'TopRated') return c.rating >= 4.5;
     if (activeFilter === 'Available') return true; // All demo chargers are "available"
     return true;
-  });
+  }), [activeFilter, chargers, search]);
+
+  const mapChargers = useMemo(() => (
+    filtered.map(charger => ({
+      charger,
+      position: getListingMapPosition(charger),
+    }))
+  ), [filtered]);
+
+  const mapPositions = useMemo(() => (
+    mapChargers.map(({ position }) => position)
+  ), [mapChargers]);
 
   const handleFavorite = async (e, listingId) => {
     e.stopPropagation();
@@ -190,14 +274,24 @@ const Explore = () => {
               url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>'
             />
-            {filtered.map(charger => {
-              const position = [charger.lat, charger.lng];
-              const isValidPos = typeof charger.lat === 'number' && typeof charger.lng === 'number';
-
-              if (!isValidPos) return null;
-
+            <MapBoundsUpdater positions={mapPositions} />
+            {mapChargers.map(({ charger, position }) => {
               return (
-                <Marker key={charger.id} position={position} icon={customIcon}>
+                <React.Fragment key={charger.id}>
+                  <CircleMarker
+                    center={position}
+                    radius={selectedId === charger.id ? 28 : 22}
+                    pathOptions={MARKER_HALO_OPTIONS}
+                    interactive={false}
+                  />
+                  <CircleMarker
+                  center={position}
+                  radius={selectedId === charger.id ? 14 : 11}
+                  pathOptions={selectedId === charger.id ? SELECTED_MARKER_OPTIONS : MARKER_OPTIONS}
+                  eventHandlers={{
+                    click: () => setSelectedId(charger.id),
+                  }}
+                >
                   <Popup className="custom-popup">
                     <div className="mc-header">{charger.title}</div>
                     <div className="mc-details">{charger.chargerSpeed} • {charger.area}</div>
@@ -208,7 +302,8 @@ const Explore = () => {
                       View Details
                     </button>
                   </Popup>
-                </Marker>
+                  </CircleMarker>
+                </React.Fragment>
               );
             })}
           </MapContainer>

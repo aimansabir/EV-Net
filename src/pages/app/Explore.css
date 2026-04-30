@@ -390,3 +390,100 @@
     height: 50vh;
   }
 }
+
+/* ─── Map Marker Styles ──────── */
+.custom-map-marker {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.marker-pin {
+  width: 22px;
+  height: 22px;
+  border-radius: 50% 50% 50% 0;
+  background: var(--brand-green);
+  position: absolute;
+  transform: rotate(-45deg);
+  box-shadow: 0 0 15px var(--brand-green), 0 0 30px rgba(0, 210, 106, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: marker-pulse 2s infinite ease-in-out;
+}
+
+.marker-pin::after {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #000;
+  position: absolute;
+}
+
+@keyframes marker-pulse {
+  0% {
+    box-shadow: 0 0 10px var(--brand-green), 0 0 20px rgba(0, 210, 106, 0.2);
+    transform: rotate(-45deg) scale(1);
+  }
+  50% {
+    box-shadow: 0 0 25px var(--brand-green), 0 0 50px rgba(0, 210, 106, 0.6);
+    transform: rotate(-45deg) scale(1.15);
+  }
+  100% {
+    box-shadow: 0 0 10px var(--brand-green), 0 0 20px rgba(0, 210, 106, 0.2);
+    transform: rotate(-45deg) scale(1);
+  }
+}
+
+/* Custom Popup Styling */
+.custom-popup .leaflet-popup-content-wrapper {
+  background: #111827 !important;
+  color: #fff !important;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 0;
+  overflow: hidden;
+  box-shadow: 0 15px 35px rgba(0, 0, 0, 0.6);
+}
+
+.custom-popup .leaflet-popup-content {
+  margin: 1rem !important;
+  width: 220px !important;
+}
+
+.custom-popup .leaflet-popup-tip {
+  background: #111827 !important;
+  border: 1px solid var(--border-color);
+}
+
+.custom-popup .mc-header {
+  font-family: var(--font-heading);
+  font-weight: 700;
+  font-size: 1rem;
+  margin-bottom: 4px;
+}
+
+.custom-popup .mc-details {
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  margin-bottom: 12px;
+}
+
+.custom-popup .mc-btn {
+  background: linear-gradient(135deg, var(--brand-green), var(--brand-cyan));
+  color: #000;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  font-weight: 700;
+  cursor: pointer;
+  font-size: 0.85rem;
+  width: 100%;
+  transition: all 0.2s;
+}
+
+.custom-popup .mc-btn:hover {
+  filter: brightness(1.1);
+  transform: translateY(-1px);
+}
