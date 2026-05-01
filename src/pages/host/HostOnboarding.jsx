@@ -508,10 +508,6 @@ const HostOnboarding = () => {
                 <label>Description</label>
                 <textarea className="auth-input" rows={3} placeholder="Describe your setup..." value={charger.description} onChange={e => setCharger({...charger, description: e.target.value})} style={{ resize: 'vertical' }} />
               </div>
-              <div className="auth-field" style={{ marginBottom: '1.25rem' }}>
-                <label>Description</label>
-                <textarea className="auth-input" rows={3} placeholder="Describe your setup..." value={charger.description} onChange={e => setCharger({...charger, description: e.target.value})} style={{ resize: 'vertical' }} />
-              </div>
               <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
                 <button className="btn btn-secondary" onClick={() => setStep(1)} style={{ flex: 1 }}>Back</button>
                 <button className="btn btn-primary" onClick={() => handleContinue(3)} style={{ flex: 1 }}>Continue</button>
