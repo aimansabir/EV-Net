@@ -219,8 +219,32 @@ BEGIN
   SET updated_at = now()
   WHERE id = v_conversation_id;
 
+  -- Insert Notification for the other participant
+  INSERT INTO public.notifications (
+    user_id,
+    type,
+    title,
+    message,
+    data
+  )
+  VALUES (
+    CASE WHEN v_is_user THEN v_conv.host_id ELSE v_conv.user_id END,
+    'MESSAGE',
+    'New message',
+    'You have a new message.',
+    jsonb_build_object(
+      'conversationId', v_conversation_id,
+      'conversation_id', v_conversation_id,
+      'listingId', v_conv.listing_id,
+      'senderId', v_actor,
+      'route', '/app/messages?conversation=' || v_conversation_id,
+      'hostRoute', '/host/messages?conversation=' || v_conversation_id
+    )
+  );
+
   RETURN NEXT v_message;
 END;
+
 $$;
 
 CREATE OR REPLACE FUNCTION public.request_extension(p_conversation_id text)

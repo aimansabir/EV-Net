@@ -62,12 +62,12 @@ const useAuthStore = create((set, get) => ({
   /**
    * Initialize Auth — restores Supabase session or falls back to localStorage.
    */
-  initAuth: () => {
+  initAuth: (options = { force: false }) => {
     // Already initialized
-    if (get().isInitialized && !get().isAuthHydrating) return Promise.resolve();
+    if (!options.force && get().isInitialized && !get().isAuthHydrating) return Promise.resolve();
 
     // Already initializing
-    if (get()._initPromise) return get()._initPromise;
+    if (!options.force && get()._initPromise) return get()._initPromise;
 
     const promise = (async () => {
       // Clean up any existing subscription on re-init

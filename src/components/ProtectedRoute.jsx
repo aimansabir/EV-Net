@@ -27,9 +27,12 @@ const ProtectedRoute = ({ allowedRoles, children }) => {
     return () => clearTimeout(timeoutId);
   }, [isInitialized, isAuthHydrating]);
 
-  // If auth is still checking initial session, or re-hydrating profile in bg,
-  // don't redirect yet as the role might be about to change.
-  if (!isInitialized || isAuthHydrating) {
+  // If auth is totally uninitialized and we aren't even authenticated, show full blocker.
+  // BUT if we ARE authenticated and know the role (from session metadata), allow rendering.
+  // This prevents the black loading screen loop on normal route changes.
+  const isInitialLoadBlock = !isInitialized && !isAuthenticated;
+
+  if (isInitialLoadBlock) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'var(--bg-main)', color: 'var(--text-secondary)', textAlign: 'center', padding: '1rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -43,7 +46,7 @@ const ProtectedRoute = ({ allowedRoles, children }) => {
               className="btn btn-secondary"
               onClick={() => {
                 setShowRetry(false);
-                initAuth();
+                initAuth({ force: true });
               }}
             >
               Retry

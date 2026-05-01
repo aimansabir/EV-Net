@@ -13,15 +13,15 @@ import AuthCallback from './pages/auth/AuthCallback';
 // App Pages (EV User)
 import Explore from './pages/app/Explore';
 import ChargerDetail from './pages/app/ChargerDetail';
-import Checkout from './pages/app/Checkout';
+const Checkout = React.lazy(() => import('./pages/app/Checkout'));
 import Bookings from './pages/app/Bookings';
 import Favorites from './pages/app/Favorites';
 import UserProfile from './pages/app/UserProfile';
 import Verification from './pages/app/Verification';
-import UserMessages from './pages/app/Messages';
+const UserMessages = React.lazy(() => import('./pages/app/Messages'));
 
 // Host Pages
-import HostOnboarding from './pages/host/HostOnboarding';
+const HostOnboarding = React.lazy(() => import('./pages/host/HostOnboarding'));
 import HostDashboard from './pages/host/HostDashboard';
 import HostListings from './pages/host/HostListings';
 import CreateListing from './pages/host/CreateListing';
@@ -29,14 +29,14 @@ import HostBookings from './pages/host/HostBookings';
 import HostEarnings from './pages/host/HostEarnings';
 import HostAvailability from './pages/host/HostAvailability';
 import HostProfile from './pages/host/HostProfile';
-import HostMessages from './pages/host/HostMessages';
+const HostMessages = React.lazy(() => import('./pages/host/HostMessages'));
 
 // Admin Pages
 import AdminDashboard from './pages/admin/AdminDashboard';
 import AdminListings from './pages/admin/AdminListings';
 import AdminBookings from './pages/admin/AdminBookings';
 import AdminUsers from './pages/admin/AdminUsers';
-import AdminVerification from './pages/admin/AdminVerification';
+const AdminVerification = React.lazy(() => import('./pages/admin/AdminVerification'));
 import AdminReports from './pages/admin/AdminReports';
 import AdminConversations from './pages/admin/AdminConversations';
 
@@ -52,6 +52,12 @@ import DemoSwitcher from './components/DemoSwitcher';
 
 import './App.css';
 
+const InlineSpinner = () => (
+  <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '3rem' }}>
+    <div className="spinner" style={{ width: '24px', height: '24px', border: '2px solid rgba(255,255,255,0.1)', borderTopColor: 'var(--brand-cyan)', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></div>
+  </div>
+);
+
 function App() {
   const initAuth = useAuthStore(state => state.initAuth);
 
@@ -61,7 +67,8 @@ function App() {
 
   return (
     <BrowserRouter>
-      <Routes>
+      <React.Suspense fallback={<InlineSpinner />}>
+        <Routes>
         {/* ═══ Public Routes ═══ */}
         <Route path="/" element={<LandingPage />} />
         <Route path="/login" element={<Login />} />
@@ -195,6 +202,7 @@ function App() {
           </ProtectedRoute>
         } />
       </Routes>
+      </React.Suspense>
 
       {/* Demo Mode Switcher — dev-only or ?demo=1 */}
       <DemoSwitcher />

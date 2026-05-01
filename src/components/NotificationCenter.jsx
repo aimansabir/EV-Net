@@ -94,7 +94,10 @@ const NotificationCenter = () => {
     <div className="notification-center-wrapper" ref={dropdownRef}>
       <button 
         className={`notif-bell-btn ${isOpen ? 'active' : ''}`}
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={() => {
+          if (!isOpen && user?.id) loadNotifications(user.id);
+          setIsOpen(!isOpen);
+        }}
       >
         <Bell size={20} />
         {count > 0 && <span className="notif-badge">{count}</span>}
