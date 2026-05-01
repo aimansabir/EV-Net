@@ -11,6 +11,7 @@
 
 import { supabase } from '../lib/supabase.js';
 import { calculateHostPayout } from './feeConfig.js';
+import { friendlyAuthError, normalizePersonName } from '../utils/text.js';
 
 // ─── PERFORMANCE CACHE ──────────────────────────────────
 let _cachedUser = null;
@@ -188,19 +189,28 @@ function mergeDocumentPath(paths, row, field, documentType) {
  * Best-effort notification helper used by admin actions.
  * Catches and logs errors silently so admin workflows never break due to notification failures.
  */
-async function safeSendNotification(userId, type, message) {
+function normalizeNotificationRow(row) {
+  if (!row) return null;
+  return {
+    ...row,
+    userId: row.user_id,
+    isRead: row.is_read,
+    createdAt: row.created_at,
+    data: row.data || {},
+  };
+}
+
+async function safeSendNotification(userId, type, message, data = null) {
+  if (!userId) return;
   try {
     const payload = { user_id: userId, type, message, is_read: false };
-    const { error: upsertError } = await supabase
-      .from('notifications')
-      .upsert(payload, { onConflict: 'user_id,type,message', ignoreDuplicates: true });
+    if (data && Object.keys(data).length > 0) payload.data = data;
 
-    if (upsertError) {
-      const { error: insertError } = await supabase
-        .from('notifications')
-        .insert(payload);
-      if (insertError) throw insertError;
-    }
+    const { error } = await supabase
+      .from('notifications')
+      .insert(payload);
+
+    if (error) throw error;
   } catch (err) {
     console.warn('[EV-Net] safeSendNotification failed:', err.message);
   }
@@ -274,7 +284,7 @@ function mergeUserShape(profile, evProfile, hostProfile, authUser = null, verifi
       evModel: evProfile.ev_model,
       connectorPreference: evProfile.connector_preference,
       verificationStatus: (evProfile.verification_status === 'approved') ? 'approved' :
-                         (cnicSubmitted && evProofSubmitted) ? 'under_review' :
+                         (cnicSubmitted && cnicBackSubmitted && evProofSubmitted) ? 'under_review' :
                          evProfile.verification_status,
       cnicSubmitted,
       cnicBackSubmitted,
@@ -322,8 +332,11 @@ function mergeUserShape(profile, evProfile, hostProfile, authUser = null, verifi
 export const authService = {
   async login(email, password) {
     return withTimeout((async () => {
-      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ email, password });
-      if (authError) throw new Error(authError.message);
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password
+      });
+      if (authError) throw new Error(friendlyAuthError(authError));
 
       _cachedUser = authData.user;
       _userCacheTime = Date.now();
@@ -371,13 +384,25 @@ export const authService = {
   async sendVerificationEmail(email) {
     const result = await supabase.auth.resend({
       type: 'signup',
-      email: email,
+      email: email.trim(),
       options: {
         emailRedirectTo: `${window.location.origin}/auth/callback`
       }
     });
     console.log('[EV-Net] Supabase resend result:', result);
     if (result.error) throw new Error(result.error.message);
+    return { success: true };
+  },
+
+  async resetPassword(email) {
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail) throw new Error('Enter your email address first.');
+
+    const { error } = await supabase.auth.resetPasswordForEmail(trimmedEmail, {
+      redirectTo: `${window.location.origin}/login`
+    });
+
+    if (error) throw new Error(friendlyAuthError(error));
     return { success: true };
   },
 
@@ -418,18 +443,29 @@ export const authService = {
   },
 
   async signupUser(formData) {
+    const normalizedName = normalizePersonName(formData.name);
+    const normalizedEmail = formData.email.trim().toLowerCase();
+
+    // Requirement 1 & 2: Check whether the email already exists via RPC
+    const { data: exists, error: checkError } = await supabase.rpc('email_exists', { p_email: normalizedEmail });
+    if (checkError) {
+      console.error("[EV-Net] email_exists check failed:", checkError);
+    } else if (exists) {
+      throw new Error("An account with this email already exists. Please log in or reset your password.");
+    }
+
     const { data, error } = await supabase.auth.signUp({
-      email: formData.email,
+      email: normalizedEmail,
       password: formData.password,
       options: {
         data: {
-          name: formData.name,
+          name: normalizedName,
           phone: formData.phone,
           role: 'USER',
         },
       },
     });
-    if (error) throw new Error(error.message);
+    if (error) throw new Error(friendlyAuthError(error));
 
     // If no session, email verification is likely required
     if (!data.session) {
@@ -473,18 +509,29 @@ export const authService = {
   },
 
   async signupHost(formData) {
+    const normalizedName = normalizePersonName(formData.name);
+    const normalizedEmail = formData.email.trim().toLowerCase();
+
+    // Requirement 1 & 2: Check whether the email already exists via RPC
+    const { data: exists, error: checkError } = await supabase.rpc('email_exists', { p_email: normalizedEmail });
+    if (checkError) {
+      console.error("[EV-Net] email_exists check failed:", checkError);
+    } else if (exists) {
+      throw new Error("An account with this email already exists. Please log in or reset your password.");
+    }
+
     const { data, error } = await supabase.auth.signUp({
-      email: formData.email,
+      email: normalizedEmail,
       password: formData.password,
       options: {
         data: {
-          name: formData.name,
+          name: normalizedName,
           phone: formData.phone,
           role: 'HOST',
         },
       },
     });
-    if (error) throw new Error(error.message);
+    if (error) throw new Error(friendlyAuthError(error));
 
     // If no session, email verification is likely required
     if (!data.session) {
@@ -1025,8 +1072,11 @@ export const listingService = {
       .update(updates)
       .eq('id', id)
       .select()
-      .single();
+      .maybeSingle();
     if (error) throw error;
+    if (!listing) {
+      throw new Error('Listing could not be updated. It may no longer exist or you may not have access.');
+    }
 
     if (data.address && data.lat && data.lng) {
       const locationPayload = {
@@ -1119,7 +1169,7 @@ export const listingService = {
     }
 
     if ((existingPhotos || []).length > 0) {
-      console.log("[EV-Net] Listing photos already exist for reused listing; skipping duplicate upload.", {
+      console.log("[EV-Net] Skipping duplicate photo upload", {
         listingId,
         count: existingPhotos.length
       });
@@ -1141,11 +1191,15 @@ export const listingService = {
       .eq('id', listingId)
       .eq('host_id', hostId)
       .select()
-      .single();
+      .maybeSingle();
 
     if (error) {
       console.error("[EV-Net] Could not mark listing pending review:", error);
       throw new Error(`Could not mark listing pending review: ${error.message}`);
+    }
+
+    if (!data) {
+      throw new Error('Could not mark listing pending review: listing was not found for this host.');
     }
 
     return data;
@@ -1582,53 +1636,79 @@ export const messagingService = {
     }));
   },
 
-  async createOrGetInquiry(listingId, userId) {
-    // 1. Fetch listing to get hostId
-    const { data: listing, error: lError } = await supabase
-      .from('listings')
-      .select('host_id')
-      .eq('id', listingId)
-      .single();
-    if (lError) throw lError;
+  async createOrGetInquiry(listingId) {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Please log in to message the host.');
 
-    // 2. Check for existing conversation
-    const { data: existing, error: eError } = await supabase
+    console.log('[EV-Net] Starting conversation for listing:', listingId);
+
+    const { data: existingInquiry, error: existingInquiryError } = await supabase
       .from('conversations')
-      .select('*')
+      .select('id')
       .eq('listing_id', listingId)
-      .eq('user_id', userId)
+      .eq('user_id', user.id)
       .eq('type', 'INQUIRY')
       .maybeSingle();
-    
-    if (eError) throw eError;
-    if (existing) {
-      return {
-        ...existing,
-        listingId: existing.listing_id,
-        userId: existing.user_id,
-        hostId: existing.host_id,
-      };
+
+    if (existingInquiryError) {
+      console.warn('[EV-Net] Could not check existing inquiry before RPC:', existingInquiryError.message);
     }
 
-    // 3. Create new conversation
-    const { data: created, error: cError } = await supabase
+    // Try new robust name first, then previous names
+    let rpcResponse = await supabase.rpc('initialize_inquiry', {
+      p_listing_id: listingId
+    });
+
+    if (rpcResponse.error && ['PGRST202', 'PGRST203', '42883'].includes(rpcResponse.error.code)) {
+      console.warn('[EV-Net] initialize_inquiry failed, falling back to start_conversation_with_host');
+      rpcResponse = await supabase.rpc('start_conversation_with_host', {
+        p_listing_id: listingId
+      });
+    }
+
+    if (rpcResponse.error && ['PGRST202', 'PGRST203', '42883'].includes(rpcResponse.error.code)) {
+      console.warn('[EV-Net] start_conversation_with_host failed, falling back to create_or_get_inquiry');
+      rpcResponse = await supabase.rpc('create_or_get_inquiry', {
+        p_listing_id: listingId
+      });
+    }
+
+    if (rpcResponse.error) {
+      console.error('[EV-Net] RPC Error:', rpcResponse.error);
+      const message = rpcResponse.error.message || 'Unable to start conversation.';
+      if (message.toLowerCase().includes('own listing')) {
+        throw new Error('You cannot message yourself as the host of this listing.');
+      }
+      throw new Error(`${message} Please try again.`);
+    }
+
+    const rpcData = Array.isArray(rpcResponse.data) ? rpcResponse.data[0] : rpcResponse.data;
+    const conversationId = typeof rpcData === 'string' ? rpcData : rpcData?.id;
+
+    if (!conversationId) {
+      throw new Error('Conversation could not be opened. Please try again.');
+    }
+
+    const { data: created, error: fetchError } = await supabase
       .from('conversations')
-      .insert({
-        listing_id: listingId,
-        user_id: userId,
-        host_id: listing.host_id,
-        type: 'INQUIRY',
-        status: 'ACTIVE'
-      })
-      .select()
-      .single();
-    
-    if (cError) throw cError;
+      .select('*')
+      .eq('id', conversationId)
+      .maybeSingle();
+
+    if (fetchError) throw fetchError;
+    if (!created) throw new Error('Conversation was created but could not be loaded.');
     
     // Notification Trigger for new inquiry
     try {
-      const { data: list } = await supabase.from('listings').select('title').eq('id', listingId).single();
-      await safeSendNotification(listing.host_id, 'MESSAGE', `You have a new inquiry about ${list?.title || 'your listing'}.`);
+      if (!existingInquiry?.id) {
+        const { data: list } = await supabase.from('listings').select('title, host_id').eq('id', listingId).single();
+        await safeSendNotification(
+          list?.host_id,
+          'MESSAGE',
+          `You have a new inquiry about ${list?.title || 'your listing'}.`,
+          { conversationId, listingId }
+        );
+      }
     } catch (err) {
       console.warn('[EV-Net] Failed to notify host of new inquiry:', err);
     }
@@ -1642,24 +1722,15 @@ export const messagingService = {
   },
 
   async sendMessage(conversationId, senderId, content) {
-    const { data, error } = await supabase
-      .from('messages')
-      .insert({
-        conversation_id: conversationId,
-        sender_id: senderId,
-        content: content,
-        is_read: false
-      })
-      .select()
-      .single();
-    
-    if (error) throw error;
+    const { data: rpcMessage, error } = await supabase.rpc('send_message', {
+      p_conversation_id: conversationId,
+      p_content: content
+    });
 
-    // Update conversation updatedAt
-    await supabase
-      .from('conversations')
-      .update({ updated_at: new Date().toISOString() })
-      .eq('id', conversationId);
+    if (error) throw new Error(error.message);
+
+    const data = Array.isArray(rpcMessage) ? rpcMessage[0] : rpcMessage;
+    if (!data?.id) throw new Error('Message could not be sent. Please try again.');
 
     // Notification Trigger: notify the OTHER party
     try {
@@ -1671,7 +1742,12 @@ export const messagingService = {
       if (conv) {
         const recipientId = senderId === conv.user_id ? conv.host_id : conv.user_id;
         const listingTitle = conv.listing?.title || 'a listing';
-        await safeSendNotification(recipientId, 'MESSAGE', `You have a new message regarding ${listingTitle}.`);
+        await safeSendNotification(
+          recipientId,
+          'MESSAGE',
+          `You have a new message regarding ${listingTitle}.`,
+          { conversationId }
+        );
       }
     } catch (err) {
       console.warn('[EV-Net] Failed to create message notification:', err);
@@ -1848,11 +1924,15 @@ export const adminService = {
       userId,
       approved: decision.approved
     });
-    const { data, error } = await supabase.rpc('admin_verify_host_v2', {
-      p_approved: decision.approved,
-      p_notes: decision.notes || '',
-      p_user_id: userId
-    });
+    const { data, error } = await withOperationTimeout(
+      supabase.rpc('admin_verify_host_v2', {
+        p_approved: decision.approved,
+        p_notes: decision.notes || '',
+        p_user_id: userId
+      }),
+      15000,
+      'Admin host review timed out. Please retry from the queue.'
+    );
     console.log("[EV-Net] admin_verify_host_v2 response:", { data, error });
     if (error) throw new Error(error.message);
 
@@ -1872,11 +1952,15 @@ export const adminService = {
       userId,
       approved: decision.approved
     });
-    const { data, error } = await supabase.rpc('admin_verify_user_v2', {
-      p_approved: decision.approved,
-      p_notes: decision.notes || '',
-      p_user_id: userId
-    });
+    const { data, error } = await withOperationTimeout(
+      supabase.rpc('admin_verify_user_v2', {
+        p_approved: decision.approved,
+        p_notes: decision.notes || '',
+        p_user_id: userId
+      }),
+      15000,
+      'Admin user review timed out. Please retry from the queue.'
+    );
     console.log("[EV-Net] admin_verify_user_v2 response:", { data, error });
     if (error) throw new Error(error.message);
 
@@ -2130,6 +2214,7 @@ export const onboardingPaymentService = {
 
     if (existingPayment) {
       console.log("[EV-Net] onboardingPaymentService.submitPayment: Reusing existing payment:", existingPayment.id);
+      console.log("[EV-Net] Updating existing payment proof");
       const { data: payment, error } = await supabase
         .from('onboarding_payments')
         .update({
@@ -2141,14 +2226,18 @@ export const onboardingPaymentService = {
         })
         .eq('id', existingPayment.id)
         .select()
-        .single();
+        .maybeSingle();
 
       if (error) {
         console.error("[EV-Net] Error updating onboarding payment record:", error);
         throw new Error(`Could not update payment proof: ${error.message}`);
       }
 
-      console.log("[EV-Net] Payment record created", payment.id);
+      if (!payment?.id) {
+        throw new Error('Could not update payment proof: payment record was not found. Please refresh and try again.');
+      }
+
+      console.log("[EV-Net] Payment record updated", payment.id);
       return { success: true, payment, reused: true };
     }
 
@@ -2158,7 +2247,7 @@ export const onboardingPaymentService = {
       .from('onboarding_payments')
       .insert(insertPayload)
       .select()
-      .single();
+      .maybeSingle();
 
     if (response.error && isMissingColumnError(response.error, 'listing_id')) {
       console.warn("[EV-Net] onboarding_payments.listing_id missing; retrying insert without listing_id. Run latest migrations.");
@@ -2169,12 +2258,44 @@ export const onboardingPaymentService = {
         .from('onboarding_payments')
         .insert(insertPayload)
         .select()
-        .single();
+        .maybeSingle();
     }
 
     if (response.error) {
+      if (response.error.code === '23505') {
+        const latestPayment = await this.getExistingPayment(userId, data.listingId);
+        if (latestPayment) {
+          console.log("[EV-Net] Updating existing payment proof after unique conflict");
+          const { data: payment, error: updateError } = await supabase
+            .from('onboarding_payments')
+            .update({
+              amount: paymentPayload.amount,
+              method: paymentPayload.method,
+              screenshot_path: paymentPayload.screenshot_path,
+              status: 'pending',
+              admin_notes: null
+            })
+            .eq('id', latestPayment.id)
+            .select()
+            .maybeSingle();
+
+          if (updateError) {
+            throw new Error(`Could not update payment proof: ${updateError.message}`);
+          }
+
+          if (!payment?.id) {
+            throw new Error('Could not update payment proof: payment record was not found. Please refresh and try again.');
+          }
+
+          return { success: true, payment, reused: true };
+        }
+      }
       console.error("[EV-Net] Error inserting onboarding payment record:", response.error);
       throw new Error(`Could not record payment proof: ${response.error.message}`);
+    }
+
+    if (!response.data?.id) {
+      throw new Error('Could not record payment proof: no payment record was returned.');
     }
 
     console.log("[EV-Net] Payment record created", response.data?.id);
@@ -2328,8 +2449,12 @@ export const hostService = {
         .sort((a, b) => a.display_order - b.display_order)
         .map(p => resolveListingPhotoUrl(p.storage_path)),
       pricePerHour: l.price_per_hour,
+      priceDay: l.price_day_per_kwh,
+      priceNight: l.price_night_per_kwh,
       chargerType: l.charger_type,
       isActive: l.is_active,
+      isApproved: l.is_approved,
+      setupFeePaid: l.setup_fee_paid,
     }));
 
     const hostListingIds = listings.map(l => l.id);
@@ -2564,12 +2689,7 @@ export const notificationService = {
 
     if (error) throw error;
     
-    return (data || []).map(n => ({
-      ...n,
-      userId: n.user_id,
-      isRead: n.is_read,
-      createdAt: n.created_at,
-    }));
+    return (data || []).map(normalizeNotificationRow);
   },
 
   async markRead(notifId) {
@@ -2581,19 +2701,44 @@ export const notificationService = {
     return { success: true };
   },
 
-  async create(userId, type, message) {
-    const { data, error } = await supabase
+  async create(userId, type, message, meta = null) {
+    const payload = {
+      user_id: userId,
+      type,
+      message,
+      is_read: false
+    };
+
+    if (meta && Object.keys(meta).length > 0) payload.data = meta;
+
+    const { data: row, error } = await supabase
       .from('notifications')
-      .insert({
-        user_id: userId,
-        type,
-        message,
-        is_read: false
-      })
+      .insert(payload)
       .select()
       .single();
     if (error) throw error;
-    return data;
+    return normalizeNotificationRow(row);
+  },
+
+  subscribeToUser(userId, callback) {
+    if (!userId) return () => {};
+
+    const channel = supabase
+      .channel(`notifications:${userId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` },
+        (payload) => {
+          if (payload.eventType === 'DELETE') {
+            callback({ id: payload.old?.id, deleted: true });
+            return;
+          }
+          callback(normalizeNotificationRow(payload.new));
+        }
+      )
+      .subscribe();
+
+    return () => supabase.removeChannel(channel);
   }
 };
 

@@ -116,13 +116,13 @@ const ValidatedInput = ({
             onClick={() => handleStep(-(format === 'money' ? 5 : 1))} // Smaller steps for money
             style={{
               position: 'absolute', left: '4px', zIndex: 5,
-              width: compact ? '34px' : '28px', height: compact ? '34px' : '28px', borderRadius: '6px',
+              width: compact ? '28px' : '32px', height: compact ? '28px' : '32px', borderRadius: '6px',
               background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.1)',
               color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
               cursor: 'pointer', transition: 'all 0.1s'
             }}
           >
-            <Minus size={12} />
+            <Minus size={10} />
           </button>
         )}
 
@@ -152,8 +152,8 @@ const ValidatedInput = ({
             textAlign: compact ? 'center' : 'left',
             fontWeight: compact ? '600' : '500',
             fontSize: compact ? '1rem' : '1rem',
-            paddingLeft: compact ? '38px' : (format === 'money' ? '82px' : (format === 'numeric' ? '42px' : '12px')),
-            paddingRight: compact ? '38px' : ((format === 'money' || format === 'numeric') ? '42px' : '12px'),
+            paddingLeft: compact ? '34px' : (format === 'money' ? '78px' : (format === 'numeric' ? '38px' : '12px')),
+            paddingRight: compact ? '34px' : ((format === 'money' || format === 'numeric') ? '38px' : '12px'),
             background: compact ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.03)',
             border: '1px solid rgba(255,255,255,0.1)'
           }}
@@ -165,13 +165,13 @@ const ValidatedInput = ({
             onClick={() => handleStep(format === 'money' ? 5 : 1)}
             style={{
               position: 'absolute', right: '4px', zIndex: 5,
-              width: compact ? '34px' : '28px', height: compact ? '34px' : '28px', borderRadius: '6px',
+              width: compact ? '28px' : '32px', height: compact ? '28px' : '32px', borderRadius: '6px',
               background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.1)',
               color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
               cursor: 'pointer', transition: 'all 0.1s'
             }}
           >
-            <Plus size={12} />
+            <Plus size={10} />
           </button>
         )}
       </div>

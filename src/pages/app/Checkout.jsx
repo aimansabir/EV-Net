@@ -14,6 +14,8 @@ import {
   Calendar, Clock, Zap, Moon, ShieldCheck, ArrowLeft, 
   Info, AlertTriangle, CheckCircle, Car, MapPin
 } from 'lucide-react';
+import useAuthStore from '../../store/authStore';
+import { canBook } from '../../utils/accessControl';
 
 const Checkout = () => {
   const { chargerId } = useParams();
@@ -23,15 +25,17 @@ const Checkout = () => {
   const [confirmed, setConfirmed] = useState(false);
   const [error, setError] = useState('');
   const [processing, setProcessing] = useState(false);
+  const { user } = useAuthStore();
 
   const date = searchParams.get('date') || new Date().toISOString().split('T')[0];
-  const startTime = searchParams.get('start') || '14:00';
+  const startTime = searchParams.get('start') || '';
   const duration = parseInt(searchParams.get('duration') || '2');
-  const vehicleSize = searchParams.get('vehicleSize') || VEHICLE_SIZES.SMALL;
+  const vehicleSize = searchParams.get('vehicleSize') || '';
+  const isVehicleSizeValid = Object.values(VEHICLE_SIZES).includes(vehicleSize);
   
   // End time calculation for scheduling
-  const endHour = (parseInt(startTime.split(':')[0]) + duration) % 24;
-  const endTime = `${String(endHour).padStart(2, '0')}:00`;
+  const endHour = startTime ? (parseInt(startTime.split(':')[0]) + duration) % 24 : null;
+  const endTime = endHour === null ? '' : `${String(endHour).padStart(2, '0')}:00`;
 
   useEffect(() => {
     listingService.getById(chargerId).then(setListing);
@@ -44,9 +48,9 @@ const Checkout = () => {
   );
 
   // Pricing Logic (Same as ChargerDetail)
-  const currentBand = getPricingBand(startTime);
+  const currentBand = startTime ? getPricingBand(startTime) : PRICING_BAND.DAY;
   const energyFees = calculateEnergyBookingFees(
-    vehicleSize, 
+    isVehicleSizeValid ? vehicleSize : VEHICLE_SIZES.SMALL, 
     currentBand, 
     listing.priceDay, 
     listing.priceNight
@@ -70,8 +74,8 @@ const Checkout = () => {
     };
   }
 
-  const vehicleLabel = vehicleSize === VEHICLE_SIZES.LARGE ? 'Large SUV / Truck' : vehicleSize === VEHICLE_SIZES.MEDIUM ? 'Sedan / Crossover' : 'Small / City Car';
-  const energyKwh = ENERGY_BY_SIZE[vehicleSize];
+  const vehicleLabel = vehicleSize === VEHICLE_SIZES.LARGE ? 'Large SUV / Truck' : vehicleSize === VEHICLE_SIZES.MEDIUM ? 'Sedan / Crossover' : vehicleSize === VEHICLE_SIZES.SMALL ? 'Small / City Car' : 'Not selected';
+  const energyKwh = ENERGY_BY_SIZE[isVehicleSizeValid ? vehicleSize : VEHICLE_SIZES.SMALL];
 
   const formatTime12h = (time24) => {
     if (!time24) return '';
@@ -85,6 +89,22 @@ const Checkout = () => {
 
   const handleConfirm = async () => {
     if (processing) return;
+    if (!user) {
+      navigate('/login');
+      return;
+    }
+    if (!canBook(user)) {
+      setError('Complete account verification before reserving a charger.');
+      return;
+    }
+    if (!startTime) {
+      setError('Please select an arrival time before reserving.');
+      return;
+    }
+    if (!isVehicleSizeValid) {
+      setError('Please select a vehicle option before reserving.');
+      return;
+    }
     setProcessing(true);
     setError('');
     try {
@@ -98,7 +118,15 @@ const Checkout = () => {
       setConfirmed(true);
       setTimeout(() => navigate('/app/bookings'), 2500);
     } catch (err) {
-      setError(err.message);
+      const message = err.message || '';
+      if (message.toLowerCase().includes('overlap')) {
+        setError('That time slot was just reserved. Please choose another arrival time.');
+      } else if (message.toLowerCase().includes('verified')) {
+        setError('Complete account verification before reserving a charger.');
+      } else {
+        setError(message || 'Could not create booking. Please try again.');
+      }
+    } finally {
       setProcessing(false);
     }
   };
@@ -139,10 +167,16 @@ const Checkout = () => {
               </div>
             </div>
 
-            {error && (
+                    {error && (
               <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171', padding: '1.25rem', borderRadius: '16px', fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '14px' }}>
                 <AlertTriangle size={20} />
                 {error}
+              </div>
+            )}
+            {(!startTime || !isVehicleSizeValid) && (
+              <div style={{ background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.25)', color: '#fbbf24', padding: '1.25rem', borderRadius: '16px', fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '14px' }}>
+                <AlertTriangle size={20} />
+                Go back to the charger page and choose an arrival time and vehicle option before confirming.
               </div>
             )}
 
@@ -274,7 +308,7 @@ const Checkout = () => {
 
                   <button 
                     onClick={handleConfirm}
-                    disabled={processing}
+                    disabled={processing || !startTime || !isVehicleSizeValid}
                     className="btn btn-primary" 
                     style={{ 
                       width: '100%', 

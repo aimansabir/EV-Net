@@ -8,7 +8,7 @@ import { VerificationStatus, BookingStatus } from '../data/schema';
 export const canBook = (user) => {
   if (!user || user.role !== 'USER') return false;
   // Soft-lock booking explicitly if any verification step is missing
-  return !!(user.emailVerified && user.cnicSubmitted && user.evProofSubmitted && user.verificationStatus === VerificationStatus.APPROVED);
+  return !!(user.emailVerified && user.cnicSubmitted && user.cnicBackSubmitted && user.evProofSubmitted && user.verificationStatus === VerificationStatus.APPROVED);
 };
 
 export const exactLocationUnlocked = (user, listingId, userBookings = []) => {

@@ -61,6 +61,32 @@ const useAppStore = create((set, get) => ({
     });
   },
 
+  subscribeToNotifications: (userId) => {
+    if (!notificationService.subscribeToUser || !userId) return () => {};
+
+    return notificationService.subscribeToUser(userId, (notification) => {
+      if (!notification?.id) return;
+
+      if (notification.deleted) {
+        set({
+          notifications: get().notifications.filter(n => n.id !== notification.id),
+        });
+        return;
+      }
+
+      const current = get().notifications;
+      const exists = current.some(n => n.id === notification.id);
+      const notifications = exists
+        ? current.map(n => n.id === notification.id ? { ...n, ...notification } : n)
+        : [notification, ...current];
+
+      set({
+        notifications: notifications.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)),
+        notificationsLoaded: true,
+      });
+    });
+  },
+
   unreadCount: () => {
     return get().notifications.filter(n => !n.isRead).length;
   },

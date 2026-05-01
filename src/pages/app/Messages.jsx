@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { Send, Clock, Lock, ShieldAlert, ArrowLeft } from 'lucide-react';
 import Avatar from '../../components/ui/Avatar';
@@ -22,25 +22,8 @@ const UserMessages = () => {
 
   const endOfMessagesRef = useRef(null);
 
-  useEffect(() => {
-    if (!user) return;
-    loadConversations();
-  }, [user]);
-
-  useEffect(() => {
-    if (activeConvId) {
-      loadMessages(activeConvId);
-    } else {
-      setMessages([]);
-    }
-  }, [activeConvId]);
-
-  useEffect(() => {
-    // Auto-scroll to bottom of chat
-    endOfMessagesRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
-
-  const loadConversations = async () => {
+  const loadConversations = useCallback(async () => {
+    if (!user?.id) return;
     try {
       const data = await messagingService.getConversations(user.id);
       setConversations(data);
@@ -49,16 +32,46 @@ const UserMessages = () => {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [user?.id]);
 
-  const loadMessages = async (convId) => {
+  const loadMessages = useCallback(async (convId) => {
     try {
       const msgs = await messagingService.getMessages(convId);
       setMessages(msgs);
     } catch (err) {
       console.error(err);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    loadConversations();
+  }, [user?.id, loadConversations]);
+
+  useEffect(() => {
+    if (activeConvId) {
+      loadMessages(activeConvId);
+    } else {
+      setMessages([]);
+    }
+  }, [activeConvId, loadMessages]);
+
+  useEffect(() => {
+    if (!activeConvId || !messagingService.subscribeToMessages) return undefined;
+
+    return messagingService.subscribeToMessages(activeConvId, (message) => {
+      setMessages(prev => {
+        if (prev.some(existing => existing.id === message.id)) return prev;
+        return [...prev, message].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+      });
+      loadConversations();
+    });
+  }, [activeConvId, loadConversations]);
+
+  useEffect(() => {
+    // Auto-scroll to bottom of chat
+    endOfMessagesRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
 
   const handleSend = async (e) => {
     e.preventDefault();

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Bell, Check, Info, AlertTriangle, CreditCard, Calendar, MessageSquare } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import useAppStore from '../store/appStore';
 import useAuthStore from '../store/authStore';
 import './NotificationCenter.css';
@@ -7,8 +8,9 @@ import './NotificationCenter.css';
 const NotificationCenter = () => {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef(null);
+  const navigate = useNavigate();
   const { user } = useAuthStore();
-  const { notifications, loadNotifications, markNotificationRead, unreadCount } = useAppStore();
+  const { notifications, loadNotifications, markNotificationRead, subscribeToNotifications, unreadCount } = useAppStore();
   const count = unreadCount();
 
   useEffect(() => {
@@ -16,6 +18,11 @@ const NotificationCenter = () => {
       loadNotifications(user.id);
     }
   }, [user?.id, loadNotifications]);
+
+  useEffect(() => {
+    if (!user?.id) return undefined;
+    return subscribeToNotifications(user.id);
+  }, [user?.id, subscribeToNotifications]);
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -47,6 +54,42 @@ const NotificationCenter = () => {
     await markNotificationRead(id);
   };
 
+  const getNotificationRoute = (notification) => {
+    const data = notification.data || {};
+    const conversationId = data.conversationId || data.conversation_id;
+    const listingId = data.listingId || data.listing_id;
+    const isHost = user?.role === 'HOST' || user?.role === 'host';
+
+    if (notification.type === 'MESSAGE') {
+      const basePath = isHost ? '/host/messages' : '/app/messages';
+      return conversationId ? `${basePath}?conversation=${encodeURIComponent(conversationId)}` : basePath;
+    }
+
+    if (notification.type === 'NEW_BOOKING_REQUEST') return '/host/bookings';
+
+    if (['BOOKING_UPDATE', 'BOOKING_SUBMITTED', 'BOOKING_STATUS_UPDATE'].includes(notification.type)) {
+      return isHost ? '/host/bookings' : '/app/bookings';
+    }
+
+    if (notification.type === 'VERIFICATION') {
+      return isHost ? '/host/onboarding' : '/app/verification';
+    }
+
+    if (listingId) return `/app/charger/${encodeURIComponent(listingId)}`;
+
+    return null;
+  };
+
+  const handleNotificationClick = async (notification) => {
+    if (!notification.isRead) {
+      await markNotificationRead(notification.id);
+    }
+
+    const route = getNotificationRoute(notification);
+    setIsOpen(false);
+    if (route) navigate(route);
+  };
+
   return (
     <div className="notification-center-wrapper" ref={dropdownRef}>
       <button 
@@ -74,7 +117,7 @@ const NotificationCenter = () => {
                 <div 
                   key={n.id} 
                   className={`notif-item ${!n.isRead ? 'unread' : ''}`}
-                  onClick={() => !n.isRead && markNotificationRead(n.id)}
+                  onClick={() => handleNotificationClick(n)}
                 >
                   <div className="notif-icon-box">
                     {getIcon(n.type)}

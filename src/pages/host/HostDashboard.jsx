@@ -66,6 +66,12 @@ const HostDashboard = () => {
 
   const verificationStatus = dashboard.profile?.verificationStatus;
   const showVerificationBanner = verificationStatus && verificationStatus !== 'approved';
+  const getListingStatus = (listing) => {
+    if (!listing.setupFeePaid) return { label: 'Draft', bg: 'rgba(156,163,175,0.2)', color: '#9CA3AF' };
+    if (!listing.isApproved) return { label: 'Pending Review', bg: 'rgba(251,191,36,0.16)', color: '#fbbf24' };
+    if (!listing.isActive) return { label: 'Offline', bg: 'rgba(239,68,68,0.2)', color: '#ef4444' };
+    return { label: 'Active', bg: 'rgba(0,210,106,0.2)', color: 'var(--brand-green)' };
+  };
 
   return (
     <div className="section" style={{ minHeight: 'calc(100vh - 72px)' }}>
@@ -135,7 +141,9 @@ const HostDashboard = () => {
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                {dashboard.listings.map(listing => (
+                {dashboard.listings.map(listing => {
+                  const status = getListingStatus(listing);
+                  return (
                   <div key={listing.id} className="glass-card" style={{ padding: '1.2rem', display: 'flex', gap: '1rem', alignItems: 'center', cursor: 'pointer' }}
                     onClick={() => navigate('/host/listings')}>
                     <div style={{ 
@@ -151,16 +159,16 @@ const HostDashboard = () => {
                         <h4 style={{ margin: 0, fontSize: '1rem' }}>{listing.title}</h4>
                         <span style={{
                           padding: '0.15rem 0.5rem', borderRadius: '20px', fontSize: '0.7rem', fontWeight: 600,
-                          background: listing.isActive ? 'rgba(0,210,106,0.2)' : 'rgba(239,68,68,0.2)',
-                          color: listing.isActive ? 'var(--brand-green)' : '#ef4444',
-                        }}>{listing.isActive ? 'Active' : 'Offline'}</span>
+                          background: status.bg,
+                          color: status.color,
+                        }}>{status.label}</span>
                       </div>
                       <p style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', margin: '0.2rem 0 0' }}>
                         {listing.chargerType} • Day: {formatPKR(listing.priceDay)}/kWh • Night: {formatPKR(listing.priceNight)}/kWh
                       </p>
                     </div>
                   </div>
-                ))}
+                )})}
               </div>
             )}
           </div>

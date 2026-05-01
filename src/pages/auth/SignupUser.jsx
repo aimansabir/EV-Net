@@ -4,6 +4,7 @@ import { ArrowLeft, Eye, EyeOff, Mail, Info } from 'lucide-react';
 import AuthShell from '../../components/auth/AuthShell';
 import useAuthStore from '../../store/authStore';
 import { PakistanEVBrands, ConnectorType } from '../../data/schema';
+import { normalizePersonName } from '../../utils/text';
 
 const passwordRules = [
   { key: 'length', label: 'At least 8 characters', test: (p) => p.length >= 8 },
@@ -80,12 +81,14 @@ const SignupUser = () => {
     e.preventDefault();
     clearError();
     setLocalError('');
+    const normalizedName = normalizePersonName(formData.name);
 
     if (step === 1) {
-      if (!allPwPassed || !passwordsMatch || !formData.name || !formData.email || !formData.phone) {
+      if (!allPwPassed || !passwordsMatch || !normalizedName || !formData.email || !formData.phone) {
         setLocalError('Please fill all required fields, ensure password meets requirements, and passwords match.');
         return;
       }
+      setFormData(prev => ({ ...prev, name: normalizedName }));
       setStep(2);
       return;
     }
@@ -96,7 +99,7 @@ const SignupUser = () => {
     }
 
     try {
-      const result = await signupUser({ ...formData, avatar: null });
+      const result = await signupUser({ ...formData, name: normalizedName, avatar: null });
       if (result?.verificationRequired) {
         setVerificationRequired(true);
         setIsSuccess(true);
@@ -112,8 +115,8 @@ const SignupUser = () => {
     return (
       <AuthShell
         role="user"
-        title="Check Your Email"
-        subtitle="We've sent a verification link to your inbox"
+        title="Check Your Inbox"
+        subtitle="If this is a new account, use the verification link to finish signup"
       >
         <div style={{ textAlign: 'center', padding: '2rem 1rem' }}>
           <div style={{ 
@@ -132,10 +135,10 @@ const SignupUser = () => {
           </div>
           <h3 style={{ color: 'var(--text-main)', marginBottom: '1rem' }}>Almost there!</h3>
           <p style={{ color: 'var(--text-main)', marginBottom: '1.5rem', lineHeight: '1.6' }}>
-            To complete your registration, please click the link we just sent to <strong>{formData.email}</strong>.
+            If this is a new account, Supabase will send a verification link to <strong>{formData.email}</strong>.
           </p>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: '2rem' }}>
-            Verification ensures a secure and trusted community for both drivers and hosts.
+            If this email already has an account, please log in or reset your password.
           </p>
           <Link to="/login" className="btn btn-primary" style={{ width: '100%', textDecoration: 'none' }}>
             Go to Login
@@ -161,7 +164,26 @@ const SignupUser = () => {
       title="Create Your Account"
       subtitle="Join EV-Net to explore verified charging access"
     >
-      {(error || localError) && <div className="auth-error">{localError || error}</div>}
+      {(error || localError) && (
+        <div className="auth-error">
+          <div>{localError || error}</div>
+          {(String(error || localError || '')).toLowerCase().includes('already exists') && (
+            <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1rem' }}>
+              <Link to="/login" className="btn btn-secondary" style={{ flex: 1, padding: '0.5rem', fontSize: '0.85rem', textDecoration: 'none', textAlign: 'center', background: 'rgba(255,255,255,0.05)', color: '#fff' }}>
+                Go to Login
+              </Link>
+              <button 
+                type="button" 
+                onClick={() => navigate('/login', { state: { email: formData.email, triggerReset: true } })}
+                className="btn btn-secondary" 
+                style={{ flex: 1, padding: '0.5rem', fontSize: '0.85rem', background: 'rgba(255,255,255,0.05)', color: '#fff' }}
+              >
+                Reset Password
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       <form onSubmit={handleSignup} className="auth-form">
         {step === 1 ? (
@@ -186,6 +208,10 @@ const SignupUser = () => {
                 required
                 value={formData.name}
                 onChange={e => setFormData({ ...formData, name: e.target.value })}
+                onBlur={e => {
+                  const capitalized = normalizePersonName(e.target.value);
+                  setFormData({ ...formData, name: capitalized });
+                }}
               />
             </div>
 
@@ -276,7 +302,7 @@ const SignupUser = () => {
               />
             </div>
 
-            <button type="submit" className="btn btn-primary auth-submit" disabled={!allPwPassed || !passwordsMatch || !formData.name || !formData.email || !formData.phone} style={{ width: '100%', marginTop: '1rem' }}>
+            <button type="submit" className="btn btn-primary auth-submit" disabled={!allPwPassed || !passwordsMatch || !normalizePersonName(formData.name) || !formData.email || !formData.phone} style={{ width: '100%', marginTop: '1rem' }}>
               Next Step &rarr;
             </button>
           </div>
@@ -285,7 +311,7 @@ const SignupUser = () => {
             <button type="button" onClick={() => setStep(1)} style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '1.5rem', padding: 0 }}>
               <ArrowLeft size={16} /> Back to Essentials
             </button>
-
++
             <div className="auth-divider" style={{ margin: '0 0 1.5rem 0' }}><span>Vehicle Details</span></div>
 
             <div className="auth-row" style={{ gridTemplateColumns: '1fr 1fr', display: 'grid', gap: '1rem' }}>

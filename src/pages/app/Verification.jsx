@@ -111,16 +111,20 @@ const Verification = () => {
 
   const handleSubmit = async () => {
     // Role-specific validation (Phone is now optional)
+    const missing = [];
     if (user?.role === 'HOST') {
-      if (!user.cnicSubmitted || !user.propertyProofUploaded || !user.chargerProofUploaded) {
-        setError('Please upload all required host documents before submitting for review.');
-        return;
-      }
+      if (!user.cnicSubmitted) missing.push('CNIC front');
+      if (!user.propertyProofUploaded) missing.push('property proof');
+      if (!user.chargerProofUploaded) missing.push('charger proof');
     } else {
-      if (!user.cnicSubmitted || !user.cnicBackSubmitted || !user.evProofSubmitted) {
-        setError('Please upload CNIC front, CNIC back, and EV ownership proof before submitting for review.');
-        return;
-      }
+      if (!user.cnicSubmitted) missing.push('CNIC front');
+      if (!user.cnicBackSubmitted) missing.push('CNIC back');
+      if (!user.evProofSubmitted) missing.push('EV ownership proof');
+    }
+
+    if (missing.length > 0) {
+      setError(`Please upload ${missing.join(', ')} before submitting for review.`);
+      return;
     }
 
     setLoading(true);
@@ -196,6 +200,20 @@ const Verification = () => {
       }
     ])
   ];
+
+  const missingRequirements = user?.role === 'HOST'
+    ? [
+        !user.cnicSubmitted && 'CNIC front',
+        !user.cnicBackSubmitted && 'CNIC back',
+        !user.propertyProofUploaded && 'property proof',
+        !user.chargerProofUploaded && 'charger proof'
+      ].filter(Boolean)
+    : [
+        !user.cnicSubmitted && 'CNIC front',
+        !user.cnicBackSubmitted && 'CNIC back',
+        !user.evProofSubmitted && 'EV ownership proof'
+      ].filter(Boolean);
+  const requiredDocumentsReady = missingRequirements.length === 0;
 
   return (
     <div className="section" style={{ minHeight: 'calc(100vh - 72px)' }}>
@@ -396,12 +414,17 @@ const Verification = () => {
           {!isUnderReview && !isApproved && !success && (
             <div style={{ marginTop: '2.5rem', paddingTop: '2rem', borderTop: '1px solid var(--border-color)' }}>
               {error && <div className="auth-error" style={{ marginBottom: '1rem' }}>{error}</div>}
+              {!requiredDocumentsReady && (
+                <div className="auth-error" style={{ marginBottom: '1rem' }}>
+                  Missing required document{missingRequirements.length > 1 ? 's' : ''}: {missingRequirements.join(', ')}.
+                </div>
+              )}
               
               <button 
                 className="btn btn-primary" 
                 style={{ width: '100%', padding: '1.2rem', fontSize: '1.1rem', fontWeight: 600, marginTop: '1rem' }}
                 onClick={handleSubmit}
-                disabled={loading || isUnderReview || isApproved || success}
+                disabled={loading || isUnderReview || isApproved || success || !requiredDocumentsReady}
               >
                 {loading ? 'Submitting...' : (isUnderReview || isApproved || success) ? 'Verification Submitted' : 'Submit Verification for Review'}
               </button>

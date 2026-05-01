@@ -913,11 +913,18 @@ export const notificationService = {
     return { success: true };
   },
 
-  async create(data) {
+  async create(userIdOrData, type, message, meta = null) {
     await delay(100);
-    const notif = createNotification(data);
+    const payload = typeof userIdOrData === 'object'
+      ? userIdOrData
+      : { userId: userIdOrData, type, message, data: meta || {} };
+    const notif = createNotification(payload);
     _notifications.push(notif);
     return notif;
+  },
+
+  subscribeToUser() {
+    return () => {};
   },
 };
 

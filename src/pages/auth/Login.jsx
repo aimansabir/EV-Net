@@ -1,19 +1,37 @@
-import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import AuthShell from '../../components/auth/AuthShell';
 import useAuthStore from '../../store/authStore';
 import { Eye, EyeOff } from 'lucide-react';
 
 const Login = () => {
   const navigate = useNavigate();
-  const { login, demoLogin, loginWithGoogle, isLoading, error, clearError } = useAuthStore();
+  const { login, demoLogin, loginWithGoogle, resetPassword, isLoading, error, clearError } = useAuthStore();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [localMessage, setLocalMessage] = useState('');
+  const [localError, setLocalError] = useState('');
+  const location = useLocation();
+
+  useEffect(() => {
+    if (location.state?.email) {
+      setEmail(location.state.email);
+    }
+    if (location.state?.triggerReset && location.state?.email) {
+      // Small delay to ensure state is settled
+      const timer = setTimeout(() => {
+        handleForgotPassword(location.state.email);
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [location.state]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     clearError();
+    setLocalError('');
+    setLocalMessage('');
     try {
       const { role } = await login(email, password);
       navigateByRole(role);
@@ -24,6 +42,8 @@ const Login = () => {
 
   const handleDemoLogin = async (role) => {
     clearError();
+    setLocalError('');
+    setLocalMessage('');
     try {
       await demoLogin(role);
       navigateByRole(role);
@@ -34,10 +54,32 @@ const Login = () => {
 
   const handleGoogleLogin = async () => {
     clearError();
+    setLocalError('');
+    setLocalMessage('');
     try {
       await loginWithGoogle();
     } catch {
       // error is set in store
+    }
+  };
+
+  const handleForgotPassword = async (overrideEmail) => {
+    clearError();
+    setLocalError('');
+    setLocalMessage('');
+
+    const targetEmail = (typeof overrideEmail === 'string' ? overrideEmail : email).trim();
+
+    if (!targetEmail) {
+      setLocalError('Enter your email address first, then use Forgot password.');
+      return;
+    }
+
+    try {
+      await resetPassword(targetEmail);
+      setLocalMessage('If this email has an account, a password reset link will be sent shortly.');
+    } catch (err) {
+      setLocalError(err.message || 'Could not start password reset.');
     }
   };
 
@@ -55,7 +97,12 @@ const Login = () => {
       title="Welcome Back"
       subtitle="Log in to your EV-Net account"
     >
-      {error && <div className="auth-error">{error}</div>}
+      {(error || localError) && <div className="auth-error">{localError || error}</div>}
+      {localMessage && (
+        <div style={{ background: 'rgba(0,210,106,0.1)', border: '1px solid rgba(0,210,106,0.25)', color: 'var(--brand-green)', padding: '0.85rem 1rem', borderRadius: '10px', marginBottom: '1rem', fontSize: '0.9rem' }}>
+          {localMessage}
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="auth-form">
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '1.5rem' }}>
@@ -100,6 +147,23 @@ const Login = () => {
               {!showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
             </button>
           </div>
+          <button
+            type="button"
+            onClick={handleForgotPassword}
+            disabled={isLoading}
+            style={{ 
+              background: 'transparent', 
+              border: 'none', 
+              color: 'var(--brand-cyan)', 
+              cursor: 'pointer', 
+              padding: '0.5rem 0 0', 
+              fontSize: '0.85rem', 
+              alignSelf: 'flex-start',
+              fontWeight: 500 
+            }}
+          >
+            Forgot password?
+          </button>
         </div>
 
         <button type="submit" className="btn btn-primary auth-submit" disabled={isLoading} style={{ width: '100%' }}>

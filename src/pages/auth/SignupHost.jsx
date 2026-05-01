@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import AuthShell from '../../components/auth/AuthShell';
 import useAuthStore from '../../store/authStore';
 import { Eye, EyeOff, Home, Mail } from 'lucide-react';
+import { normalizePersonName } from '../../utils/text';
 
 
 const passwordRules = [
@@ -60,14 +61,15 @@ const SignupHost = () => {
     e.preventDefault();
     clearError();
     setLocalError('');
+    const normalizedName = normalizePersonName(formData.name);
 
-    if (!allPwPassed || !passwordsMatch) {
-      setLocalError('Password does not meet all requirements or passwords do not match.');
+    if (!normalizedName || !formData.email || !formData.phone || !allPwPassed || !passwordsMatch) {
+      setLocalError('Please fill all required fields and make sure the password meets all requirements.');
       return;
     }
 
     try {
-      const result = await signupHost({ ...formData, avatar: null });
+      const result = await signupHost({ ...formData, name: normalizedName, avatar: null });
       if (result?.verificationRequired) {
         setVerificationRequired(true);
         setIsSuccess(true);
@@ -83,8 +85,8 @@ const SignupHost = () => {
     return (
       <AuthShell
         role="host"
-        title="Check Your Email"
-        subtitle="We've sent a verification link to your inbox"
+        title="Check Your Inbox"
+        subtitle="If this is a new account, use the verification link to finish signup"
       >
         <div style={{ textAlign: 'center', padding: '2rem 1rem' }}>
           <div style={{
@@ -102,10 +104,10 @@ const SignupHost = () => {
             <Mail size={40} color="var(--brand-green)" />
           </div>
           <p style={{ color: 'var(--text-main)', marginBottom: '1.5rem', lineHeight: '1.6' }}>
-            To complete your registration, please click the link we just sent to <strong>{formData.email}</strong>.
+            If this is a new account, Supabase will send a verification link to <strong>{formData.email}</strong>.
           </p>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: '2rem' }}>
-            Didn't receive it? Check your spam folder or wait a few minutes.
+            If this email already has an account, please log in or reset your password.
           </p>
           <Link to="/login" className="btn btn-primary" style={{ width: '100%', textDecoration: 'none' }}>
             Go to Login
@@ -122,7 +124,26 @@ const SignupHost = () => {
       subtitle="List your charger and start earning with EV-Net"
     >
 
-      {(error || localError) && <div className="auth-error">{localError || error}</div>}
+      {(error || localError) && (
+        <div className="auth-error">
+          <div>{localError || error}</div>
+          {(String(error || localError || '')).toLowerCase().includes('already exists') && (
+            <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1rem' }}>
+              <Link to="/login" className="btn btn-secondary" style={{ flex: 1, padding: '0.5rem', fontSize: '0.85rem', textDecoration: 'none', textAlign: 'center', background: 'rgba(255,255,255,0.05)', color: '#fff' }}>
+                Go to Login
+              </Link>
+              <button 
+                type="button" 
+                onClick={() => navigate('/login', { state: { email: formData.email, triggerReset: true } })}
+                className="btn btn-secondary" 
+                style={{ flex: 1, padding: '0.5rem', fontSize: '0.85rem', background: 'rgba(255,255,255,0.05)', color: '#fff' }}
+              >
+                Reset Password
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       <form onSubmit={handleSignup} className="auth-form">
         <div className="auth-field">
@@ -134,6 +155,10 @@ const SignupHost = () => {
             required
             value={formData.name}
             onChange={e => setFormData({ ...formData, name: e.target.value })}
+            onBlur={e => {
+              const capitalized = normalizePersonName(e.target.value);
+              setFormData({ ...formData, name: capitalized });
+            }}
           />
         </div>
 
@@ -230,7 +255,7 @@ const SignupHost = () => {
           </p>
         </div>
 
-        <button type="submit" className="btn btn-primary auth-submit" disabled={isLoading || (pwTouched && !allPwPassed) || (confirmTouched && !passwordsMatch)} style={{ width: '100%' }}>
+        <button type="submit" className="btn btn-primary auth-submit" disabled={isLoading || !normalizePersonName(formData.name) || !formData.email || !formData.phone || (pwTouched && !allPwPassed) || (confirmTouched && !passwordsMatch)} style={{ width: '100%' }}>
           {isLoading ? 'Creating Account...' : 'Create Host Account'}
         </button>
       </form>

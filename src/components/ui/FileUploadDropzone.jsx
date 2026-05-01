@@ -16,7 +16,8 @@ const FileUploadDropzone = ({
   files = [], // Expected: Array of { file: File, preview: string, id: string }
   onChange,
   error: externalError,
-  mode = 'document' // 'document' | 'image'
+  mode = 'document', // 'document' | 'image'
+  disabled = false
 }) => {
   const [dragActive, setDragActive] = useState(false);
   const [internalError, setInternalError] = useState('');
@@ -35,9 +36,26 @@ const FileUploadDropzone = ({
   const validateAndProcessFiles = (newFiles) => {
     setInternalError('');
     let validFiles = [];
+    const acceptedTypes = accept.split(',').map(type => type.trim().toLowerCase()).filter(Boolean);
+
+    const isAccepted = (file) => {
+      const fileType = (file.type || '').toLowerCase();
+      const fileName = (file.name || '').toLowerCase();
+
+      return acceptedTypes.some(type => {
+        if (type.endsWith('/*')) return fileType.startsWith(type.replace('*', ''));
+        if (type.startsWith('.')) return fileName.endsWith(type);
+        return fileType === type || fileName.endsWith(`.${type.split('/')[1]}`);
+      });
+    };
 
     for (let i = 0; i < newFiles.length; i++) {
         const file = newFiles[i];
+
+        if (!isAccepted(file)) {
+            setInternalError(`File ${file.name} must be an image or PDF.`);
+            continue;
+        }
 
         // Validate size
         if (file.size > maxSizeMB * 1024 * 1024) {
@@ -71,6 +89,7 @@ const FileUploadDropzone = ({
   const handleDrop = (e) => {
     e.preventDefault();
     e.stopPropagation();
+    if (disabled) return;
     setDragActive(false);
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       validateAndProcessFiles(e.dataTransfer.files);
@@ -79,12 +98,14 @@ const FileUploadDropzone = ({
 
   const handleChange = (e) => {
     e.preventDefault();
+    if (disabled) return;
     if (e.target.files && e.target.files[0]) {
       validateAndProcessFiles(e.target.files);
     }
   };
 
   const onButtonClick = () => {
+    if (disabled) return;
     inputRef.current.click();
   };
 
@@ -121,14 +142,15 @@ const FileUploadDropzone = ({
                 padding: '2rem 1.5rem',
                 textAlign: 'center',
                 background: dragActive ? 'rgba(0, 240, 255, 0.05)' : 'rgba(255, 255, 255, 0.02)',
-                cursor: 'pointer',
+                cursor: disabled ? 'not-allowed' : 'pointer',
                 transition: 'all 0.2s ease',
-                position: 'relative'
+                position: 'relative',
+                opacity: disabled ? 0.6 : 1
             }}
         >
             <input 
                 ref={inputRef} type="file" multiple={multiple} accept={accept} 
-                onChange={handleChange} style={{ display: 'none' }} 
+                onChange={handleChange} disabled={disabled} style={{ display: 'none' }} 
             />
             
             <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem', marginBottom: '1rem' }}>

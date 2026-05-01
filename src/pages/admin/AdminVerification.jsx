@@ -11,6 +11,7 @@ const AdminVerification = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [warning, setWarning] = useState(null);
+  const [successMessage, setSuccessMessage] = useState(null);
   const [submissions, setSubmissions] = useState([]);
   const [payments, setPayments] = useState([]);
 
@@ -24,6 +25,7 @@ const AdminVerification = () => {
     setLoading(true);
     setError(null);
     setWarning(null);
+    setSuccessMessage(null);
     try {
       const [subResult, payResult] = await Promise.allSettled([
         adminService.getVerificationSubmissions(),
@@ -84,22 +86,31 @@ const AdminVerification = () => {
     }
     setLoading(true);
     setError(null);
+    setSuccessMessage(null);
     console.log('[EV-Net] Admin approve/reject started', { id: selectedSubmission.id, action, notes });
     try {
       const decision = { approved: action === 'APPROVED', notes };
       const userId = selectedSubmission.user_id;
+      const withReviewTimeout = (promise) => {
+        let timeoutId;
+        const timeout = new Promise((_, reject) => {
+          timeoutId = setTimeout(() => reject(new Error('Review submit timed out. Please retry; no page reload should be needed.')), 15000);
+        });
+        return Promise.race([promise, timeout]).finally(() => clearTimeout(timeoutId));
+      };
 
       if (activeTab === 'Payments' || selectedSubmission.method) {
-        await adminService.verifyOnboardingPayment(selectedSubmission.id, decision.approved, notes);
+        await withReviewTimeout(adminService.verifyOnboardingPayment(selectedSubmission.id, decision.approved, notes));
       } else if ((selectedSubmission.type || selectedSubmission.profile_type) === 'HOST') {
-        await adminService.verifyHost(userId, decision);
+        await withReviewTimeout(adminService.verifyHost(userId, decision));
       } else {
-        await adminService.verifyUser(userId, decision);
+        await withReviewTimeout(adminService.verifyUser(userId, decision));
       }
 
       await loadSubmissions(); // Refresh list
       setModalOpen(false);
       setSelectedSubmission(null);
+      setSuccessMessage(`Review ${decision.approved ? 'approved' : 'rejected'} successfully.`);
       console.log('[EV-Net] Admin decision complete', selectedSubmission.id);
       return { success: true };
     } catch (err) {
@@ -145,6 +156,11 @@ const AdminVerification = () => {
           {warning && (
             <div style={{ padding: '0.75rem 1.5rem', borderBottom: '1px solid rgba(251,191,36,0.2)', background: 'rgba(251,191,36,0.08)', color: '#fbbf24', fontSize: '0.85rem' }}>
               {warning}
+            </div>
+          )}
+          {successMessage && (
+            <div style={{ padding: '0.75rem 1.5rem', borderBottom: '1px solid rgba(0,210,106,0.2)', background: 'rgba(0,210,106,0.08)', color: 'var(--brand-green)', fontSize: '0.85rem' }}>
+              {successMessage}
             </div>
           )}
           <div style={{ padding: '1.5rem', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>

@@ -153,11 +153,27 @@ const HostOnboarding = () => {
         throw new Error('Your session is not ready. Please refresh and log in again.');
       }
 
+      const runStep = async (label, status, operation, timeoutMs = 15000) => {
+        let timeoutId;
+        setPublishStatus(status);
+        console.log(`[EV-Net] ${label}: started`);
+        try {
+          const timeout = new Promise((_, reject) => {
+            timeoutId = setTimeout(() => reject(new Error(`${label} timed out. Please check your connection and try again.`)), timeoutMs);
+          });
+          const result = await Promise.race([operation(), timeout]);
+          console.log(`[EV-Net] ${label}: success`);
+          return result;
+        } catch (err) {
+          console.error(`[EV-Net] ${label}: failed`, err);
+          throw err;
+        } finally {
+          clearTimeout(timeoutId);
+        }
+      };
+
       console.log("[EV-Net] User loaded", user.id);
-      setPublishStatus('Initializing host profile...');
-      console.log("[EV-Net] Promoting user to host");
-      await hostService.promote(user.id);
-      console.log("[EV-Net] Host promotion successful");
+      await runStep('Initializing host profile', 'Initializing host profile...', () => hostService.promote(user.id));
 
       // Build full address: prepend house/unit number if provided
       const fullAddress = charger.houseNo
@@ -186,7 +202,11 @@ const HostOnboarding = () => {
       let listingId = onboardingListingId || charger.listingId || localStorage.getItem('currentHostOnboardingListingId');
       
       if (listingId) {
-        const storedListing = await listingService.getOwnedById(listingId, user.id);
+        const storedListing = await runStep(
+          'Checking local onboarding listing',
+          'Checking for existing listing...',
+          () => listingService.getOwnedById(listingId, user.id)
+        );
         if (storedListing && !storedListing.isApproved) {
           console.log(`[EV-Net] Reusing existing listing: ${storedListing.id}`);
           listingId = storedListing.id;
@@ -200,13 +220,17 @@ const HostOnboarding = () => {
       }
 
       if (!listingId) {
-        const existingListing = await listingService.findExistingOnboardingListing({
-          hostId: user.id,
-          title: listingTitle,
-          city: profile.city,
-          area: charger.area,
-          chargerType: charger.chargerType
-        });
+        const existingListing = await runStep(
+          'Checking matching onboarding listing',
+          'Checking for existing listing...',
+          () => listingService.findExistingOnboardingListing({
+            hostId: user.id,
+            title: listingTitle,
+            city: profile.city,
+            area: charger.area,
+            chargerType: charger.chargerType
+          })
+        );
         if (existingListing) {
           listingId = existingListing.id;
           console.log(`[EV-Net] Reusing existing listing: ${listingId}`);
@@ -214,15 +238,13 @@ const HostOnboarding = () => {
       }
 
       if (listingId) {
-        setPublishStatus('Updating listing...');
-        await listingService.update(listingId, listingPayload);
+        await runStep('Reusing listing', 'Updating listing...', () => listingService.update(listingId, listingPayload));
       } else {
-        console.log("[EV-Net] Creating new listing");
-        setPublishStatus('Creating listing...');
-        const newListing = await listingService.create({
+        console.log("[EV-Net] Creating listing");
+        const newListing = await runStep('Creating listing', 'Creating listing...', () => listingService.create({
           ...listingPayload,
           images: []
-        });
+        }));
         listingId = newListing.id;
         console.log(`[EV-Net] Created listing: ${listingId}`);
       }
@@ -231,56 +253,55 @@ const HostOnboarding = () => {
       setOnboardingListingId(listingId);
       setCharger(prev => ({ ...prev, listingId }));
       localStorage.setItem('currentHostOnboardingListingId', listingId);
-      await listingService.demoteDuplicateOnboardingListings({
-        hostId: user.id,
-        keepId: listingId,
-        title: listingTitle,
-        city: profile.city,
-        area: charger.area,
-        chargerType: charger.chargerType
-      });
+      await runStep('Checking duplicate listings', 'Checking for duplicate listings...', () => listingService.demoteDuplicateOnboardingListings({
+          hostId: user.id,
+          keepId: listingId,
+          title: listingTitle,
+          city: profile.city,
+          area: charger.area,
+          chargerType: charger.chargerType
+        })
+      );
 
       // 2. Upload listing photos without duplicating existing rows on retry
-      console.log("[EV-Net] Uploading listing photos");
-      setPublishStatus('Uploading listing photos...');
-      await listingService.ensureOnboardingPhotos(listingId, user.id, [
-        ...chargerPhotos,
-        ...additionalPhotos
-      ]);
+      await runStep('Uploading listing photos', 'Uploading listing photos...', () => listingService.ensureOnboardingPhotos(listingId, user.id, [
+          ...chargerPhotos,
+          ...additionalPhotos
+        ]), 30000
+      );
 
       // 3. Handle payment submission before finalizing host profile
-      console.log("[EV-Net] Uploading payment proof");
-      setPublishStatus('Recording payment proof...');
-      const paymentResult = await hostService.submitOnboardingPayment(user.id, {
-        method: 'BANK_TRANSFER',
-        amount: feeBreakdown.total,
-        screenshot: payment.screenshot,
-        listingId
-      });
+      const paymentResult = await runStep('Recording payment proof', 'Recording payment proof...', () => hostService.submitOnboardingPayment(user.id, {
+          method: 'BANK_TRANSFER',
+          amount: feeBreakdown.total,
+          screenshot: payment.screenshot,
+          listingId
+        }), 30000
+      );
       console.log("[EV-Net] Payment record created", paymentResult?.payment?.id || paymentResult);
 
-      await listingService.markOnboardingSubmitted(listingId, user.id);
+      await runStep('Marking listing pending review', 'Marking listing pending review...', () => listingService.markOnboardingSubmitted(listingId, user.id));
 
       // 4. Upload verification proofs. The RPC below owns host profile finalization.
       console.log("[EV-Net] Uploading verification documents");
       setPublishStatus('Uploading verification documents...');
       if (propertyProofs[0]?.file) {
         console.log("[EV-Net] Uploading property proof...");
-        await verificationService.uploadDocument(user.id, 'HOST', 'PROPERTY_PROOF', propertyProofs[0].file, {
-          updateProfileFlags: false
-        });
+        await runStep('Uploading property proof', 'Uploading verification documents...', () => verificationService.uploadDocument(user.id, 'HOST', 'PROPERTY_PROOF', propertyProofs[0].file, {
+            updateProfileFlags: false
+          }), 30000
+        );
       }
       if (chargerPhotos[0]?.file) {
         console.log("[EV-Net] Uploading charger setup photo...");
-        await verificationService.uploadDocument(user.id, 'HOST', 'CHARGER_PROOF', chargerPhotos[0].file, {
-          updateProfileFlags: false
-        });
+        await runStep('Uploading charger proof', 'Uploading verification documents...', () => verificationService.uploadDocument(user.id, 'HOST', 'CHARGER_PROOF', chargerPhotos[0].file, {
+            updateProfileFlags: false
+          }), 30000
+        );
       }
       console.log("[EV-Net] Documents uploaded");
 
-      console.log("[EV-Net] Finalizing onboarding");
-      setPublishStatus('Finalizing onboarding...');
-      await hostService.finalizeOnboarding();
+      await runStep('Finalizing onboarding', 'Finalizing onboarding...', () => hostService.finalizeOnboarding());
       console.log("[EV-Net] Submission complete");
       
       // Clear draft on successful submit
@@ -299,6 +320,8 @@ const HostOnboarding = () => {
   };
 
   const stepNames = ['Profile', 'Charger Info', 'Amenities & Rules', 'Proof Upload', 'Pricing', 'Availability', 'Review', 'Payment'];
+  const visibleStep = Math.min(step, totalSteps);
+  const stepLabel = step === 9 ? 'Submitted for Review' : `Step ${visibleStep} of ${totalSteps}: ${stepNames[visibleStep - 1]}`;
 
   const formatDisplayTime = (timeStr) => {
     if (!timeStr) return '';
@@ -360,10 +383,10 @@ const HostOnboarding = () => {
               Host Onboarding
             </h2>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: '1rem' }}>
-              Step {step} of {totalSteps}: {stepNames[step - 1]}
+              {stepLabel}
             </p>
           </div>
-          <div style={{ textAlign: 'right' }}>
+          {step !== 9 && <div style={{ textAlign: 'right' }}>
             <button onClick={handleSaveAndExit} className="btn-exit" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-color)', color: 'var(--text-main)', padding: '0.4rem 0.8rem', borderRadius: '6px', fontSize: '0.85rem', cursor: 'pointer', display: 'block', marginBottom: '0.5rem', fontWeight: 500 }}>
               Save & Exit
             </button>
@@ -371,12 +394,12 @@ const HostOnboarding = () => {
               <CheckCircle size={10} color="var(--brand-green)" />
               <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>Draft saved</span>
             </div>
-          </div>
+          </div>}
         </div>
 
         <div style={{ display: 'flex', gap: '6px', marginBottom: '2.5rem' }}>
           {Array.from({ length: totalSteps }, (_, i) => (
-            <div key={i} style={{ height: '4px', flex: 1, borderRadius: '2px', background: step > i ? 'var(--brand-green)' : step === i + 1 ? 'var(--brand-cyan)' : 'rgba(255,255,255,0.1)', transition: 'background 0.3s' }} />
+            <div key={i} style={{ height: '4px', flex: 1, borderRadius: '2px', background: step === 9 || step > i ? 'var(--brand-green)' : step === i + 1 ? 'var(--brand-cyan)' : 'rgba(255,255,255,0.1)', transition: 'background 0.3s' }} />
           ))}
         </div>
 
@@ -570,40 +593,40 @@ const HostOnboarding = () => {
                 <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Choose fair rates per kWh. Solar availability makes day rates cheaper.</p>
               </div>
               
-              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1.2fr 1.2fr', gap: '1rem', marginBottom: '2rem', alignItems: 'flex-start' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1.5rem', marginBottom: '2.5rem', alignItems: 'start' }}>
                 <div className="auth-field">
-                  <label style={{ display: 'block', marginBottom: '0.8rem', opacity: 0.8, fontSize: '0.9rem' }}>Charger Type <span style={{ color: 'var(--brand-cyan)' }}>*</span></label>
-                  <select className="auth-select" value={charger.chargerType} onChange={e => setCharger({...charger, chargerType: e.target.value})} style={{ height: '44px' }}>
+                  <label style={{ display: 'block', marginBottom: '0.8rem', opacity: 0.8, fontSize: '0.9rem', fontWeight: 600 }}>Charger Type <span style={{ color: 'var(--brand-cyan)' }}>*</span></label>
+                  <select className="auth-select" value={charger.chargerType} onChange={e => setCharger({...charger, chargerType: e.target.value})} style={{ height: '44px', width: '100%', padding: '0 12px' }}>
                     {Object.values(ChargerType).map(t => <option key={t}>{t}</option>)}
                   </select>
                 </div>
                 
-                <div>
+                <div style={{ minWidth: 0 }}>
                   <ValidatedInput 
                     label="Day Rate" 
                     format="money" 
-                    min={5} max={500} 
+                    min={10} max={500} 
                     required 
                     compact
                     value={pricing.priceDay} 
                     onChange={v => setPricing({...pricing, priceDay: v})} 
                     forceError={showErrors}
                   />
-                  <p style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '-0.8rem', textAlign: 'center' }}>08:00 AM - 08:00 PM</p>
+                  <p style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '-0.8rem', textAlign: 'center', opacity: 0.7 }}>08:00 AM - 08:00 PM</p>
                 </div>
 
-                <div>
+                <div style={{ minWidth: 0 }}>
                   <ValidatedInput 
                     label="Night Rate" 
                     format="money" 
-                    min={5} max={500} 
+                    min={10} max={500} 
                     required 
                     compact
                     value={pricing.priceNight} 
                     onChange={v => setPricing({...pricing, priceNight: v})} 
                     forceError={showErrors}
                   />
-                  <p style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '-0.8rem', textAlign: 'center' }}>08:00 PM - 08:00 AM</p>
+                  <p style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '-0.8rem', textAlign: 'center', opacity: 0.7 }}>08:00 PM - 08:00 AM</p>
                 </div>
               </div>
 
@@ -780,7 +803,7 @@ const HostOnboarding = () => {
               <div style={{ marginTop: '1.5rem', background: 'rgba(255,255,255,0.03)', padding: '1.5rem', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
                 <FileUploadDropzone
                   label="Upload Payment / Transfer Screenshot"
-                  mode="image"
+                  mode="document"
                   files={payment.screenshot ? [payment.screenshot] : []}
                   onChange={(files) => setPayment({ ...payment, screenshot: files[0] })}
                   error={showErrors && !payment.screenshot ? "Payment proof screenshot is required" : ""}

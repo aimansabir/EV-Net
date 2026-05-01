@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { X, CheckCircle, AlertTriangle, FileText, Download, Loader2 } from 'lucide-react';
 
 /**
@@ -13,6 +13,15 @@ const ReviewActionModal = ({ isOpen, onClose, user, targetType = 'evType', submi
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState(null);
   const [validationError, setValidationError] = useState(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setAction(null);
+    setNotes('');
+    setIsSubmitting(false);
+    setSubmitError(null);
+    setValidationError(null);
+  }, [isOpen, submission?.id]);
   
   if (!isOpen || !user) return null;
 
@@ -73,13 +82,20 @@ const ReviewActionModal = ({ isOpen, onClose, user, targetType = 'evType', submi
     setIsSubmitting(true);
     try {
       console.log('[Admin] ReviewActionModal calling parent onSubmit...');
-      const result = await onSubmit({
-        action,
-        notes: notes.trim(),
-        targetType,
-        submission,
-        user,
+      let timeoutId;
+      const timeout = new Promise((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error('Review submit timed out. Please retry.')), 15000);
       });
+      const result = await Promise.race([
+        onSubmit({
+          action,
+          notes: notes.trim(),
+          targetType,
+          submission,
+          user,
+        }),
+        timeout
+      ]).finally(() => clearTimeout(timeoutId));
       console.log('[Admin] ReviewActionModal parent onSubmit resolved:', result);
       if (result?.success === false) {
         throw new Error(result.error || 'Review failed.');
@@ -199,7 +215,7 @@ const ReviewActionModal = ({ isOpen, onClose, user, targetType = 'evType', submi
                     display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem'
                 }}>
                 <CheckCircle size={24} />
-                <span style={{ fontWeight: 600 }}>Approve</span>
+                <span style={{ fontWeight: 600 }}>{targetType === 'payment' ? 'Approve Payment' : 'Approve Account'}</span>
             </button>
             <button 
               type="button"
@@ -212,7 +228,7 @@ const ReviewActionModal = ({ isOpen, onClose, user, targetType = 'evType', submi
                     display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem'
                 }}>
                 <AlertTriangle size={24} />
-                <span style={{ fontWeight: 600 }}>Reject Account</span>
+                <span style={{ fontWeight: 600 }}>{targetType === 'payment' ? 'Reject Payment' : 'Reject Account'}</span>
             </button>
           </div>
 

@@ -85,6 +85,11 @@ const HostListings = () => {
                       {listing.rating > 0 && <span style={{ color: '#fbbf24', display: 'flex', alignItems: 'center', gap: '4px' }}><Star size={14} fill="currentColor" /> {listing.rating}</span>}
                       <span style={{ color: 'var(--text-secondary)' }}>{listing.reviewCount} reviews</span>
                     </div>
+                    {(listing.isApproved ?? listing.is_approved) && !(listing.isActive ?? listing.is_active) && (
+                      <div style={{ color: '#fbbf24', fontSize: '0.8rem', marginTop: '0.75rem' }}>
+                        This approved listing is offline. Contact admin support if it should be live.
+                      </div>
+                    )}
                     </div>
                   <div style={{ display: 'flex', gap: '0.5rem' }}>
                     <button 
@@ -133,9 +138,12 @@ const HostListings = () => {
                       onClick={async () => {
                         if (confirm('Delete this photo?')) {
                           setIsUpdatingPhotos(true);
-                          await listingService.deleteListingPhoto(photo.id);
-                          await handleUpdatePhotos(selectedListing.id);
-                          setIsUpdatingPhotos(false);
+                          try {
+                            await listingService.deleteListingPhoto(photo.id);
+                            await handleUpdatePhotos(selectedListing.id);
+                          } finally {
+                            setIsUpdatingPhotos(false);
+                          }
                         }
                       }}
                       style={{ position: 'absolute', top: '5px', right: '5px', background: 'rgba(239, 68, 68, 0.9)', border: 'none', borderRadius: '50%', width: '24px', height: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', cursor: 'pointer' }}
@@ -156,9 +164,12 @@ const HostListings = () => {
                      onChange={async (files) => {
                        if (files.length > 0) {
                          setIsUpdatingPhotos(true);
-                         await listingService.uploadListingPhotos(selectedListing.id, user.id, files);
-                         await handleUpdatePhotos(selectedListing.id);
-                         setIsUpdatingPhotos(false);
+                         try {
+                           await listingService.uploadListingPhotos(selectedListing.id, user.id, files);
+                           await handleUpdatePhotos(selectedListing.id);
+                         } finally {
+                           setIsUpdatingPhotos(false);
+                         }
                        }
                      }} 
                    />

@@ -55,6 +55,7 @@ const ChargerDetail = () => {
   const [isStartOpen, setIsStartOpen] = useState(false);
   const [isVehicleOpen, setIsVehicleOpen] = useState(false);
   const [isCreatingInquiry, setIsCreatingInquiry] = useState(false);
+  const [inquiryError, setInquiryError] = useState('');
   const { user } = useAuthStore();
 
   useEffect(() => {
@@ -138,16 +139,17 @@ const ChargerDetail = () => {
       return;
     }
     if (!userCanInquire) {
-      alert("Inquiry access restricted.");
+      setInquiryError('Inquiry access is restricted for this account.');
       return;
     }
     setIsCreatingInquiry(true);
+    setInquiryError('');
     try {
       const conv = await messagingService.createOrGetInquiry(id, user.id);
       navigate(`/app/messages?conversation=${conv.id}`);
     } catch (err) {
       console.error("Failed to create inquiry", err);
-      alert(err.message || "Failed to start conversation.");
+      setInquiryError(err.message || "Failed to start conversation.");
     } finally {
       setIsCreatingInquiry(false);
     }
@@ -291,6 +293,11 @@ const ChargerDetail = () => {
                       <MessageSquare size={16} />
                       {isCreatingInquiry ? 'Loading...' : 'Ask Host'}
                     </button>
+                    {inquiryError && (
+                      <div style={{ color: '#f87171', fontSize: '0.75rem', marginTop: '0.5rem', maxWidth: '180px' }}>
+                        {inquiryError}
+                      </div>
+                    )}
                   </div>
                 </div>
               )}

@@ -10,6 +10,16 @@ import { authService } from '../data/api.js';
 
 const STORAGE_KEY = 'EV-Net_auth';
 const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true';
+const AUTH_TIMEOUT_MS = 10000;
+
+function withAuthTimeout(promise, label, timeoutMs = AUTH_TIMEOUT_MS) {
+  let timeoutId;
+  const timeout = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error(label)), timeoutMs);
+  });
+
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timeoutId));
+}
 
 // Load persisted auth state
 function loadPersistedAuth() {
@@ -54,7 +64,7 @@ const useAuthStore = create((set, get) => ({
    */
   initAuth: () => {
     // Already initialized
-    if (get().isInitialized) return Promise.resolve();
+    if (get().isInitialized && !get().isAuthHydrating) return Promise.resolve();
 
     // Already initializing
     if (get()._initPromise) return get()._initPromise;
@@ -68,8 +78,13 @@ const useAuthStore = create((set, get) => ({
       }
 
       try {
+      console.log('[EV-Net][Auth] checking session');
       // 1. Try Supabase session hydration (returns null in mock mode)
-      const session = await authService.getSession();
+      const session = await withAuthTimeout(
+        authService.getSession(),
+        'Auth session check timed out.'
+      );
+      console.log('[EV-Net][Auth] session loaded', { hasSession: !!session?.user });
 
       if (session?.user) {
         // 1a. INSTANT HINT: Use session metadata to unlock UI immediately
@@ -82,13 +97,18 @@ const useAuthStore = create((set, get) => ({
 
         // 1b. BACKGROUND: Hydrate full profile (No await here, let it run in bg)
         set({ isAuthHydrating: true });
-        authService.getMe(session.user.id).then(user => {
+        withAuthTimeout(
+          authService.getMe(session.user.id),
+          'Auth profile load timed out.'
+        ).then(user => {
           if (user) {
             const state = {
               user,
               role: user.role.toLowerCase(),
               isAuthenticated: true,
             };
+            console.log('[EV-Net][Auth] profile loaded');
+            console.log('[EV-Net][Auth] role loaded', state.role);
             set({ ...state, isAuthHydrating: false });
             persistAuth(state);
           } else {
@@ -97,7 +117,8 @@ const useAuthStore = create((set, get) => ({
             set({ isAuthHydrating: false });
           }
         }).catch(err => {
-          console.error('[EV-Net] Background hydration failed:', err);
+          console.error('[EV-Net][Auth] Background hydration failed:', err);
+          console.warn('[EV-Net][Auth] timeout/fallback');
           set({ isAuthHydrating: false });
         });
       } else {
@@ -113,7 +134,10 @@ const useAuthStore = create((set, get) => ({
           set({ ...persisted, isInitialized: true });
           
           set({ isAuthHydrating: true });
-          authService.getMe(persisted.user.id).then(updatedUser => {
+          withAuthTimeout(
+            authService.getMe(persisted.user.id),
+            'Persisted profile load timed out.'
+          ).then(updatedUser => {
             if (updatedUser) {
               set({ 
                 user: updatedUser, 
@@ -125,7 +149,10 @@ const useAuthStore = create((set, get) => ({
               get()._clearAuth();
               set({ isAuthHydrating: false });
             }
-          }).catch(() => set({ isAuthHydrating: false }));
+          }).catch((err) => {
+            console.warn('[EV-Net][Auth] timeout/fallback', err.message);
+            set({ isAuthHydrating: false });
+          });
         }
       }
 
@@ -157,6 +184,11 @@ const useAuthStore = create((set, get) => ({
         if (subscription) {
           set({ _authSubscription: subscription });
         }
+      }
+    } catch (err) {
+      console.warn('[EV-Net][Auth] timeout/fallback', err.message);
+      if (!USE_MOCK) {
+        get()._clearAuth();
       }
     } finally {
       set({ isInitialized: true, _initPromise: null });
@@ -202,6 +234,19 @@ const useAuthStore = create((set, get) => ({
       throw err;
     } finally {
       // Note: redirection usually happens before this for success
+      set({ isLoading: false });
+    }
+  },
+
+  resetPassword: async (email) => {
+    set({ isLoading: true, error: null });
+    try {
+      return await authService.resetPassword(email);
+    } catch (err) {
+      const errorMsg = err.message || 'Could not send password reset email.';
+      set({ error: errorMsg });
+      throw err;
+    } finally {
       set({ isLoading: false });
     }
   },
