@@ -61,8 +61,15 @@ const NotificationCenter = () => {
     const isHost = user?.role === 'HOST' || user?.role === 'host';
 
     if (notification.type === 'MESSAGE') {
-      const basePath = isHost ? '/host/messages' : '/app/messages';
-      return conversationId ? `${basePath}?conversation=${encodeURIComponent(conversationId)}` : basePath;
+      if (!conversationId) {
+        console.warn('[EV-Net] MESSAGE notification missing conversation ID', notification);
+        return null;
+      }
+      if (isHost) {
+        return data.hostRoute || `/host/messages?conversation=${conversationId}`;
+      } else {
+        return data.route || `/app/messages?conversation=${conversationId}`;
+      }
     }
 
     if (notification.type === 'NEW_BOOKING_REQUEST') return '/host/bookings';
@@ -81,13 +88,25 @@ const NotificationCenter = () => {
   };
 
   const handleNotificationClick = async (notification) => {
-    if (!notification.isRead) {
-      await markNotificationRead(notification.id);
+    console.log('[EV-Net] notification clicked', notification);
+
+    try {
+      if (!notification.isRead) {
+        await markNotificationRead(notification.id);
+      }
+    } catch (err) {
+      console.warn('[EV-Net] Failed to mark notification read:', err);
     }
 
     const route = getNotificationRoute(notification);
     setIsOpen(false);
-    if (route) navigate(route);
+    
+    if (route) {
+      console.log('[EV-Net] navigating from notification to', route);
+      navigate(route);
+    } else {
+      console.warn('[EV-Net] Could not determine route for notification.');
+    }
   };
 
   return (

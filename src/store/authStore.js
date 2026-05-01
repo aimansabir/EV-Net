@@ -251,21 +251,6 @@ const useAuthStore = create((set, get) => ({
     }
   },
 
-  /**
-   * Quick demo login — logs in with pre-seeded accounts
-   */
-  demoLogin: async (demoRole) => {
-    const accounts = {
-      user: { email: 'ali@example.com', password: 'demo123' },
-      verified: { email: 'verified@example.com', password: 'demo123' },
-      tester: { email: 'tester@example.com', password: 'demo123' },
-      host: { email: 'ahsan@example.com', password: 'demo123' },
-      admin: { email: 'admin@EV-Net.pk', password: 'admin123' },
-    };
-    const creds = accounts[demoRole];
-    if (!creds) throw new Error('Invalid demo role');
-    return get().login(creds.email, creds.password);
-  },
 
   /**
    * Signup as EV User
@@ -333,13 +318,6 @@ const useAuthStore = create((set, get) => ({
     }
   },
 
-  /**
-   * Switch role (DEMO MODE ONLY)
-   * Instantly switch between user/host/admin with pre-seeded accounts.
-   */
-  switchRole: async (newRole) => {
-    return get().demoLogin(newRole);
-  },
 
   /**
    * Clear error

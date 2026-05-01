@@ -3,6 +3,10 @@ import { ShieldCheck, Search, Home, Clock, AlertCircle, CheckCircle2, ChevronRig
 import ReviewActionModal from '../../components/ui/ReviewActionModal';
 import StatusBadge from '../../components/ui/StatusBadge';
 import { adminService } from '../../data/api';
+const isPendingStatus = (status) => ['pending', 'under_review'].includes((status || '').toLowerCase());
+const isApprovedStatus = (status) => ['approved', 'verified'].includes((status || '').toLowerCase());
+const isRejectedStatus = (status) => (status || '').toLowerCase() === 'rejected';
+const isReviewedStatus = (status) => isApprovedStatus(status) || isRejectedStatus(status);
 
 const AdminVerification = () => {
   const [activeTab, setActiveTab] = useState('Pending');
@@ -56,21 +60,20 @@ const AdminVerification = () => {
   };
 
   const stats = [
-    { label: 'Pending Total', value: submissions.filter(s => (s.status || '').toLowerCase() === 'pending' || (s.status || '').toLowerCase() === 'under_review').length + payments.filter(p => (p.status || '').toLowerCase() === 'pending').length, icon: Clock, color: '#fbbf24' },
-    { label: 'Payments', value: payments.filter(p => (p.status || '').toLowerCase() === 'pending').length, icon: ShieldCheck, color: '#00F0FF' },
+    { label: 'Pending Total', value: submissions.filter(s => isPendingStatus(s.status)).length + payments.filter(p => isPendingStatus(p.status)).length, icon: Clock, color: '#fbbf24' },
+    { label: 'Payments', value: payments.filter(p => isPendingStatus(p.status)).length, icon: ShieldCheck, color: '#00F0FF' },
     { label: 'Host Proofs', value: submissions.filter(s => (s.type || s.profile_type) === 'HOST').length, icon: Home, color: '#a78bfa' },
   ];
 
   const filteredSubmissions = activeTab === 'Payments' 
-    ? payments.filter(p => (p.status || '').toLowerCase() === 'pending')
+    ? payments.filter(p => isPendingStatus(p.status))
     : submissions.filter(s => {
-        const status = (s.status || '').toLowerCase();
         const type = (s.type || s.profile_type || '').toUpperCase();
         if (activeTab === 'All') return true;
-        if (activeTab === 'Pending') return status === 'under_review' || status === 'pending';
+        if (activeTab === 'Pending') return isPendingStatus(s.status);
         if (activeTab === 'Hosts') return type === 'HOST';
         if (activeTab === 'EV Users') return type === 'EV_USER';
-        if (activeTab === 'Rejected') return status === 'rejected';
+        if (activeTab === 'Rejected') return isRejectedStatus(s.status);
         return true;
     });
 
@@ -282,6 +285,7 @@ const AdminVerification = () => {
           targetType={selectedSubmission?.method ? 'payment' : (selectedSubmission?.type || selectedSubmission?.profile_type) === 'HOST' ? 'hostType' : 'evType'} 
           submission={selectedSubmission}
           onSubmit={handleModerationSubmit}
+          readOnly={selectedSubmission ? isReviewedStatus(selectedSubmission.status) : false}
       />
     </div>
   );

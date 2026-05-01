@@ -6,7 +6,7 @@ import { Eye, EyeOff } from 'lucide-react';
 
 const Login = () => {
   const navigate = useNavigate();
-  const { login, demoLogin, loginWithGoogle, resetPassword, isLoading, error, clearError } = useAuthStore();
+  const { login, loginWithGoogle, resetPassword, isLoading, error, clearError } = useAuthStore();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -34,18 +34,6 @@ const Login = () => {
     setLocalMessage('');
     try {
       const { role } = await login(email, password);
-      navigateByRole(role);
-    } catch {
-      // error is set in store
-    }
-  };
-
-  const handleDemoLogin = async (role) => {
-    clearError();
-    setLocalError('');
-    setLocalMessage('');
-    try {
-      await demoLogin(role);
       navigateByRole(role);
     } catch {
       // error is set in store
@@ -178,33 +166,6 @@ const Login = () => {
           {' '}&nbsp;•&nbsp;{' '}
           <Link to="/signup/host">Become a Host</Link>
         </p>
-      </div>
-
-      {/* Demo Quick Login — always available on login page for convenience */}
-      <div className="demo-section">
-        <h4>Quick Demo Access</h4>
-        <div className="demo-buttons">
-          <button className="demo-btn" onClick={() => handleDemoLogin('user')} disabled={isLoading}>
-            <span className="demo-icon">🚗</span>
-            EV User
-          </button>
-          <button className="demo-btn" onClick={() => handleDemoLogin('verified')} disabled={isLoading}>
-            <span className="demo-icon">✅</span>
-            Verified
-          </button>
-          <button className="demo-btn" onClick={() => handleDemoLogin('tester')} disabled={isLoading}>
-            <span className="demo-icon">🧪</span>
-            Test User
-          </button>
-          <button className="demo-btn" onClick={() => handleDemoLogin('host')} disabled={isLoading}>
-            <span className="demo-icon">🏠</span>
-            Host
-          </button>
-          <button className="demo-btn" onClick={() => handleDemoLogin('admin')} disabled={isLoading}>
-            <span className="demo-icon">🛡️</span>
-            Admin
-          </button>
-        </div>
       </div>
     </AuthShell>
   );

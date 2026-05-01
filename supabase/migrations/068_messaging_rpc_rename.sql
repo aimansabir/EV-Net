@@ -257,6 +257,7 @@ DECLARE
   v_actor uuid;
   v_conversation_id uuid;
   v_conv public.conversations;
+  v_user_name text;
 BEGIN
   v_actor := auth.uid();
   IF v_actor IS NULL THEN
@@ -284,6 +285,28 @@ BEGIN
 
     INSERT INTO public.messages (conversation_id, type, content)
     VALUES (v_conversation_id, 'SYSTEM', 'Guest requested to continue this inquiry.');
+
+    SELECT full_name INTO v_user_name FROM public.profiles WHERE id = v_actor;
+    IF v_user_name IS NULL THEN v_user_name := 'A guest'; END IF;
+
+    INSERT INTO public.notifications (
+      user_id, type, title, message, data
+    ) VALUES (
+      v_conv.host_id,
+      'MESSAGE',
+      'Message extension requested',
+      v_user_name || ' requested to continue the inquiry.',
+      jsonb_build_object(
+        'conversationId', v_conversation_id,
+        'conversation_id', v_conversation_id,
+        'listingId', v_conv.listing_id,
+        'senderId', v_actor,
+        'requesterId', v_actor,
+        'hostId', v_conv.host_id,
+        'route', '/app/messages?conversation=' || v_conversation_id,
+        'hostRoute', '/host/messages?conversation=' || v_conversation_id
+      )
+    );
   END IF;
 
   RETURN NEXT v_conv;
@@ -329,6 +352,24 @@ BEGIN
 
   INSERT INTO public.messages (conversation_id, type, content)
   VALUES (v_conversation_id, 'SYSTEM', 'Host approved 3 more messages for this inquiry.');
+
+  INSERT INTO public.notifications (
+    user_id, type, title, message, data
+  ) VALUES (
+    v_conv.user_id,
+    'MESSAGE',
+    'More messages approved',
+    'The host approved 3 more messages for your inquiry.',
+    jsonb_build_object(
+      'conversationId', v_conversation_id,
+      'conversation_id', v_conversation_id,
+      'listingId', v_conv.listing_id,
+      'senderId', v_actor,
+      'hostId', v_actor,
+      'route', '/app/messages?conversation=' || v_conversation_id,
+      'hostRoute', '/host/messages?conversation=' || v_conversation_id
+    )
+  );
 
   RETURN NEXT v_conv;
 END;

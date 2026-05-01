@@ -283,9 +283,7 @@ function mergeUserShape(profile, evProfile, hostProfile, authUser = null, verifi
       evBrand: evProfile.ev_brand,
       evModel: evProfile.ev_model,
       connectorPreference: evProfile.connector_preference,
-      verificationStatus: (evProfile.verification_status === 'approved') ? 'approved' :
-                         (cnicSubmitted && cnicBackSubmitted && evProofSubmitted) ? 'under_review' :
-                         evProfile.verification_status,
+      verificationStatus: evProfile.verification_status,
       cnicSubmitted,
       cnicBackSubmitted,
       cnicPath: verificationDocs.cnic_path || evProfile.cnic_path,
@@ -309,9 +307,7 @@ function mergeUserShape(profile, evProfile, hostProfile, authUser = null, verifi
       phone: hostProfile.phone,
       avatar: avatar || base.avatar,
       avatarPath: hostProfile.avatar_path,
-      verificationStatus: (hostProfile.verification_status === 'approved') ? 'approved' :
-                         (cnicSubmitted && propertyProofUploaded && chargerProofUploaded) ? 'under_review' :
-                         hostProfile.verification_status,
+      verificationStatus: hostProfile.verification_status,
       cnicSubmitted,
       cnicBackSubmitted,
       cnicPath: verificationDocs.cnic_path || hostProfile.cnic_path,

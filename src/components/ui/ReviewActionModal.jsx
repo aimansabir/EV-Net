@@ -7,7 +7,7 @@ import { X, CheckCircle, AlertTriangle, FileText, Download, Loader2 } from 'luci
  * Admin tool for viewing submitted documents and submitting a
  * moderation status change (Approve or Reject).
  */
-const ReviewActionModal = ({ isOpen, onClose, user, targetType = 'evType', submission, onSubmit }) => {
+const ReviewActionModal = ({ isOpen, onClose, user, targetType = 'evType', submission, onSubmit, readOnly = false }) => {
   const [action, setAction] = useState(null); // 'APPROVED' | 'REJECTED'
   const [notes, setNotes] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -126,7 +126,7 @@ const ReviewActionModal = ({ isOpen, onClose, user, targetType = 'evType', submi
         {/* Header */}
         <div style={{ padding: '1.5rem', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
-            <h3 style={{ margin: 0 }}>Verification Review</h3>
+            <h3 style={{ margin: 0 }}>{readOnly ? 'Review Decision' : 'Verification Review'}</h3>
             <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
               Reviewing {(targetType === 'hostType') ? 'Host' : targetType === 'payment' ? 'Payment' : 'EV User'} submission for: <strong style={{ color: '#fff' }}>{user.name}</strong>
             </div>
@@ -202,66 +202,93 @@ const ReviewActionModal = ({ isOpen, onClose, user, targetType = 'evType', submi
             </>
           )}
 
-          <h4 style={{ margin: '0 0 1rem 0' }}>Moderation Action</h4>
-            <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem' }}>
-            <button 
-              type="button"
-              onClick={() => { setAction('APPROVED'); setValidationError(null); console.log('[Admin] action=APPROVED'); }}
-                style={{ 
-                    flex: 1, padding: '1rem', borderRadius: '8px', cursor: 'pointer',
-                    border: action === 'APPROVED' ? '2px solid var(--brand-green)' : '1px solid var(--border-color)',
-                    background: action === 'APPROVED' ? 'rgba(0,210,106,0.1)' : 'transparent',
-                    color: action === 'APPROVED' ? 'var(--brand-green)' : '#fff', transition: 'all 0.2s',
-                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem'
-                }}>
-                <CheckCircle size={24} />
-                <span style={{ fontWeight: 600 }}>{targetType === 'payment' ? 'Approve Payment' : 'Approve Account'}</span>
-            </button>
-            <button 
-              type="button"
-              onClick={() => { setAction('REJECTED'); setValidationError(null); console.log('[Admin] action=REJECTED'); }}
-                style={{ 
-                    flex: 1, padding: '1rem', borderRadius: '8px', cursor: 'pointer',
-                    border: action === 'REJECTED' ? '2px solid #ef4444' : '1px solid var(--border-color)',
-                    background: action === 'REJECTED' ? 'rgba(239,68,68,0.1)' : 'transparent',
-                    color: action === 'REJECTED' ? '#ef4444' : '#fff', transition: 'all 0.2s',
-                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem'
-                }}>
-                <AlertTriangle size={24} />
-                <span style={{ fontWeight: 600 }}>{targetType === 'payment' ? 'Reject Payment' : 'Reject Account'}</span>
-            </button>
-          </div>
-
-          {action && (
-            <div style={{ animation: 'fadeIn 0.3s ease' }}>
-                <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '8px' }}>
-                    Moderator Notes {isNotesRequired && <span style={{ color: '#ef4444' }}>*</span>}
-                </label>
-                <textarea 
-                    className="auth-input" 
-                    rows={3} 
-                    placeholder={isNotesRequired ? "You must explain exactly what needs fixing so the user can correct it." : "Optional internal notes..."}
-                    value={notes}
-                    onChange={(e) => { setNotes(e.target.value); if (validationError) setValidationError(null); }}
-                    style={{ resize: 'vertical' }}
-                />
+          {readOnly ? (
+            <div style={{ background: 'rgba(255,255,255,0.03)', padding: '1.5rem', borderRadius: '12px', border: '1px solid var(--border-color)', marginTop: '2rem' }}>
+              <h4 style={{ margin: '0 0 1rem 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {submission?.status?.toLowerCase() === 'approved' || submission?.status?.toLowerCase() === 'verified' ? <CheckCircle size={20} color="var(--brand-green)" /> : <AlertTriangle size={20} color="#ef4444" />}
+                Review Decision
+              </h4>
+              <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem' }}>
+                Status: <strong style={{ color: submission?.status?.toLowerCase() === 'approved' || submission?.status?.toLowerCase() === 'verified' ? 'var(--brand-green)' : '#ef4444' }}>{submission?.status?.toUpperCase()}</strong>
+              </p>
+              {submission?.reviewed_at && (
+                 <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
+                   Reviewed On: {new Date(submission.reviewed_at).toLocaleString()}
+                 </p>
+              )}
+              {(submission?.reviewer_notes || submission?.admin_notes) && (
+                <div style={{ marginTop: '1rem', background: 'rgba(0,0,0,0.2)', padding: '1rem', borderRadius: '8px' }}>
+                  <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text-secondary)' }}>Notes:</p>
+                  <p style={{ margin: '4px 0 0 0', fontSize: '0.9rem', whiteSpace: 'pre-wrap' }}>{submission.reviewer_notes || submission.admin_notes}</p>
+                </div>
+              )}
             </div>
-          )}
+          ) : (
+            <>
+              <h4 style={{ margin: '0 0 1rem 0' }}>Moderation Action</h4>
+                <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.5rem' }}>
+                <button 
+                  type="button"
+                  onClick={() => { setAction('APPROVED'); setValidationError(null); console.log('[Admin] action=APPROVED'); }}
+                    style={{ 
+                        flex: 1, padding: '1rem', borderRadius: '8px', cursor: 'pointer',
+                        border: action === 'APPROVED' ? '2px solid var(--brand-green)' : '1px solid var(--border-color)',
+                        background: action === 'APPROVED' ? 'rgba(0,210,106,0.1)' : 'transparent',
+                        color: action === 'APPROVED' ? 'var(--brand-green)' : '#fff', transition: 'all 0.2s',
+                        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem'
+                    }}>
+                    <CheckCircle size={24} />
+                    <span style={{ fontWeight: 600 }}>{targetType === 'payment' ? 'Approve Payment' : 'Approve Account'}</span>
+                </button>
+                <button 
+                  type="button"
+                  onClick={() => { setAction('REJECTED'); setValidationError(null); console.log('[Admin] action=REJECTED'); }}
+                    style={{ 
+                        flex: 1, padding: '1rem', borderRadius: '8px', cursor: 'pointer',
+                        border: action === 'REJECTED' ? '2px solid #ef4444' : '1px solid var(--border-color)',
+                        background: action === 'REJECTED' ? 'rgba(239,68,68,0.1)' : 'transparent',
+                        color: action === 'REJECTED' ? '#ef4444' : '#fff', transition: 'all 0.2s',
+                        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem'
+                    }}>
+                    <AlertTriangle size={24} />
+                    <span style={{ fontWeight: 600 }}>{targetType === 'payment' ? 'Reject Payment' : 'Reject Account'}</span>
+                </button>
+              </div>
 
-          {(validationError || submitError) && (
-            <div style={{ marginTop: '1rem', padding: '0.75rem', borderRadius: '8px', background: 'rgba(239,68,68,0.06)', color: '#ffb6b6' }}>
-              {validationError || submitError}
-            </div>
+              {action && (
+                <div style={{ animation: 'fadeIn 0.3s ease' }}>
+                    <label style={{ display: 'block', fontSize: '0.9rem', marginBottom: '8px' }}>
+                        Moderator Notes {isNotesRequired && <span style={{ color: '#ef4444' }}>*</span>}
+                    </label>
+                    <textarea 
+                        className="auth-input" 
+                        rows={3} 
+                        placeholder={isNotesRequired ? "You must explain exactly what needs fixing so the user can correct it." : "Optional internal notes..."}
+                        value={notes}
+                        onChange={(e) => { setNotes(e.target.value); if (validationError) setValidationError(null); }}
+                        style={{ resize: 'vertical' }}
+                    />
+                </div>
+              )}
+
+              {(validationError || submitError) && (
+                <div style={{ marginTop: '1rem', padding: '0.75rem', borderRadius: '8px', background: 'rgba(239,68,68,0.06)', color: '#ffb6b6' }}>
+                  {validationError || submitError}
+                </div>
+              )}
+            </>
           )}
 
         </div>
 
         {/* Footer */}
         <div style={{ padding: '1.5rem', borderTop: '1px solid var(--border-color)', display: 'flex', gap: '1rem', justifyContent: 'flex-end', background: 'rgba(0,0,0,0.2)' }}>
-          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" disabled={isSubmitDisabled || isSubmitting} onClick={handleSubmit}>
-              {isSubmitting ? <><Loader2 size={16} className="animate-spin" /> Submitting...</> : 'Submit Decision'}
-          </button>
+          <button className="btn btn-secondary" onClick={onClose}>{readOnly ? 'Close' : 'Cancel'}</button>
+          {!readOnly && (
+            <button className="btn btn-primary" disabled={isSubmitDisabled || isSubmitting} onClick={handleSubmit}>
+                {isSubmitting ? <><Loader2 size={16} className="animate-spin" /> Submitting...</> : 'Submit Decision'}
+            </button>
+          )}
         </div>
 
       </div>
