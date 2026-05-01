@@ -2932,11 +2932,21 @@ export const verificationService = {
       return Promise.race([promise, tPromise]);
     };
 
-    console.log(`[EV-Net] Marking profile as under_review in ${table}...`);
-    const { error: updateError } = await withDbTimeout(supabase
-      .from(table)
-      .update({ verification_status: 'under_review' })
-      .eq('user_id', userId));
+    console.log(`[EV-Net] Marking profile as under_review for ${profileType}...`);
+    
+    let updateError;
+    
+    if (profileType === 'USER' || profileType === 'EV_USER') {
+      const { data, error } = await withDbTimeout(supabase.rpc('submit_ev_verification_for_review'));
+      console.log('[EV-Net] submit_ev_verification_for_review response:', { data, error });
+      updateError = error;
+    } else {
+      const { error } = await withDbTimeout(supabase
+        .from(table)
+        .update({ verification_status: 'under_review' })
+        .eq('user_id', userId));
+      updateError = error;
+    }
 
     if (updateError) {
       throw new Error(`Could not submit verification for review: ${updateError.message}`);
