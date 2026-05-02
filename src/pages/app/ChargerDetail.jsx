@@ -561,6 +561,7 @@ const ChargerDetail = () => {
                         <label style={{ display: 'block', fontSize: '0.65rem', color: 'var(--text-secondary)', marginBottom: '0.4rem', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 800 }}>Arrival</label>
                         <button
                           onClick={() => setIsStartOpen(!isStartOpen)}
+                          type="button"
                           style={{
                             width: '100%',
                             height: '64px',
@@ -575,40 +576,78 @@ const ChargerDetail = () => {
                             gap: '12px',
                             cursor: 'pointer',
                             transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                            boxShadow: isStartOpen ? '0 8px 16px rgba(0,0,0,0.3)' : 'none'
+                            boxShadow: isStartOpen ? '0 8px 16px rgba(0,0,0,0.3)' : 'none',
+                            position: 'relative',
+                            zIndex: 2
                           }}
                         >
                           <Clock size={18} color="var(--brand-green)" />
-                          <span style={{ fontSize: '1rem', fontWeight: 700 }}>{selectedStart ? formatTime12h(selectedStart) : 'Select'}</span>
+                          <span style={{ fontSize: '1rem', fontWeight: 700 }}>
+                            {selectedStart ? formatTime12h(selectedStart) : 'Select'}
+                          </span>
                           <ChevronDown size={16} style={{ opacity: 0.3, marginLeft: 'auto', transform: isStartOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
                         </button>
 
                         {isStartOpen && (
                           <div style={{
-                            position: 'absolute', top: '100%', left: 0, width: '100%', marginTop: '10px',
-                            background: 'rgba(23, 23, 23, 1)', border: '1px solid rgba(255,255,255,0.1)',
-                            borderRadius: '12px', overflow: 'hidden', zIndex: 1000,
-                            boxShadow: '0 20px 50px rgba(0,0,0,0.8)', backdropFilter: 'blur(30px)'
+                            position: 'absolute', 
+                            top: '100%', 
+                            left: 0, 
+                            width: '100%', 
+                            marginTop: '10px',
+                            background: '#1a1a1a', 
+                            border: '1px solid rgba(255,255,255,0.15)',
+                            borderRadius: '12px', 
+                            overflow: 'hidden', 
+                            zIndex: 9999,
+                            boxShadow: '0 20px 60px rgba(0,0,0,0.9)', 
+                            backdropFilter: 'blur(40px)',
+                            minHeight: '40px'
                           }}>
-                            <div style={{ maxHeight: '240px', overflowY: 'auto', padding: '8px' }}>
-                              {slots.filter(s => !s.isBooked).map(s => (
-                                <button
-                                  key={s.startTime}
-                                  onClick={() => { setSelectedStart(s.startTime); setIsStartOpen(false); }}
-                                  style={{
-                                    width: '100%', padding: '0.9rem 1.2rem', background: 'transparent',
-                                    border: 'none', color: selectedStart === s.startTime ? 'var(--brand-green)' : '#fff',
-                                    textAlign: 'left', cursor: 'pointer', fontSize: '0.95rem',
-                                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                                    borderRadius: '10px', transition: 'background 0.2s'
-                                  }}
-                                  onMouseOver={e => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
-                                  onMouseOut={e => e.currentTarget.style.background = 'transparent'}
-                                >
-                                  {formatTime12h(s.startTime)}
-                                  {selectedStart === s.startTime && <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--brand-green)' }} />}
-                                </button>
-                              ))}
+                            <div style={{ maxHeight: '240px', overflowY: 'auto', padding: '6px' }}>
+                              {slots.length === 0 ? (
+                                <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+                                  No hours available
+                                </div>
+                              ) : (
+                                slots.map(s => (
+                                  <button
+                                    key={s.startTime}
+                                    disabled={s.isBooked}
+                                    onClick={() => { 
+                                      if (!s.isBooked) {
+                                        setSelectedStart(s.startTime); 
+                                        setIsStartOpen(false); 
+                                      }
+                                    }}
+                                    style={{
+                                      width: '100%', 
+                                      padding: '0.8rem 1rem', 
+                                      background: 'transparent',
+                                      border: 'none', 
+                                      color: s.isBooked ? '#4b5563' : (selectedStart === s.startTime ? 'var(--brand-green)' : '#fff'),
+                                      textAlign: 'left', 
+                                      cursor: s.isBooked ? 'not-allowed' : 'pointer', 
+                                      fontSize: '0.95rem',
+                                      display: 'flex', 
+                                      alignItems: 'center', 
+                                      justifyContent: 'space-between',
+                                      borderRadius: '8px', 
+                                      transition: 'background 0.2s',
+                                      marginBottom: '2px',
+                                      opacity: s.isBooked ? 0.6 : 1
+                                    }}
+                                    onMouseOver={e => !s.isBooked && (e.currentTarget.style.background = 'rgba(255,255,255,0.08)')}
+                                    onMouseOut={e => !s.isBooked && (e.currentTarget.style.background = 'transparent')}
+                                  >
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                      {formatTime12h(s.startTime)}
+                                      {s.isBooked && <span style={{ fontSize: '0.65rem', background: 'rgba(239,68,68,0.1)', color: '#ef4444', padding: '2px 6px', borderRadius: '4px' }}>Booked</span>}
+                                    </div>
+                                    {selectedStart === s.startTime && <CheckCircle size={14} color="var(--brand-green)" />}
+                                  </button>
+                                ))
+                              )}
                             </div>
                           </div>
                         )}
