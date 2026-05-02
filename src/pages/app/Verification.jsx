@@ -271,177 +271,157 @@ const Verification = () => {
             <div style={{ color: 'var(--brand-green)' }}><PartyPopper size={24} /></div>
             <div>
               <h4 style={{ margin: 0, color: 'var(--brand-green)' }}>Documents Submitted!</h4>
+
+        {success && (
+          <div style={{ background: 'rgba(0, 210, 106, 0.1)', border: '1px solid var(--brand-green)', padding: '1rem', borderRadius: '12px', marginBottom: '2rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            <div style={{ color: 'var(--brand-green)' }}><PartyPopper size={24} /></div>
+            <div>
+              <h4 style={{ margin: 0, color: 'var(--brand-green)' }}>Documents Submitted!</h4>
               <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Thank you. Your verification is now under review by our admin team.</p>
             </div>
           </div>
         )}
 
         {/* Checklist */}
-        <div className="glass-card" style={{ padding: '2.5rem' }}>
-          <h3 style={{ marginBottom: '2rem', fontFamily: 'var(--font-heading)' }}>Verification Checklist</h3>
-          
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-            {steps.map((step, idx) => {
-              const isCompleted = step.status === 'completed';
-              
-              return (
-                <div key={step.id} style={{ display: 'flex', gap: '1rem', opacity: (isUnderReview || isApproved) && !isCompleted ? 0.6 : 1 }}>
-                  
-                  {/* Icon Node */}
-                  <div style={{ 
-                    width: '32px', height: '32px', borderRadius: '50%', flexShrink: 0,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    background: isCompleted ? 'rgba(0, 210, 106, 0.15)' : 'var(--bg-secondary)',
-                    border: isCompleted ? '1px solid var(--brand-green)' : '1px solid var(--border-color)',
-                    color: isCompleted ? 'var(--brand-green)' : 'var(--text-secondary)'
-                  }}>
-                    {isCompleted ? '✓' : (idx + 1)}
-                  </div>
-                  
-                  {/* Content */}
-                  <div style={{ flex: 1, paddingBottom: '1.5rem', borderBottom: idx !== steps.length - 1 ? '1px solid var(--border-color)' : 'none' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1.5rem' }}>
-                        <div style={{ flex: 1 }}>
-                          <h4 style={{ margin: '0 0 0.3rem 0', color: isCompleted ? '#fff' : 'var(--text-primary)' }}>{step.title}</h4>
-                          <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: '0.85rem', lineHeight: '1.4' }}>{step.description}</p>
+        {(!isApproved || success) && (
+          <div className="glass-card" style={{ padding: '2.5rem' }}>
+            <h3 style={{ marginBottom: '2rem', fontFamily: 'var(--font-heading)' }}>Verification Checklist</h3>
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+              {steps.map((step, idx) => {
+                const isCompleted = step.status === 'completed';
+                
+                return (
+                  <div key={step.id} style={{ display: 'flex', gap: '1rem', opacity: (isUnderReview || isApproved) && !isCompleted ? 0.6 : 1 }}>
+                    
+                    {/* Icon Node */}
+                    <div style={{ 
+                      width: '32px', height: '32px', borderRadius: '50%', flexShrink: 0,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      background: isCompleted ? 'rgba(0, 210, 106, 0.15)' : 'var(--bg-secondary)',
+                      border: isCompleted ? '1px solid var(--brand-green)' : '1px solid var(--border-color)',
+                      color: isCompleted ? 'var(--brand-green)' : 'var(--text-secondary)'
+                    }}>
+                      {isCompleted ? '✓' : (idx + 1)}
+                    </div>
+                    
+                    {/* Content */}
+                    <div style={{ flex: 1, paddingBottom: '1.5rem', borderBottom: idx !== steps.length - 1 ? '1px solid var(--border-color)' : 'none' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1.5rem' }}>
+                          <div style={{ flex: 1 }}>
+                            <h4 style={{ margin: '0 0 0.3rem 0', color: isCompleted ? '#fff' : 'var(--text-primary)' }}>{step.title}</h4>
+                            <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: '0.85rem', lineHeight: '1.4' }}>{step.description}</p>
+                          </div>
+                          
+                          {!isCompleted && !isUnderReview && !isApproved && step.status === 'pending' && (
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px', flexShrink: 0 }}>
+                              <button 
+                                className="btn btn-secondary" 
+                                style={{ padding: '0.4rem 0.8rem', fontSize: '0.75rem' }} 
+                                disabled={uploading[step.id]}
+                                onClick={() => {
+                                  if (step.id === 'email') {
+                                    handleEmailVerify();
+                                  } else {
+                                    setUploadFeedback(prev => ({ ...prev, [step.id]: 'Verification request sent. Check your device.' }));
+                                  }
+                                }}
+                              >
+                                {uploading[step.id] ? 'Sending...' : 'Verify Now'}
+                              </button>
+                            </div>
+                          )}
                         </div>
-                        
-                        {!isCompleted && !isUnderReview && !isApproved && step.status === 'pending' && (
-                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px', flexShrink: 0 }}>
-                            <button 
-                              className="btn btn-secondary" 
-                              style={{ padding: '0.4rem 0.8rem', fontSize: '0.75rem' }} 
-                              disabled={uploading[step.id]}
-                              onClick={() => {
-                                if (step.id === 'email') {
-                                  handleEmailVerify();
-                                } else {
-                                  setUploadFeedback(prev => ({ ...prev, [step.id]: 'Verification request sent. Check your device.' }));
-                                }
-                              }}
-                            >
-                              {uploading[step.id] ? 'Sending...' : 'Verify Now'}
+
+                        {/* Document Preview & Replace UI */}
+                        {!isUnderReview && !isApproved && !success && step.status === 'completed' && !replacing[step.id] && 
+                         ['identity', 'identity_back', 'ev', 'property', 'charger'].includes(step.id) && (
+                          <div style={{ marginTop: '1rem', display: 'flex', alignItems: 'center', gap: '1.5rem', background: 'rgba(255,255,255,0.03)', padding: '1rem', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
+                            <div style={{ width: '80px', height: '60px', borderRadius: '8px', overflow: 'hidden', background: 'var(--bg-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                              {step.path ? (
+                                <img 
+                                  src={signedUrls[step.id] || verificationService.getPublicUrl(step.path)} 
+                                  alt="Preview" 
+                                  style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                                  onError={(e) => { e.target.src = ''; e.target.parentElement.innerHTML = '<span style="font-size: 0.6rem; color: var(--text-secondary)">PDF / Doc</span>'; }}
+                                />
+                              ) : (
+                                <FileText size={20} color="var(--text-secondary)" />
+                              )}
+                            </div>
+                            <div style={{ flex: 1 }}>
+                              <p style={{ margin: 0, fontSize: '0.85rem', fontWeight: 500 }}>Document Uploaded</p>
+                              <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Click change to replace with a new file.</p>
+                            </div>
+                            <button onClick={() => setReplacing(prev => ({ ...prev, [step.id]: true }))} style={{ background: 'rgba(0, 240, 255, 0.1)', border: '1px solid var(--brand-cyan)', color: 'var(--brand-cyan)', padding: '0.5rem 1rem', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer' }}>
+                              Change Picture
                             </button>
-                            {uploadFeedback[step.id] && (
-                              <span style={{ 
-                                fontSize: '0.7rem', 
-                                color: (uploadFeedback[step.id].includes('sent') || uploadFeedback[step.id].includes('verified')) ? 'var(--brand-green)' : '#f87171' 
-                              }}>
-                                {uploadFeedback[step.id]}
-                              </span>
-                            )}
                           </div>
                         )}
+
+                        {/* Action Triggers for Uploads */}
+                        {!isUnderReview && !isApproved && !success && (step.status === 'action_required' || replacing[step.id]) && step.id !== 'email' && step.id !== 'account' && (
+                           <div style={{ marginTop: '1rem' }}>
+                             <FileUploadDropzone 
+                               accept="image/jpeg, image/png, application/pdf"
+                               files={[]}
+                               onChange={(files) => handleFileUpload(step.id === 'identity' ? 'cnic' : step.id === 'identity_back' ? 'cnic_back' : step.id, files)}
+                               mode="document"
+                               disabled={uploading[step.id === 'identity' ? 'cnic' : step.id === 'identity_back' ? 'cnic_back' : step.id]}
+                             />
+                             {uploading[step.id === 'identity' ? 'cnic' : step.id === 'identity_back' ? 'cnic_back' : step.id] && <p style={{ fontSize: '0.8rem', color: 'var(--brand-cyan)', marginTop: '0.5rem' }}>Uploading document...</p>}
+                           </div>
+                        )}
                       </div>
-
-                      {/* Document Preview & Replace UI (Only for actual document steps) */}
-                      {!isUnderReview && !isApproved && !success && step.status === 'completed' && !replacing[step.id] && 
-                       ['identity', 'identity_back', 'ev', 'property', 'charger'].includes(step.id) && (
-                        <div style={{ marginTop: '1rem', display: 'flex', alignItems: 'center', gap: '1.5rem', background: 'rgba(255,255,255,0.03)', padding: '1rem', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
-                          <div style={{ width: '80px', height: '60px', borderRadius: '8px', overflow: 'hidden', background: 'var(--bg-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            {step.path ? (
-                              <img 
-                                src={signedUrls[step.id] || verificationService.getPublicUrl(step.path)} 
-                                alt="Preview" 
-                                style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
-                                onError={(e) => { e.target.src = ''; e.target.parentElement.innerHTML = '<span style="font-size: 0.6rem; color: var(--text-secondary)">PDF / Doc</span>'; }}
-                              />
-                            ) : (
-                              <FileText size={20} color="var(--text-secondary)" />
-                            )}
-                          </div>
-                          <div style={{ flex: 1 }}>
-                            <p style={{ margin: 0, fontSize: '0.85rem', fontWeight: 500 }}>Document Uploaded</p>
-                            <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Click change to replace with a new file.</p>
-                          </div>
-                          <button 
-                            onClick={() => setReplacing(prev => ({ ...prev, [step.id]: true }))}
-                            style={{ 
-                              background: 'rgba(0, 240, 255, 0.1)', 
-                              border: '1px solid var(--brand-cyan)', 
-                              color: 'var(--brand-cyan)', 
-                              padding: '0.5rem 1rem', 
-                              borderRadius: '8px',
-                              fontSize: '0.85rem',
-                              fontWeight: 600,
-                              cursor: 'pointer',
-                              transition: 'all 0.2s'
-                            }}
-                            onMouseEnter={(e) => e.target.style.background = 'rgba(0, 240, 255, 0.2)'}
-                            onMouseLeave={(e) => e.target.style.background = 'rgba(0, 240, 255, 0.1)'}
-                          >
-                            Change Picture
-                          </button>
-                        </div>
-                      )}
-
-                      {/* Action Triggers for Uploads */}
-                      {!isUnderReview && !isApproved && !success && (step.status === 'action_required' || replacing[step.id]) && step.id !== 'email' && step.id !== 'account' && (
-                         <div style={{ marginTop: '1rem' }}>
-                           <FileUploadDropzone 
-                             accept="image/jpeg, image/png, application/pdf"
-                             files={[]}
-                             onChange={(files) => handleFileUpload(step.id === 'identity' ? 'cnic' : step.id === 'identity_back' ? 'cnic_back' : step.id, files)}
-                             mode="document"
-                             disabled={uploading[step.id === 'identity' ? 'cnic' : step.id === 'identity_back' ? 'cnic_back' : step.id]}
-                           />
-                           {uploading[step.id === 'identity' ? 'cnic' : step.id === 'identity_back' ? 'cnic_back' : step.id] && <p style={{ fontSize: '0.8rem', color: 'var(--brand-cyan)', marginTop: '0.5rem' }}>Uploading document...</p>}
-                           
-                           {replacing[step.id] && (
-                             <button 
-                               onClick={() => setReplacing(prev => ({ ...prev, [step.id]: false }))}
-                               style={{ 
-                                 background: 'rgba(255, 255, 255, 0.05)', 
-                                 border: '1px solid var(--border-color)', 
-                                 color: 'var(--text-secondary)', 
-                                 padding: '0.4rem 0.8rem', 
-                                 borderRadius: '6px',
-                                 fontSize: '0.75rem',
-                                 fontWeight: 500,
-                                 marginTop: '0.75rem',
-                                 cursor: 'pointer',
-                                 transition: 'all 0.2s'
-                               }}
-                               onMouseEnter={(e) => e.target.style.background = 'rgba(255, 255, 255, 0.1)'}
-                               onMouseLeave={(e) => e.target.style.background = 'rgba(255, 255, 255, 0.05)'}
-                             >
-                               Cancel Change
-                             </button>
-                           )}
-                         </div>
-                      )}
                     </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Submit Action */}
-          {!isUnderReview && !isApproved && !success && (
-            <div style={{ marginTop: '2.5rem', paddingTop: '2rem', borderTop: '1px solid var(--border-color)' }}>
-              {error && <div className="auth-error" style={{ marginBottom: '1rem' }}>{error}</div>}
-              {!requiredDocumentsReady && (
-                <div className="auth-error" style={{ marginBottom: '1rem' }}>
-                  Missing required document{missingRequirements.length > 1 ? 's' : ''}: {missingRequirements.join(', ')}.
-                </div>
-              )}
-              
-              <button 
-                className="btn btn-primary" 
-                style={{ width: '100%', padding: '1.2rem', fontSize: '1.1rem', fontWeight: 600, marginTop: '1rem' }}
-                onClick={handleSubmit}
-                disabled={loading || isUnderReview || isApproved || success || !requiredDocumentsReady}
-              >
-                {loading ? 'Submitting...' : (isUnderReview || isApproved || success) ? 'Verification Submitted' : 'Submit Verification for Review'}
-              </button>
-              <p style={{ textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.8rem', marginTop: '1rem' }}>
-                By submitting, you confirm that these documents belong to you.
-              </p>
+                );
+              })}
             </div>
-          )}
-        </div>
+
+            {/* Submit Action */}
+            {!isUnderReview && !isApproved && !success && (
+              <div style={{ marginTop: '2.5rem', paddingTop: '2rem', borderTop: '1px solid var(--border-color)' }}>
+                {error && <div className="auth-error" style={{ marginBottom: '1rem' }}>{error}</div>}
+                {!requiredDocumentsReady && (
+                  <div className="auth-error" style={{ marginBottom: '1rem' }}>
+                    Missing required document{missingRequirements.length > 1 ? 's' : ''}: {missingRequirements.join(', ')}.
+                  </div>
+                )}
+                
+                <button 
+                  className="btn btn-primary" 
+                  style={{ width: '100%', padding: '1.2rem', fontSize: '1.1rem', fontWeight: 600, marginTop: '1rem' }}
+                  onClick={handleSubmit}
+                  disabled={loading || isUnderReview || isApproved || success || !requiredDocumentsReady}
+                >
+                  {loading ? 'Submitting...' : 'Submit Verification for Review'}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {isApproved && !success && (
+          <div style={{ textAlign: 'center', marginTop: '4rem' }}>
+            <div style={{ 
+              width: '100px', height: '100px', borderRadius: '50%', 
+              background: 'rgba(0, 210, 106, 0.1)', border: '2px solid var(--brand-green)', 
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              margin: '0 auto 2rem', color: 'var(--brand-green)'
+            }}>
+              <CheckCircle size={48} />
+            </div>
+            <h3 style={{ fontSize: '1.75rem', marginBottom: '1rem' }}>Verified Status</h3>
+            <p style={{ color: 'var(--text-secondary)', marginBottom: '2rem' }}>
+              Your account is fully verified. You can now use all features of the EV-Net network.
+            </p>
+            <button className="btn btn-secondary" onClick={() => navigate(isHost ? '/host/dashboard' : '/app/explore')}>
+              Return to {isHost ? 'Dashboard' : 'Explore'}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

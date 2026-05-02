@@ -13,7 +13,7 @@ const HostLayout = ({ children }) => {
 
   const navItems = [
     { path: '/host/dashboard', label: 'Dashboard' },
-    { path: '/host/onboarding', label: isHostVerified ? 'Host verified' : 'Verification' },
+    { path: '/host/onboarding', label: isHostVerified ? 'Verified ✓' : 'Verification' },
     { path: '/host/listings', label: 'Listings' },
     { path: '/host/bookings', label: 'Bookings' },
     { path: '/host/availability', label: 'Availability' },

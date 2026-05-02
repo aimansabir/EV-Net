@@ -112,7 +112,8 @@ const HostOnboarding = () => {
   const verificationStatus = (user?.verificationStatus || 'draft').toLowerCase();
   const isApproved = verificationStatus === 'approved';
   const isRejected = verificationStatus === 'rejected';
-  const isPendingVerification = ['pending', 'under_review'].includes(verificationStatus);
+  const isUnderReview = ['pending', 'under_review'].includes(verificationStatus);
+  const isPendingVerification = isUnderReview;
 
   const amenityOptions = ['WiFi Available', 'CCTV Security', 'Covered Parking', 'Restroom Access', 'Drinking Water', 'Gated Community', 'Near Restaurants', 'Garden Seating', 'Overnight Available'];
 
@@ -163,12 +164,18 @@ const HostOnboarding = () => {
       }
 
       try {
+        console.log("[EV-Net] HostOnboarding: Fetching server draft...", { preferredListingId });
         const draft = await hostService.getOnboardingDraft(user.id, preferredListingId);
-        if (cancelled || !draft) return;
+        if (cancelled || !draft) {
+          console.warn("[EV-Net] HostOnboarding: No server draft found.");
+          return;
+        }
 
         const listing = draft.listing;
         const docs = draft.verificationDocs || {};
         const existingPayment = draft.payment || null;
+
+        console.log("[EV-Net] HostOnboarding: Server draft loaded", { listingId: listing?.id, paymentStatus: existingPayment?.status });
 
         setExistingOnboarding({
           identitySubmitted: !!draft.profile?.identityVerified,
@@ -178,9 +185,12 @@ const HostOnboarding = () => {
           paymentStatus: existingPayment?.status || null,
         });
 
+        // Always hydrate from DB if rejected OR if local draft is missing
+        const shouldHydrateFromDB = isRejected || !restoredLocalDraft;
+
         setProfile(prev => ({
           ...prev,
-          phone: prev.phone || draft.profile?.phone || user.phone || '',
+          phone: (shouldHydrateFromDB && draft.profile?.phone) ? draft.profile.phone : (prev.phone || user.phone || ''),
         }));
 
         if (listing?.id) {
@@ -188,7 +198,8 @@ const HostOnboarding = () => {
           localStorage.setItem('currentHostOnboardingListingId', listing.id);
         }
 
-        if (listing && (!restoredLocalDraft || isRejected)) {
+        if (listing && shouldHydrateFromDB) {
+          console.log("[EV-Net] HostOnboarding: Hydrating from DB listing");
           setCharger(prev => ({
             ...prev,
             listingId: listing.id,
@@ -215,14 +226,14 @@ const HostOnboarding = () => {
               if (label) nextDays[label] = true;
             });
             setSchedule({ days: nextDays });
-            setTimeState(prev => ({
-              start: listing.availability[0]?.startTime || prev.start,
-              end: listing.availability[0]?.endTime || prev.end,
-            }));
+            setTimeState({
+              start: listing.availability[0]?.startTime || '09:00',
+              end: listing.availability[0]?.endTime || '18:00',
+            });
           }
         }
 
-        if (!restoredLocalDraft || isRejected) {
+        if (shouldHydrateFromDB) {
           const storedChargerProof = makeExistingUpload(docs.chargerProofPath, docs.chargerProofUrl, 'charger-proof');
           const storedPropertyProof = makeExistingUpload(docs.propertyProofPath, docs.propertyProofUrl, 'property-proof');
           const storedPaymentProof = makeExistingUpload(existingPayment?.screenshot_path, existingPayment?.receiptUrl, 'payment-proof');
@@ -994,9 +1005,16 @@ const HostOnboarding = () => {
           {step === 8 && (
             <div className="animate-in" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
               <h3 style={{ margin: 0 }}>Activation Payment</h3>
-              <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginTop: '-1rem' }}>
-                Pay the one-time activation fee of <strong>{formatPKR(feeBreakdown.total)}</strong>. Bank transfer is active for this beta.
-              </p>
+              {existingOnboarding.setupFeePaid || existingOnboarding.paymentStatus === 'verified' ? (
+                <div style={{ background: 'rgba(0, 210, 106, 0.1)', border: '1px solid var(--brand-green)', padding: '1rem', borderRadius: '12px', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                  <CheckCircle size={20} color="var(--brand-green)" />
+                  <p style={{ margin: 0, color: 'var(--brand-green)', fontSize: '0.9rem', fontWeight: 600 }}>Payment already verified. You don't need to pay again.</p>
+                </div>
+              ) : (
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginTop: '-1rem' }}>
+                  Pay the one-time activation fee of <strong>{formatPKR(feeBreakdown.total)}</strong>. Bank transfer is active for this beta.
+                </p>
+              )}
 
               {/* Method Tabs */}
               <div style={{ display: 'flex', gap: '1rem' }}>
@@ -1053,7 +1071,7 @@ const HostOnboarding = () => {
                   disabled={isSubmitting}
                   style={{ flex: 2 }}
                 >
-                  {isSubmitting ? (publishStatus || 'Submitting...') : 'Pay & Submit'}
+                  {isSubmitting ? (publishStatus || 'Submitting...') : (existingOnboarding.setupFeePaid || existingOnboarding.paymentStatus === 'verified') ? 'Finish & Submit' : 'Pay & Submit'}
                 </button>
               </div>
             </div>

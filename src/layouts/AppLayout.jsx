@@ -12,8 +12,8 @@ const AppLayout = ({ children }) => {
   const navItems = [
     { path: '/app/explore', label: 'Explore' },
     { path: '/app/bookings', label: 'Bookings' },
-    { path: '/app/favorites', label: 'Saved' },
     { path: '/app/messages', label: 'Messages' },
+    { path: '/app/verification', label: user?.verificationStatus === 'approved' ? 'Verified ✓' : 'Verification' },
     { path: '/app/profile', label: 'Profile' }
   ];
 
