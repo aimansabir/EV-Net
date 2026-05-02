@@ -12,6 +12,8 @@ const HostAvailability = () => {
   const [selectedListing, setSelectedListing] = useState('');
   const [schedule, setSchedule] = useState({});
   const [saved, setSaved] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState('');
 
   const format12h = (time24) => {
     const [h, m] = time24.split(':');
@@ -62,12 +64,22 @@ const HostAvailability = () => {
   };
 
   const handleSave = async () => {
-    const schedules = Object.entries(schedule)
-      .filter(([, v]) => v.enabled)
-      .map(([day, v]) => ({ dayOfWeek: parseInt(day), startTime: v.start, endTime: v.end }));
-    await availabilityService.set(selectedListing, schedules);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    if (!selectedListing) return;
+    setIsSaving(true);
+    setError('');
+    try {
+      const schedules = Object.entries(schedule)
+        .filter(([, v]) => v.enabled)
+        .map(([day, v]) => ({ dayOfWeek: parseInt(day), startTime: v.start, endTime: v.end }));
+      await availabilityService.set(selectedListing, schedules);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } catch (err) {
+      console.error("[EV-Net] Failed to save availability:", err);
+      setError(err.message || 'Failed to save schedule. Please try again.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -143,8 +155,22 @@ const HostAvailability = () => {
             })}
           </div>
 
-          <button className="btn btn-primary" onClick={handleSave} style={{ width: '100%', marginTop: '1.5rem' }}>
-            {saved ? '✓ Saved!' : 'Save Schedule'}
+          {error && (
+            <div style={{ marginTop: '1rem', padding: '0.75rem', borderRadius: '8px', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)', color: '#f87171', fontSize: '0.85rem', textAlign: 'center' }}>
+              {error}
+            </div>
+          )}
+
+          <button 
+            className="btn btn-primary" 
+            onClick={handleSave} 
+            disabled={isSaving || !selectedListing}
+            style={{ width: '100%', marginTop: '1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}
+          >
+            {isSaving ? (
+              <div className="spinner" style={{ width: '18px', height: '18px', border: '2px solid rgba(0,0,0,0.1)', borderTopColor: '#000', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></div>
+            ) : null}
+            {isSaving ? 'Saving...' : saved ? '✓ Saved!' : 'Save Schedule'}
           </button>
         </div>
       </div>

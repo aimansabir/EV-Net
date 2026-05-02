@@ -10,7 +10,7 @@ import { authService } from '../data/api.js';
 
 const STORAGE_KEY = 'EV-Net_auth';
 const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true';
-const AUTH_TIMEOUT_MS = 10000;
+const AUTH_TIMEOUT_MS = 5000;
 
 function withAuthTimeout(promise, label, timeoutMs = AUTH_TIMEOUT_MS) {
   let timeoutId;

@@ -22,7 +22,7 @@ const ProtectedRoute = ({ allowedRoles, children }) => {
     const timeoutId = setTimeout(() => {
       console.warn('[EV-Net][Auth] timeout/fallback');
       setShowRetry(true);
-    }, 9000);
+    }, 4500);
 
     return () => clearTimeout(timeoutId);
   }, [isInitialized, isAuthHydrating]);

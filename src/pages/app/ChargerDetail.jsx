@@ -31,7 +31,7 @@ import 'leaflet/dist/leaflet.css';
 const smallIcon = new L.DivIcon({ className: 'custom-map-marker', html: `<div class="marker-pin"></div>`, iconSize: [20, 20], iconAnchor: [10, 10] });
 
 const formatTime12h = (time24) => {
-  if (!time24) return '';
+  if (!time24 || !time24.includes(':')) return time24 || 'Select';
   const [hourStr, minuteStr] = time24.split(':');
   let hour = parseInt(hourStr);
   const ampm = hour >= 12 ? 'PM' : 'AM';
@@ -577,8 +577,7 @@ const ChargerDetail = () => {
                             cursor: 'pointer',
                             transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
                             boxShadow: isStartOpen ? '0 8px 16px rgba(0,0,0,0.3)' : 'none',
-                            position: 'relative',
-                            zIndex: 2
+                            position: 'relative'
                           }}
                         >
                           <Clock size={18} color="var(--brand-green)" />
