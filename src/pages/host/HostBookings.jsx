@@ -22,9 +22,17 @@ const HostBookings = () => {
   const filtered = filter === 'all' ? bookings : bookings.filter(b => b.status === filter.toUpperCase());
 
   const handleStatusChange = async (bookingId, newStatus) => {
-    await bookingService.updateStatus(bookingId, newStatus);
-    const data = await bookingService.getByHost(user?.id || 'host_ahsan');
-    setBookings(data);
+    try {
+      setLoading(true);
+      await bookingService.updateStatus(bookingId, newStatus);
+      const data = await bookingService.getByHost(user?.id || 'host_ahsan');
+      setBookings(data);
+    } catch (err) {
+      console.error("[EV-Net] Failed to update booking status:", err);
+      alert(err.message || "Failed to update booking. Please try again.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const statusColors = {
@@ -74,11 +82,26 @@ const HostBookings = () => {
                       {booking.date} • {booking.startTime} – {booking.endTime}
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                      <span style={{ color: 'var(--brand-green)', fontWeight: 600 }}>{formatPKR(booking.baseFee)}</span>
+                      <div style={{ textAlign: 'right' }}>
+                        <div style={{ color: 'var(--brand-green)', fontWeight: 700, fontSize: '1.05rem' }}>{formatPKR(booking.baseFee)}</div>
+                        {booking.estimatedKwh && <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>{booking.estimatedKwh} kWh session</div>}
+                      </div>
                       {booking.status === 'PENDING' && (
                         <div style={{ display: 'flex', gap: '0.5rem' }}>
-                          <button onClick={() => handleStatusChange(booking.id, 'CONFIRMED')} style={{ padding: '0.3rem 0.8rem', borderRadius: '6px', border: '1px solid var(--brand-green)', background: 'rgba(0,210,106,0.15)', color: 'var(--brand-green)', cursor: 'pointer', fontSize: '0.8rem', fontFamily: 'var(--font-body)' }}>Accept</button>
-                          <button onClick={() => handleStatusChange(booking.id, 'CANCELLED')} style={{ padding: '0.3rem 0.8rem', borderRadius: '6px', border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.1)', color: '#f87171', cursor: 'pointer', fontSize: '0.8rem', fontFamily: 'var(--font-body)' }}>Decline</button>
+                          <button 
+                            disabled={loading}
+                            onClick={() => handleStatusChange(booking.id, 'CONFIRMED')} 
+                            style={{ padding: '0.4rem 1rem', borderRadius: '8px', border: '1px solid var(--brand-green)', background: 'rgba(0,210,106,0.15)', color: 'var(--brand-green)', cursor: loading ? 'not-allowed' : 'pointer', fontSize: '0.85rem', fontWeight: 600, fontFamily: 'var(--font-body)', transition: 'all 0.2s' }}
+                          >
+                            Accept
+                          </button>
+                          <button 
+                            disabled={loading}
+                            onClick={() => handleStatusChange(booking.id, 'CANCELLED')} 
+                            style={{ padding: '0.4rem 1rem', borderRadius: '8px', border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.1)', color: '#f87171', cursor: loading ? 'not-allowed' : 'pointer', fontSize: '0.85rem', fontWeight: 600, fontFamily: 'var(--font-body)', transition: 'all 0.2s' }}
+                          >
+                            Decline
+                          </button>
                         </div>
                       )}
                     </div>
