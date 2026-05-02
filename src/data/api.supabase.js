@@ -468,6 +468,9 @@ export const authService = {
           name: normalizedName,
           phone: formData.phone,
           role: 'USER',
+          ev_brand: formData.evBrand,
+          ev_model: formData.evModel,
+          connector_preference: formData.connectorPreference,
         },
       },
     });

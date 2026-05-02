@@ -838,14 +838,14 @@ const HostOnboarding = () => {
                 <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Choose fair rates per kWh. Solar availability makes day rates cheaper.</p>
               </div>
               
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1.5rem', marginBottom: '2.5rem', alignItems: 'start' }}>
-                <div className="auth-field">
-                  <label style={{ display: 'block', marginBottom: '0.8rem', opacity: 0.8, fontSize: '0.9rem', fontWeight: 600 }}>Charger Type <span style={{ color: 'var(--brand-cyan)' }}>*</span></label>
-                  <select className="auth-select" value={charger.chargerType} onChange={e => setCharger({...charger, chargerType: e.target.value})} style={{ height: '44px', width: '100%', padding: '0 12px' }}>
-                    {Object.values(ChargerType).map(t => <option key={t}>{t}</option>)}
-                  </select>
-                </div>
-                
+              <div className="auth-field" style={{ marginBottom: '2rem' }}>
+                <label style={{ display: 'block', marginBottom: '0.8rem', opacity: 0.8, fontSize: '0.9rem', fontWeight: 600 }}>Charger Type <span style={{ color: 'var(--brand-cyan)' }}>*</span></label>
+                <select className="auth-select" value={charger.chargerType} onChange={e => setCharger({...charger, chargerType: e.target.value})} style={{ height: '44px', width: '100%', padding: '0 12px' }}>
+                  {Object.values(ChargerType).map(t => <option key={t}>{t}</option>)}
+                </select>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginBottom: '2.5rem', alignItems: 'start' }}>
                 <div style={{ minWidth: 0 }}>
                   <ValidatedInput 
                     label="Day Rate" 
