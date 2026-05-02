@@ -76,9 +76,26 @@ const ChargerDetail = () => {
       if (data) {
         const dateStr = selectedDate instanceof Date ? selectedDate.toISOString().split('T')[0] : selectedDate;
         const daySlots = await availabilityService.generateSlots(id, dateStr);
-        setSlots(daySlots);
-        const firstAvail = daySlots.find(s => !s.isBooked);
-        if (firstAvail) setSelectedStart(firstAvail.startTime);
+        
+        // Filter out past slots for today
+        const now = new Date();
+        const todayStr = now.toISOString().split('T')[0];
+        const isToday = dateStr === todayStr;
+        const currentHour = now.getHours();
+
+        const validSlots = isToday 
+          ? daySlots.filter(s => parseInt(s.startTime.split(':')[0]) > currentHour)
+          : daySlots;
+
+        setSlots(validSlots);
+        
+        // Pre-select first available future slot
+        const firstAvail = validSlots.find(s => !s.isBooked);
+        if (firstAvail) {
+          setSelectedStart(firstAvail.startTime);
+        } else {
+          setSelectedStart('');
+        }
       }
     };
     load();
@@ -731,6 +748,11 @@ const ChargerDetail = () => {
                         For host safety, booking is available only to verified EV users.
                       </div>
                     </>
+                  ) : slots.length === 0 ? (
+                    <div style={{ padding: '1.5rem', background: 'rgba(239, 68, 68, 0.05)', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: '12px', textAlign: 'center' }}>
+                      <p style={{ color: '#ef4444', fontWeight: 600, margin: 0 }}>No available slots for this date.</p>
+                      <p style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', marginTop: '0.4rem' }}>Try choosing another date or earlier time.</p>
+                    </div>
                   ) : (
                     <>
                       <button
@@ -743,7 +765,7 @@ const ChargerDetail = () => {
                         }}
                         disabled={!selectedStart || slots.filter(s => !s.isBooked).length === 0}
                       >
-                        Reserve Slot
+                        {!selectedStart ? 'Select Arrival Time' : 'Reserve Slot'}
                       </button>
                       <div style={{ textAlign: 'center', marginTop: '0.75rem', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
                         You won't be charged yet.
