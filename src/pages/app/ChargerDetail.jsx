@@ -89,6 +89,15 @@ const ChargerDetail = () => {
 
         setSlots(validSlots);
         
+        // Debug info for message
+        if (daySlots.length > 0 && validSlots.length === 0 && isToday) {
+          setNoSlotsReason('past');
+        } else if (daySlots.length === 0) {
+          setNoSlotsReason('none');
+        } else {
+          setNoSlotsReason('');
+        }
+        
         // Pre-select first available future slot
         const firstAvail = validSlots.find(s => !s.isBooked);
         if (firstAvail) {
@@ -100,6 +109,8 @@ const ChargerDetail = () => {
     };
     load();
   }, [id, selectedDate, user]);
+
+  const [noSlotsReason, setNoSlotsReason] = useState(''); // 'past', 'none', or ''
 
   useEffect(() => {
     const handleClickOutside = (e) => {
@@ -788,8 +799,12 @@ const ChargerDetail = () => {
                     </>
                   ) : slots.length === 0 ? (
                     <div style={{ padding: '1.5rem', background: 'rgba(239, 68, 68, 0.05)', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: '12px', textAlign: 'center' }}>
-                      <p style={{ color: '#ef4444', fontWeight: 600, margin: 0 }}>No available slots for this date.</p>
-                      <p style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', marginTop: '0.4rem' }}>Try choosing another date or earlier time.</p>
+                      <p style={{ color: '#ef4444', fontWeight: 600, margin: 0 }}>
+                        {noSlotsReason === 'past' ? "Operating hours have ended for today." : "No availability set for this date."}
+                      </p>
+                      <p style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', marginTop: '0.4rem' }}>
+                        {noSlotsReason === 'past' ? "Please choose another date for your session." : "Try choosing another date or contact the host."}
+                      </p>
                     </div>
                   ) : (
                     <>
