@@ -311,7 +311,6 @@ const SignupUser = () => {
             <button type="button" onClick={() => setStep(1)} style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '1.5rem', padding: 0 }}>
               <ArrowLeft size={16} /> Back to Essentials
             </button>
-+
             <div className="auth-divider" style={{ margin: '0 0 1.5rem 0' }}><span>Vehicle Details</span></div>
 
             <div className="auth-row" style={{ gridTemplateColumns: '1fr 1fr', display: 'grid', gap: '1rem' }}>

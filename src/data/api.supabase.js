@@ -1509,12 +1509,30 @@ export const bookingService = {
   async create(data) {
     // Calls the robust transaction-safe RPC
     // Note: Backend handles pricing_band derivation and fee calculation
+    // Payment Proof Upload (Optional but required for BANK_TRANSFER in checkout)
+    let proofPath = data.paymentProofPath || null;
+    if (data.paymentProofFile) {
+      const { data: { user } } = await supabase.auth.getUser();
+      const file = data.paymentProofFile;
+      const extension = file.name?.split('.').pop() || 'jpg';
+      const filePath = `${user.id}/${Date.now()}_payment_proof.${extension}`;
+      
+      const { error: uploadError } = await supabase.storage
+        .from('payment_proofs')
+        .upload(filePath, file);
+
+      if (uploadError) throw uploadError;
+      proofPath = filePath;
+    }
+
     const { data: rpcBooking, error } = await supabase.rpc('create_booking', {
       p_listing_id: data.listingId,
       p_date: data.date,
       p_start_time: data.startTime + ':00',
       p_end_time: data.endTime + ':00',
-      p_vehicle_size: data.vehicleSize
+      p_vehicle_size: data.vehicleSize,
+      p_payment_method: data.paymentMethod,
+      p_payment_proof_path: proofPath
     });
     
     if (error) throw new Error(error.message);
@@ -1539,15 +1557,18 @@ export const bookingService = {
       listingId: booking.listing_id,
       startTime: booking.start_time.substring(0, 5),
       endTime: booking.end_time.substring(0, 5),
-      // Map new fee fields
-      baseFee: booking.base_fee,
-      userServiceFee: booking.user_service_fee,
-      hostPlatformFee: booking.host_platform_fee,
-      gatewayFee: booking.gateway_fee,
-      userTotal: booking.total_user_price ?? booking.total_fee,
-      hostPayout: booking.host_payout,
+      // Map new fee fields with fallbacks
+      baseFee: booking.base_fee ?? booking.total_fee ?? 0,
+      userServiceFee: booking.user_service_fee ?? booking.service_fee ?? 0,
+      hostPlatformFee: booking.host_platform_fee ?? 0,
+      gatewayFee: booking.gateway_fee ?? 0,
+      userTotal: booking.total_user_price ?? booking.total_fee ?? 0,
+      hostPayout: booking.host_payout ?? 0,
       estimatedKwh: booking.estimated_kwh,
       pricingBand: booking.pricing_band,
+      paymentMethod: booking.payment_method,
+      paymentStatus: booking.payment_status,
+      paymentProofPath: booking.payment_proof_path,
       createdAt: booking.created_at,
     };
 
@@ -1588,13 +1609,16 @@ export const bookingService = {
       } : null,
       startTime: b.start_time.substring(0, 5),
       endTime: b.end_time.substring(0, 5),
-      // New fee model fields
-      baseFee: b.base_fee,
-      userServiceFee: b.user_service_fee,
-      userTotal: b.total_user_price ?? b.total_fee,
+      // New fee model fields with fallbacks
+      baseFee: b.base_fee ?? b.total_fee ?? 0,
+      userServiceFee: b.user_service_fee ?? b.service_fee ?? 0,
+      userTotal: b.total_user_price ?? b.total_fee ?? 0,
       pricingBand: b.pricing_band,
       estimatedKwh: b.estimated_kwh,
-      hostPayout: b.host_payout,
+      hostPayout: b.host_payout ?? 0,
+      paymentMethod: b.payment_method,
+      paymentStatus: b.payment_status,
+      paymentProofPath: b.payment_proof_path,
       createdAt: b.created_at,
     }));
   },
@@ -1609,50 +1633,71 @@ export const bookingService = {
     
     if (error) throw error;
     
-    return data.map(b => ({
+    return (data || []).map(b => ({
       ...b,
       listingId: b.listing_id,
       userId: b.user_id,
       startTime: b.start_time.substring(0, 5),
       endTime: b.end_time.substring(0, 5),
-      // New fee model fields
-      baseFee: b.base_fee,
-      userServiceFee: b.user_service_fee,
-      hostPlatformFee: b.host_platform_fee,
-      gatewayFee: b.gateway_fee,
-      userTotal: b.total_user_price ?? b.total_fee,
-      hostPayout: b.host_payout,
+      // New fee model fields with fallbacks for display
+      baseFee: b.base_fee ?? b.total_fee ?? 0,
+      userServiceFee: b.user_service_fee ?? b.service_fee ?? 0,
+      hostPlatformFee: b.host_platform_fee ?? 0,
+      gatewayFee: b.gateway_fee ?? 0,
+      userTotal: b.total_user_price ?? b.total_fee ?? 0,
+      hostPayout: b.host_payout ?? 0,
       pricingBand: b.pricing_band,
       estimatedKwh: b.estimated_kwh,
+      paymentMethod: b.payment_method,
+      paymentStatus: b.payment_status,
+      paymentProofPath: b.payment_proof_path,
       createdAt: b.created_at,
     }));
   },
 
   async updateStatus(bookingId, status) {
-    // In a prod app, this might also be an RPC (e.g. host can't cancel a completed booking).
-    // For now, relies on Edge Function service_role or basic update.
+    // Hosts use secure RPCs to Accept/Decline
+    if (status === 'CONFIRMED') {
+      const { data, error } = await supabase.rpc('accept_booking', { p_booking_id: bookingId });
+      if (error) throw new Error(error.message);
+      return data;
+    } else if (status === 'CANCELLED') {
+      const { data, error } = await supabase.rpc('decline_booking', { p_booking_id: bookingId });
+      if (error) throw new Error(error.message);
+      return data;
+    }
+
+    // Fallback for other status updates (admin)
     const { data, error } = await supabase
       .from('bookings')
-      .update({ status })
+      .update({ status, updated_at: new Date().toISOString() })
       .eq('id', bookingId)
       .select()
       .single();
     if (error) throw error;
-
-    // Notification Trigger
-    try {
-      const { data: b } = await supabase.from('bookings').select('*, listings(title)').eq('id', bookingId).single();
-      if (b) {
-        const msg = status === 'CONFIRMED' 
-          ? `Your booking for ${b.listings.title} has been confirmed!`
-          : `Your booking for ${b.listings.title} is now ${status.toLowerCase()}.`;
-        await notificationService.create(b.user_id, 'BOOKING_STATUS_UPDATE', msg);
-      }
-    } catch (err) {
-      console.warn('[EV-Net] Failed to create status notification:', err);
-    }
-
     return data;
+  },
+
+  async uploadPaymentProof(bookingId, file) {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error("Not authenticated");
+
+    const extension = file.name?.split('.').pop() || 'jpg';
+    const filePath = `${user.id}/${Date.now()}_payment_proof.${extension}`;
+    
+    const { error: uploadError } = await supabase.storage
+      .from('payment_proofs')
+      .upload(filePath, file);
+
+    if (uploadError) throw uploadError;
+
+    const { error: rpcError } = await supabase.rpc('submit_payment_proof', {
+      p_booking_id: bookingId,
+      p_proof_path: filePath
+    });
+
+    if (rpcError) throw rpcError;
+    return { success: true, proofPath: filePath };
   }
 };
 

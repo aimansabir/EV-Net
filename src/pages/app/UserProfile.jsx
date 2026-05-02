@@ -12,6 +12,7 @@ const UserProfile = () => {
   const { user, logout } = useAuthStore();
   const [editing, setEditing] = useState(false);
   const fileInputRef = useRef(null);
+  
   const [formData, setFormData] = useState({
     name: user?.name || '',
     phone: user?.phone || '',
@@ -19,8 +20,12 @@ const UserProfile = () => {
     evModel: user?.evModel || '',
     connectorPreference: user?.connectorPreference || '',
   });
+  
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
+  
   const verificationStatus = (user?.verificationStatus || 'draft').toLowerCase();
 
   const handleLogout = () => {
@@ -28,9 +33,21 @@ const UserProfile = () => {
     navigate('/');
   };
 
-  const handleSave = () => {
-    // In MVP, just close edit mode (would call API in production)
-    setEditing(false);
+  const handleSave = async () => {
+    if (!user) return;
+    setIsSaving(true);
+    setSaveError('');
+    try {
+      await profileService.updateEvDetails(user.id, formData);
+      const { reloadUser } = useAuthStore.getState();
+      await reloadUser();
+      setEditing(false);
+    } catch (err) {
+      console.error("Failed to update EV details:", err);
+      setSaveError('Failed to save changes.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleAvatarClick = () => {
@@ -111,7 +128,18 @@ const UserProfile = () => {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
             <h4 style={{ margin: 0 }}>EV Details</h4>
             <button className="btn btn-secondary" style={{ padding: '0.3rem 0.8rem', fontSize: '0.8rem' }}
-              onClick={() => setEditing(!editing)}
+              onClick={() => {
+                if (editing) {
+                  setFormData({
+                    name: user?.name || '',
+                    phone: user?.phone || '',
+                    evBrand: user?.evBrand || '',
+                    evModel: user?.evModel || '',
+                    connectorPreference: user?.connectorPreference || '',
+                  });
+                }
+                setEditing(!editing);
+              }}
             >
               {editing ? 'Cancel' : 'Edit'}
             </button>
@@ -145,7 +173,10 @@ const UserProfile = () => {
                   {Object.values(ConnectorType).map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
               </div>
-              <button className="btn btn-primary" onClick={handleSave} style={{ marginTop: '0.5rem' }}>Save Changes</button>
+              {saveError && <p style={{ color: '#f87171', fontSize: '0.8rem' }}>{saveError}</p>}
+              <button className="btn btn-primary" onClick={handleSave} disabled={isSaving} style={{ marginTop: '0.5rem' }}>
+                {isSaving ? 'Saving...' : 'Save Changes'}
+              </button>
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
@@ -171,11 +202,7 @@ const UserProfile = () => {
             <div>
               <h4 style={{ margin: '0 0 0.5rem 0' }}>Trust & Verification</h4>
               {verificationStatus === 'approved' ? (
-                <p style={{ margin: 0, color: 'var(--brand-green)', fontSize: '0.85rem' }}>You are verified.</p>
-              ) : verificationStatus === 'approved' ? (
                 <p style={{ margin: 0, color: 'var(--brand-green)', fontSize: '0.85rem' }}>✅ Fully Verified EV User</p>
-              ) : ['pending', 'under_review'].includes(verificationStatus) ? (
-                <p style={{ margin: 0, color: '#fbbf24', fontSize: '0.85rem' }}>Documents under review</p>
               ) : ['pending', 'under_review'].includes(verificationStatus) ? (
                 <p style={{ margin: 0, color: '#fbbf24', fontSize: '0.85rem' }}>⏳ Documents Under Review</p>
               ) : verificationStatus === 'rejected' ? (

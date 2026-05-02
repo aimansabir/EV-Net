@@ -518,7 +518,7 @@ const ChargerDetail = () => {
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                           {hasEnergyPricing ? (
                             <div className="modern-pricing-pill" style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', background: 'rgba(255,255,255,0.03)', padding: '0.4rem 0.8rem', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
-                              <span style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--brand-green)' }}>{formatPKR(fees.rateUsed)} <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 400 }}>/ kWh</span></span>
+                              <span style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--brand-green)' }}>{formatPKR(fees.rateUsed)} <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 400 }}>{'/ kWh'}</span></span>
                               <div style={{ width: '1px', height: '12px', background: 'rgba(255,255,255,0.1)' }} />
                               <span style={{ fontSize: '0.6rem', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '1px', color: currentBand === PRICING_BAND.DAY ? 'var(--brand-cyan)' : '#fbbf24', display: 'flex', alignItems: 'center', gap: '4px' }}>
                                 {currentBand === PRICING_BAND.DAY ? <Zap size={10} /> : <Moon size={10} />}
@@ -527,7 +527,7 @@ const ChargerDetail = () => {
                             </div>
                           ) : (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                              <span style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--brand-green)' }}>{formatPKR(listing.pricePerHour)} <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 400 }}>/ hr</span></span>
+                              <span style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--brand-green)' }}>{formatPKR(listing.pricePerHour)} <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 400 }}>{'/ hr'}</span></span>
                               <div style={{ fontSize: '0.6rem', color: 'var(--text-secondary)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '1px' }}>Legacy Hourly Rate</div>
                             </div>
                           )}
@@ -803,7 +803,7 @@ const ChargerDetail = () => {
                       <>
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.6rem', fontSize: '0.9rem' }}>
                           <span style={{ color: 'var(--text-secondary)' }}>Rate ({currentBand})</span>
-                          <span style={{ fontWeight: 600 }}>{formatPKR(fees.rateUsed)} / kWh</span>
+                          <span style={{ fontWeight: 600 }}>{formatPKR(fees.rateUsed)} {'/ kWh'}</span>
                         </div>
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.6rem', fontSize: '0.9rem' }}>
                           <span style={{ color: 'var(--text-secondary)' }}>Energy Estimate</span>

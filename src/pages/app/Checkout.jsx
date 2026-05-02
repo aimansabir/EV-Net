@@ -25,70 +25,8 @@ const Checkout = () => {
   const [confirmed, setConfirmed] = useState(false);
   const [error, setError] = useState('');
   const [processing, setProcessing] = useState(false);
-  const [paymentStep, setPaymentStep] = useState('summary'); // 'summary' | 'payment'
-  const [cardNumber, setCardNumber] = useState('');
-  const [cvv, setCvv] = useState('');
-  const { user } = useAuthStore();
-
-  const date = searchParams.get('date') || new Date().toISOString().split('T')[0];
-  const startTime = searchParams.get('start') || '';
-  const duration = parseInt(searchParams.get('duration') || '2');
-  const vehicleSize = searchParams.get('vehicleSize') || '';
-  const isVehicleSizeValid = Object.values(VEHICLE_SIZES).includes(vehicleSize);
-  
-  // End time calculation for scheduling
-  const endHour = startTime ? (parseInt(startTime.split(':')[0]) + duration) % 24 : null;
-  const endTime = endHour === null ? '' : `${String(endHour).padStart(2, '0')}:00`;
-
-  useEffect(() => {
-    listingService.getById(chargerId).then(setListing);
-  }, [chargerId]);
-
-  if (!listing) return (
-    <div className="section" style={{ minHeight: 'calc(100vh - 72px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ color: 'var(--text-secondary)' }}>Loading...</div>
-    </div>
-  );
-
-  // Pricing Logic (Same as ChargerDetail)
-  const currentBand = startTime ? getPricingBand(startTime) : PRICING_BAND.DAY;
-  const energyFees = calculateEnergyBookingFees(
-    isVehicleSizeValid ? vehicleSize : VEHICLE_SIZES.SMALL, 
-    currentBand, 
-    listing.priceDay, 
-    listing.priceNight
-  );
-
-  const hasEnergyPricing = !energyFees.isIncomplete;
-  
-  let fees;
-  if (hasEnergyPricing) {
-    fees = energyFees;
-  } else {
-    // Final Legacy Fallback (using old hourly model)
-    const legacyFees = calculateBookingFees(listing.pricePerHour, duration);
-    fees = {
-      baseCharge: legacyFees.baseFee,
-      userServiceFee: legacyFees.serviceFee,
-      userTotal: legacyFees.totalFee,
-      isLegacy: true,
-      reason: energyFees.error, // e.g. MISSING_RATE
-      rateUsed: listing.pricePerHour,
-    };
-  }
-
-  const vehicleLabel = vehicleSize === VEHICLE_SIZES.LARGE ? 'Large SUV / Truck' : vehicleSize === VEHICLE_SIZES.MEDIUM ? 'Sedan / Crossover' : vehicleSize === VEHICLE_SIZES.SMALL ? 'Small / City Car' : 'Not selected';
-  const energyKwh = ENERGY_BY_SIZE[isVehicleSizeValid ? vehicleSize : VEHICLE_SIZES.SMALL];
-
-  const formatTime12h = (time24) => {
-    if (!time24) return '';
-    const [hStr, mStr] = time24.split(':');
-    let h = parseInt(hStr);
-    const ampm = h >= 12 ? 'PM' : 'AM';
-    h = h % 12;
-    h = h === 0 ? 12 : h;
-    return `${h}:${mStr} ${ampm}`;
-  };
+  const [paymentMethod, setPaymentMethod] = useState('BANK_TRANSFER'); // 'BANK_TRANSFER' | 'PAY_AFTER_CHARGING'
+  const [proofFile, setProofFile] = useState(null);
 
   const handleConfirm = async () => {
     if (processing) return;
@@ -114,8 +52,8 @@ const Checkout = () => {
       return;
     }
 
-    if (!cardNumber || !cvv) {
-      setError('Please enter valid payment details.');
+    if (paymentMethod === 'BANK_TRANSFER' && !proofFile) {
+      setError('Please upload payment proof for bank transfer.');
       return;
     }
 
@@ -128,6 +66,8 @@ const Checkout = () => {
         startTime,
         endTime,
         vehicleSize,
+        paymentMethod,
+        paymentProofFile: proofFile
       });
       setConfirmed(true);
       setTimeout(() => navigate('/app/bookings'), 2500);
@@ -201,7 +141,7 @@ const Checkout = () => {
                 {/* 1. Listing Summary */}
                 <div className="glass-card" style={{ padding: '1.5rem', borderRadius: '24px' }}>
                   <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center' }}>
-                    <div style={{ width: '120px', height: '85px', borderRadius: '16px', background: `url(${listing.images?.[0]}) center/cover`, border: '1px solid var(--border-color)', boxShadow: '0 4px 12px rgba(0,0,0,0.2)' }} />
+                    <div style={{ width: '120px', height: '85px', borderRadius: '16px', background: listing.images?.[0] ? `url(${listing.images[0]}) center/cover` : '#222', border: '1px solid var(--border-color)', boxShadow: '0 4px 12px rgba(0,0,0,0.2)' }} />
                     <div style={{ flex: 1 }}>
                       <h3 style={{ fontSize: '1.25rem', fontWeight: 700, margin: '0 0 0.5rem' }}>{listing.title}</h3>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
@@ -321,28 +261,57 @@ const Checkout = () => {
                   )}
 
                   {paymentStep === 'payment' && (
-                    <div style={{ marginBottom: '2rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                      <h4 style={{ fontSize: '0.9rem', fontWeight: 700, margin: 0, color: '#fff' }}>Card Details</h4>
-                      <div style={{ position: 'relative' }}>
-                        <input 
-                          type="text" 
-                          placeholder="Card Number" 
-                          value={cardNumber}
-                          onChange={e => setCardNumber(e.target.value)}
-                          style={{ width: '100%', padding: '0.8rem 1rem', borderRadius: '10px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-color)', color: '#fff' }}
-                        />
+                    <div style={{ marginBottom: '2rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                      <h4 style={{ fontSize: '0.9rem', fontWeight: 700, margin: 0, color: '#fff' }}>Payment Method</h4>
+                      
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '1rem', borderRadius: '14px', background: paymentMethod === 'BANK_TRANSFER' ? 'rgba(0,210,106,0.1)' : 'rgba(255,255,255,0.03)', border: paymentMethod === 'BANK_TRANSFER' ? '1px solid var(--brand-green)' : '1px solid var(--border-color)', cursor: 'pointer' }}>
+                          <input type="radio" name="payment" value="BANK_TRANSFER" checked={paymentMethod === 'BANK_TRANSFER'} onChange={() => setPaymentMethod('BANK_TRANSFER')} style={{ accentColor: 'var(--brand-green)' }} />
+                          <div>
+                            <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>Bank Transfer</div>
+                            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Upload proof now for instant confirmation.</div>
+                          </div>
+                        </label>
+
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '1rem', borderRadius: '14px', background: paymentMethod === 'PAY_AFTER_CHARGING' ? 'rgba(0,210,106,0.1)' : 'rgba(255,255,255,0.03)', border: paymentMethod === 'PAY_AFTER_CHARGING' ? '1px solid var(--brand-green)' : '1px solid var(--border-color)', cursor: 'pointer' }}>
+                          <input type="radio" name="payment" value="PAY_AFTER_CHARGING" checked={paymentMethod === 'PAY_AFTER_CHARGING'} onChange={() => setPaymentMethod('PAY_AFTER_CHARGING')} style={{ accentColor: 'var(--brand-green)' }} />
+                          <div>
+                            <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>Pay After Charging</div>
+                            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Reserve now, pay after your session.</div>
+                          </div>
+                        </label>
                       </div>
-                      <div style={{ display: 'flex', gap: '1rem' }}>
-                        <input type="text" placeholder="MM/YY" style={{ flex: 1, padding: '0.8rem 1rem', borderRadius: '10px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-color)', color: '#fff' }} />
-                        <input 
-                          type="password" 
-                          placeholder="CVV" 
-                          value={cvv}
-                          onChange={e => setCvv(e.target.value)}
-                          style={{ flex: 1, padding: '0.8rem 1rem', borderRadius: '10px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-color)', color: '#fff' }}
-                        />
-                      </div>
-                      <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', margin: 0 }}>Secure encrypted payment powered by Stripe.</p>
+
+                      {paymentMethod === 'BANK_TRANSFER' ? (
+                        <div style={{ marginTop: '1.5rem', padding: '1.5rem', background: 'rgba(255,255,255,0.02)', borderRadius: '16px', border: '1px dashed var(--border-color)' }}>
+                          <div style={{ marginBottom: '1.5rem' }}>
+                            <h5 style={{ fontSize: '0.8rem', color: 'var(--brand-green)', textTransform: 'uppercase', marginBottom: '10px', letterSpacing: '1px' }}>Transfer to EV-Net</h5>
+                            <div style={{ fontSize: '0.9rem', color: '#fff', lineHeight: 1.8 }}>
+                              <strong>Bank:</strong> Meezan Bank Ltd.<br />
+                              <strong>Name:</strong> EV-Net Solutions<br />
+                              <strong>Account #:</strong> 0210-XXXXXXXXXX<br />
+                              <strong>IBAN:</strong> PK21MEZNXXXXXXXXXXXXXXXX
+                            </div>
+                          </div>
+                          
+                          <div style={{ position: 'relative' }}>
+                            <label style={{ display: 'block', fontSize: '0.85rem', marginBottom: '8px', color: 'var(--text-secondary)' }}>Upload Payment Screenshot</label>
+                            <input 
+                              type="file" 
+                              accept="image/*"
+                              onChange={e => setProofFile(e.target.files[0])}
+                              style={{ width: '100%', fontSize: '0.8rem', color: 'var(--text-secondary)' }}
+                            />
+                            {proofFile && <div style={{ marginTop: '5px', fontSize: '0.75rem', color: 'var(--brand-green)' }}>✓ {proofFile.name} attached</div>}
+                          </div>
+                        </div>
+                      ) : (
+                        <div style={{ marginTop: '1rem', padding: '1rem', borderRadius: '12px', background: 'rgba(0, 240, 255, 0.05)', border: '1px solid rgba(0, 240, 255, 0.2)' }}>
+                           <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--brand-cyan)', lineHeight: 1.4 }}>
+                             <strong>Note:</strong> You can pay after your charging session. Payment proof will be required after completion.
+                           </p>
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -360,12 +329,12 @@ const Checkout = () => {
                       transition: 'all 0.3s ease'
                     }}
                   >
-                    {processing ? 'Processing Payment...' : paymentStep === 'summary' ? 'Proceed to Payment' : 'Pay & Confirm'}
+                    {processing ? 'Processing...' : paymentStep === 'summary' ? 'Confirm Session' : paymentMethod === 'BANK_TRANSFER' ? 'Reserve & Submit Proof' : 'Reserve Now'}
                   </button>
 
                   <div style={{ textAlign: 'center', marginTop: '1.25rem' }}>
                     <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
-                      <ShieldCheck size={14} color="var(--brand-green)" /> Payment handled upon arrival
+                      <ShieldCheck size={14} color="var(--brand-green)" /> Secure Manual Payment Verification
                     </p>
                   </div>
 
