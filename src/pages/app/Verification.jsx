@@ -75,7 +75,6 @@ const Verification = () => {
 
     try {
       console.log(`[EV-Net] handleFileUpload triggered for ${type}`, files);
-      // files[0] is an object { file, id, preview, isImage } from FileUploadDropzone
       const actualFile = files[0]?.file;
       if (!actualFile) throw new Error("No file object found in dropzone response.");
       
@@ -83,11 +82,8 @@ const Verification = () => {
       await verificationService.uploadDocument(user.id, profileType, docType, actualFile);
       console.log(`[EV-Net] uploadDocument resolved.`);
       
-      // Update local feedback
       setUploadFeedback(prev => ({ ...prev, [type]: 'success' }));
-      
-      // Reset replacing state (Check both cnic and identity keys to be safe)
-      setReplacing(prev => ({ ...prev, [type]: false, identity: type === 'cnic' ? false : prev.identity }));
+      setReplacing(prev => ({ ...prev, [type]: false }));
       
       await reloadUser();
     } catch (err) {
@@ -111,7 +107,6 @@ const Verification = () => {
   };
 
   const handleSubmit = async () => {
-    // Role-specific validation (Phone is now optional)
     const missing = [];
     if (user?.role === 'HOST') {
       if (!user.cnicSubmitted) missing.push('CNIC front');
@@ -265,12 +260,6 @@ const Verification = () => {
             </div>
           </div>
         )}
-
-        {success && (
-          <div style={{ background: 'rgba(0, 210, 106, 0.1)', border: '1px solid var(--brand-green)', padding: '1rem', borderRadius: '12px', marginBottom: '2rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
-            <div style={{ color: 'var(--brand-green)' }}><PartyPopper size={24} /></div>
-            <div>
-              <h4 style={{ margin: 0, color: 'var(--brand-green)' }}>Documents Submitted!</h4>
 
         {success && (
           <div style={{ background: 'rgba(0, 210, 106, 0.1)', border: '1px solid var(--brand-green)', padding: '1rem', borderRadius: '12px', marginBottom: '2rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
