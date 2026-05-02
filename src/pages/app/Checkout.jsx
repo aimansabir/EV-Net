@@ -25,6 +25,9 @@ const Checkout = () => {
   const [confirmed, setConfirmed] = useState(false);
   const [error, setError] = useState('');
   const [processing, setProcessing] = useState(false);
+  const [paymentStep, setPaymentStep] = useState('summary'); // 'summary' | 'payment'
+  const [cardNumber, setCardNumber] = useState('');
+  const [cvv, setCvv] = useState('');
   const { user } = useAuthStore();
 
   const date = searchParams.get('date') || new Date().toISOString().split('T')[0];
@@ -105,6 +108,17 @@ const Checkout = () => {
       setError('Please select a vehicle option before reserving.');
       return;
     }
+
+    if (paymentStep === 'summary') {
+      setPaymentStep('payment');
+      return;
+    }
+
+    if (!cardNumber || !cvv) {
+      setError('Please enter valid payment details.');
+      return;
+    }
+
     setProcessing(true);
     setError('');
     try {
@@ -306,6 +320,32 @@ const Checkout = () => {
                     </div>
                   )}
 
+                  {paymentStep === 'payment' && (
+                    <div style={{ marginBottom: '2rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                      <h4 style={{ fontSize: '0.9rem', fontWeight: 700, margin: 0, color: '#fff' }}>Card Details</h4>
+                      <div style={{ position: 'relative' }}>
+                        <input 
+                          type="text" 
+                          placeholder="Card Number" 
+                          value={cardNumber}
+                          onChange={e => setCardNumber(e.target.value)}
+                          style={{ width: '100%', padding: '0.8rem 1rem', borderRadius: '10px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-color)', color: '#fff' }}
+                        />
+                      </div>
+                      <div style={{ display: 'flex', gap: '1rem' }}>
+                        <input type="text" placeholder="MM/YY" style={{ flex: 1, padding: '0.8rem 1rem', borderRadius: '10px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-color)', color: '#fff' }} />
+                        <input 
+                          type="password" 
+                          placeholder="CVV" 
+                          value={cvv}
+                          onChange={e => setCvv(e.target.value)}
+                          style={{ flex: 1, padding: '0.8rem 1rem', borderRadius: '10px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-color)', color: '#fff' }}
+                        />
+                      </div>
+                      <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', margin: 0 }}>Secure encrypted payment powered by Stripe.</p>
+                    </div>
+                  )}
+
                   <button 
                     onClick={handleConfirm}
                     disabled={processing || !startTime || !isVehicleSizeValid}
@@ -320,7 +360,7 @@ const Checkout = () => {
                       transition: 'all 0.3s ease'
                     }}
                   >
-                    {processing ? 'Processing Booking...' : 'Confirm Reservation'}
+                    {processing ? 'Processing Payment...' : paymentStep === 'summary' ? 'Proceed to Payment' : 'Pay & Confirm'}
                   </button>
 
                   <div style={{ textAlign: 'center', marginTop: '1.25rem' }}>

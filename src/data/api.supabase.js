@@ -1526,7 +1526,7 @@ export const bookingService = {
       startTime: booking.start_time.substring(0, 5),
       endTime: booking.end_time.substring(0, 5),
       // Map new fee fields
-      baseCharge: booking.base_fee,
+      baseFee: booking.base_fee,
       userServiceFee: booking.user_service_fee,
       hostPlatformFee: booking.host_platform_fee,
       gatewayFee: booking.gateway_fee,
@@ -1575,7 +1575,7 @@ export const bookingService = {
       startTime: b.start_time.substring(0, 5),
       endTime: b.end_time.substring(0, 5),
       // New fee model fields
-      baseCharge: b.base_fee,
+      baseFee: b.base_fee,
       userServiceFee: b.user_service_fee,
       userTotal: b.total_user_price ?? b.total_fee,
       pricingBand: b.pricing_band,
@@ -1602,7 +1602,7 @@ export const bookingService = {
       startTime: b.start_time.substring(0, 5),
       endTime: b.end_time.substring(0, 5),
       // New fee model fields
-      baseCharge: b.base_fee,
+      baseFee: b.base_fee,
       userServiceFee: b.user_service_fee,
       hostPlatformFee: b.host_platform_fee,
       gatewayFee: b.gateway_fee,
