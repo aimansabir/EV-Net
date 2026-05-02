@@ -1571,20 +1571,6 @@ export const bookingService = {
       paymentProofPath: booking.payment_proof_path,
       createdAt: booking.created_at,
     };
-
-    // Notification Triggers
-    try {
-      const { data: listing } = await supabase.from('listings').select('title, host_id').eq('id', booking.listing_id).single();
-      if (listing) {
-        // To User
-        await notificationService.create(booking.user_id, 'BOOKING_SUBMITTED', `Booking submitted for ${listing.title}. Waiting for host confirmation.`);
-        // To Host
-        await notificationService.create(listing.host_id, 'NEW_BOOKING_REQUEST', `New booking request for ${listing.title}.`);
-      }
-    } catch (err) {
-      console.warn('[EV-Net] Failed to create booking notifications:', err);
-    }
-
     return result;
   },
 

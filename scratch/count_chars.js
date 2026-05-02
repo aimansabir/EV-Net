@@ -1,0 +1,12 @@
+import fs from 'fs';
+const content = fs.readFileSync('src/pages/app/ChargerDetail.jsx', 'utf8');
+const backticks = content.split('`').length - 1;
+const quotes = content.split('"').length - 1;
+const singleQuotes = content.split("'").length - 1;
+const openBraces = content.split('{').length - 1;
+const closeBraces = content.split('}').length - 1;
+console.log(`Backticks: ${backticks}`);
+console.log(`Quotes: ${quotes}`);
+console.log(`Single Quotes: ${singleQuotes}`);
+console.log(`Open Braces: ${openBraces}`);
+console.log(`Close Braces: ${closeBraces}`);
