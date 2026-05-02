@@ -2094,8 +2094,9 @@ export const adminService = {
     }
     
     const grouped = (data || []).reduce((acc, s) => {
-      const profileType = s.type || s.profile_type;
-      if (!['EV_USER', 'HOST'].includes(profileType)) return acc;
+      const rawType = (s.type || s.profile_type || '').toUpperCase();
+      if (!['EV_USER', 'HOST', 'USER'].includes(rawType)) return acc;
+      const profileType = rawType === 'HOST' ? 'HOST' : 'EV_USER';
 
       const key = `${s.user_id}_${profileType}`;
       if (!acc[key]) {
@@ -2110,7 +2111,7 @@ export const adminService = {
           } : null,
           profile_type: profileType,
           type: profileType,
-          status: s.status || 'pending',
+          status: (s.status || 'pending').toLowerCase(),
           submittedAt: s.submitted_at,
           documentRows: [],
           evProfileStatus: evProfile?.verification_status || null,
@@ -2128,7 +2129,7 @@ export const adminService = {
       mergeDocumentPath(acc[key], s, 'charger_proof_path', 'CHARGER_PROOF');
       acc[key].documentRows.push(s);
 
-      if (s.status === 'pending') acc[key].status = 'pending';
+      if (s.status?.toLowerCase() === 'pending' || s.status?.toLowerCase() === 'under_review') acc[key].status = 'pending';
       if (new Date(s.submitted_at) > new Date(acc[key].submittedAt)) {
         acc[key].submittedAt = s.submitted_at;
       }
@@ -2136,23 +2137,25 @@ export const adminService = {
     }, {});
     
     return Promise.all(Object.values(grouped).map(async submission => {
-      let finalStatus = submission.status || 'pending';
-      if (submission.profile_type === 'EV_USER' && submission.evProfileStatus) {
-        finalStatus = submission.evProfileStatus.toLowerCase();
-      } else if (submission.profile_type === 'HOST' && submission.hostProfileStatus) {
-        finalStatus = submission.hostProfileStatus.toLowerCase();
+      // Profile status is the absolute source of truth for the verification lifecycle
+      let finalStatus = (submission.status || 'pending').toLowerCase();
+      const profileStatus = (submission.profile_type === 'HOST' ? submission.hostProfileStatus : submission.evProfileStatus);
+      
+      if (profileStatus) {
+        finalStatus = profileStatus.toLowerCase();
       }
 
       const reviewedAt = submission.reviewed_at || submission.reviewedAt || submission.profileUpdatedAt || null;
       const notes = submission.moderationNotes || submission.reviewer_notes || submission.admin_notes || '';
 
-      console.log('[EV-Net] admin normalized submission', {
-        user_id: submission.user_id,
-        email: submission.user?.email,
-        evProfileStatus: submission.evProfileStatus,
-        hostProfileStatus: submission.hostProfileStatus,
-        finalStatus
-      });
+      if (submission.profile_type === 'EV_USER') {
+        console.log('[EV-Net] admin normalized EV submission', {
+          email: submission.user?.email,
+          evProfileStatus: submission.evProfileStatus,
+          documentStatuses: submission.documentRows.map(dr => dr.status),
+          finalStatus
+        });
+      }
 
       return {
         ...submission,

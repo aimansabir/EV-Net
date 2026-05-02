@@ -62,7 +62,7 @@ const MarketplacePreview = () => {
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div className="pw-price">{listing.price}</div>
                       {active.id === listing.id && (
-                        <button className="btn btn-primary" style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }} onClick={() => navigate(`/app/book/${listing.id}`)}>Book</button>
+                        <button className="btn btn-primary" style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }} onClick={() => navigate(`/app/charger/${listing.id}`)}>Book</button>
                       )}
                     </div>
                   </div>

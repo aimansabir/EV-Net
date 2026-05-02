@@ -38,6 +38,14 @@ const AdminVerification = () => {
 
       if (subResult.status === 'fulfilled') {
         setSubmissions(subResult.value);
+        subResult.value.filter(s => (s.type || s.profile_type) === 'EV_USER').forEach(s => {
+          console.log('[EV-Net] normalized admin EV submission', {
+            email: s.user?.email,
+            evProfileStatus: s.evProfileStatus,
+            documentStatuses: s.documentRows?.map(dr => dr.status),
+            finalStatus: s.status
+          });
+        });
       } else {
         console.error('[EV-Net] Verification queue load failed:', subResult.reason);
         setSubmissions([]);

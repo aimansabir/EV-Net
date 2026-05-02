@@ -88,9 +88,15 @@ const useAuthStore = create((set, get) => ({
 
       if (session?.user) {
         // 1a. INSTANT HINT: Use session metadata to unlock UI immediately
-        const metadataRole = session.user.user_metadata?.role?.toLowerCase() || 'user';
+        const persistedRole = get().role;
+        const metadataRole = session.user.user_metadata?.role?.toLowerCase();
+        
+        // Prefer persisted role (from last successful profile load), fallback to metadata role, fallback to 'user'
+        const initialRole = (persistedRole && persistedRole !== 'guest') ? persistedRole : (metadataRole || 'user');
+        console.log('[EV-Net][Auth] resolved role', initialRole, { persistedRole, metadataRole });
+        
         set({ 
-          role: metadataRole, 
+          role: initialRole, 
           isAuthenticated: true,
           isInitialized: true // UNLOCK NAVIGATION IMMEDIATELY
         });

@@ -62,7 +62,20 @@ const ProtectedRoute = ({ allowedRoles, children }) => {
     return <Navigate to="/login" replace />;
   }
 
+  console.log('[EV-Net][Route] protected route check', { path: window.location.pathname, role, allowedRoles, isInitialized, isAuthenticated });
+
   if (allowedRoles && !allowedRoles.includes(role)) {
+    if (isAuthHydrating) {
+      // Show loader instead of redirecting immediately if we are still hydrating the profile
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'var(--bg-main)', color: 'var(--text-secondary)', textAlign: 'center' }}>
+          <div className="spinner" style={{ width: '24px', height: '24px', border: '2px solid rgba(255,255,255,0.1)', borderTopColor: 'var(--brand-cyan)', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></div>
+          Verifying role...
+          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+        </div>
+      );
+    }
+
     // Redirect unauthorized roles to their appropriate home
     switch (role) {
       case 'host': return <Navigate to="/host/dashboard" replace />;

@@ -23,6 +23,7 @@ const StatusBadge = ({ status, type = 'verification' }) => {
         config = { label: 'Pending', color: '#fbbf24', bg: 'rgba(251,191,36,0.1)', icon: Clock };
         break;
       case VerificationStatus.UNDER_REVIEW:
+      case 'under_review':
         config = { label: 'Pending', color: '#818cf8', bg: 'rgba(129,140,248,0.1)', icon: Clock };
         break;
       case VerificationStatus.APPROVED:
