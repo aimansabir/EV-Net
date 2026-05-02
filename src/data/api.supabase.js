@@ -2100,8 +2100,8 @@ export const adminService = {
 
       const key = `${s.user_id}_${profileType}`;
       if (!acc[key]) {
-        const evProfile = s.user?.ev_profiles?.[0];
-        const hostProfile = s.user?.host_profiles?.[0];
+        const u = s.user || {}; const evProfile = (Array.isArray(u.ev_profiles) ? u.ev_profiles[0] : u.ev_profiles) || (Array.isArray(s.ev_profiles) ? s.ev_profiles[0] : s.ev_profiles);
+        const hostProfile = (Array.isArray(u.host_profiles) ? u.host_profiles[0] : u.host_profiles) || (Array.isArray(s.host_profiles) ? s.host_profiles[0] : s.host_profiles);
         
         acc[key] = {
           ...s,
