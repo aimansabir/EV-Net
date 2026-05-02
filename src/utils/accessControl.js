@@ -6,9 +6,14 @@ import { VerificationStatus, BookingStatus } from '../data/schema';
  */
 
 export const canBook = (user) => {
-  if (!user || user.role !== 'USER') return false;
-  // Soft-lock booking explicitly if any verification step is missing
-  return !!(user.emailVerified && user.cnicSubmitted && user.cnicBackSubmitted && user.evProofSubmitted && user.verificationStatus === VerificationStatus.APPROVED);
+  if (!user || user.role !== 'USER' || user.isSuspended) return false;
+  
+  const status = String(user.verificationStatus || '').toLowerCase();
+  
+  // If explicitly approved or verified by admin, they have full booking privileges.
+  if (status === 'approved' || status === 'verified') return true;
+  
+  return false;
 };
 
 export const exactLocationUnlocked = (user, listingId, userBookings = []) => {

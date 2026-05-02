@@ -302,7 +302,7 @@ function mergeUserShape(profile, evProfile, hostProfile, authUser = null, verifi
       evProofPath: verificationDocs.ev_proof_path || evProfile.ev_proof_path,
       isRestrictedFromInquiry: evProfile.is_restricted_from_inquiry,
       // Derived
-      canBook: emailVerified && cnicSubmitted && cnicBackSubmitted && evProofSubmitted && evProfile.verification_status === 'approved',
+      canBook: !base.isSuspended && (['approved', 'verified'].includes(String(evProfile.verification_status || '').toLowerCase())),
     };
   }
 
@@ -707,6 +707,20 @@ export const profileService = {
       await supabase.storage.from('profile_avatars').remove([oldPath]);
     }
 
+    return await authService.getMe(userId);
+  },
+
+  async updateEvDetails(userId, data) {
+    const { error } = await supabase
+      .from('ev_profiles')
+      .update({
+        ev_brand: data.evBrand,
+        ev_model: data.evModel,
+        connector_preference: data.connectorPreference
+      })
+      .eq('user_id', userId);
+    
+    if (error) throw error;
     return await authService.getMe(userId);
   }
 };

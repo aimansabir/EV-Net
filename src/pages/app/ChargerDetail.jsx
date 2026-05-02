@@ -58,6 +58,7 @@ const ChargerDetail = () => {
   const [isCreatingInquiry, setIsCreatingInquiry] = useState(false);
   const [inquiryError, setInquiryError] = useState('');
   const { user } = useAuthStore();
+  const [noSlotsReason, setNoSlotsReason] = useState(''); // 'past', 'none', or ''
 
   useEffect(() => {
     const load = async () => {
@@ -111,8 +112,6 @@ const ChargerDetail = () => {
     load();
   }, [id, selectedDate, user]);
 
-  const [noSlotsReason, setNoSlotsReason] = useState(''); // 'past', 'none', or ''
-
   useEffect(() => {
     const handleClickOutside = (e) => {
       if (!e.target.closest('.custom-dropdown-container')) {
@@ -152,7 +151,7 @@ const ChargerDetail = () => {
       userServiceFee: legacyFees.serviceFee,
       userTotal: legacyFees.totalFee,
       isLegacy: true,
-      reason: energyFees.error // e.g. MISSING_RATE
+      reason: energyFees.error
     };
   }
 
@@ -511,7 +510,7 @@ const ChargerDetail = () => {
             <div className="col-lg-5">
               <div style={{ position: 'sticky', top: '100px' }}>
                 <div className="glass-card" style={{ width: '100%', maxWidth: '620px', marginLeft: 'auto', padding: '2rem', borderRadius: '24px', position: 'relative', overflow: 'visible' }}>
-                  {/* Main Header / Pricing Summary */}
+                  {/* Main Header - Pricing Summary */}
                   <div style={{ marginBottom: '2rem' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                       <div>
@@ -567,7 +566,7 @@ const ChargerDetail = () => {
                       />
                     </div>
 
-                    {/* Row 2 — Time and (Conditional) Vehicle */}
+                    {/* Row 2 — Time and Duration */}
                     <div style={{ display: 'flex', gap: '16px' }}>
                       {/* Start Time Dropdown */}
                       <div className="custom-dropdown-container" style={{ flex: 1, position: 'relative' }}>
@@ -788,7 +787,6 @@ const ChargerDetail = () => {
                           )}
                         </div>
                       )}
-                    </div>
                   </div>
 
                   {/* Microcopy Help Text */}
@@ -805,7 +803,7 @@ const ChargerDetail = () => {
                       <>
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.6rem', fontSize: '0.9rem' }}>
                           <span style={{ color: 'var(--text-secondary)' }}>Rate ({currentBand})</span>
-                          <span style={{ fontWeight: 600 }}>{formatPKR(fees.rateUsed)}/kWh</span>
+                          <span style={{ fontWeight: 600 }}>{formatPKR(fees.rateUsed)} / kWh</span>
                         </div>
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.6rem', fontSize: '0.9rem' }}>
                           <span style={{ color: 'var(--text-secondary)' }}>Energy Estimate</span>
@@ -872,7 +870,6 @@ const ChargerDetail = () => {
                         style={{ width: '100%', fontSize: '1.05rem', padding: '0.8rem' }}
                         onClick={() => {
                           const dStr = selectedDate instanceof Date ? selectedDate.toISOString().split('T')[0] : selectedDate;
-                          // If energy pricing is active, pass vehicleSize. If legacy, it's not needed for price but good for context.
                           navigate(`/app/book/${id}?date=${dStr}&start=${selectedStart}&duration=${duration}&vehicleSize=${vehicleSize}`);
                         }}
                         disabled={!selectedStart || slots.filter(s => !s.isBooked).length === 0}
