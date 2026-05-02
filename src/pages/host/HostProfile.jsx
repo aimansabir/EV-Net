@@ -54,9 +54,14 @@ const HostProfile = () => {
     rejected: { color: '#ef4444', bg: 'rgba(239,68,68,0.15)', label: 'Rejected', desc: 'Your profile was not approved. Please contact support.' },
   };
 
+  statusConfig.under_review = statusConfig.pending;
+  statusConfig.approved = { color: '#00D26A', bg: 'rgba(0,210,106,0.15)', label: 'Verified', desc: 'You are verified. You can list and manage chargers.' };
+  statusConfig.rejected = { color: '#ef4444', bg: 'rgba(239,68,68,0.15)', label: 'Rejected', desc: 'Your host application was rejected. Please update your details and resubmit.' };
+
   if (loading) return <div className="section" style={{ minHeight: 'calc(100vh - 72px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><div style={{ color: 'var(--text-secondary)' }}>Loading...</div></div>;
 
-  const status = statusConfig[profile?.verificationStatus] || statusConfig.draft;
+  const verificationStatus = (profile?.verificationStatus || 'draft').toLowerCase();
+  const status = statusConfig[verificationStatus] || statusConfig.draft;
   const checks = [
     { label: 'Phone Verified', done: profile?.phoneVerified },
     { label: 'Identity Verified', done: profile?.identityVerified },
@@ -151,13 +156,13 @@ const HostProfile = () => {
           
           <p style={{ marginTop: '1rem', fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>{status.desc}</p>
 
-          {profile?.verificationStatus !== 'approved' && (
+          {verificationStatus !== 'approved' && (
             <button 
               className="btn btn-primary" 
               onClick={() => navigate('/host/onboarding')}
               style={{ width: '100%', fontSize: '0.9rem' }}
             >
-              {profile?.verificationStatus === 'rejected' ? 'Update & Resubmit' : 'Complete Verification'}
+              {verificationStatus === 'rejected' ? 'Edit & Resubmit' : ['pending', 'under_review'].includes(verificationStatus) ? 'View Status' : 'Complete Verification'}
             </button>
           )}
         </div>

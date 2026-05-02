@@ -9,10 +9,11 @@ const HostLayout = ({ children }) => {
   const { user, logout } = useAuthStore();
   const location = useLocation();
   const navigate = useNavigate();
+  const isHostVerified = user?.verificationStatus === 'approved';
 
   const navItems = [
     { path: '/host/dashboard', label: 'Dashboard' },
-    { path: '/host/onboarding', label: 'Verification' },
+    { path: '/host/onboarding', label: isHostVerified ? 'Host verified' : 'Verification' },
     { path: '/host/listings', label: 'Listings' },
     { path: '/host/bookings', label: 'Bookings' },
     { path: '/host/availability', label: 'Availability' },

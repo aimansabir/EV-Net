@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Info, CheckCircle } from 'lucide-react';
+import { Info, CheckCircle, Clock } from 'lucide-react';
 import useAuthStore from '../../store/authStore';
-import { hostService, listingService, verificationService } from '../../data/api';
+import { availabilityService, hostService, listingService, verificationService } from '../../data/api';
 import { ChargerType } from '../../data/schema';
 import { PakistanCitiesSorted, normalizeCityName } from '../../data/pakistanLocations';
 import { getActivationFeeBreakdown, formatPKR } from '../../data/feeConfig';
@@ -29,9 +29,31 @@ const ErrorMessage = ({ message, centered = false }) => (
   </div>
 );
 
+const dayNumberByLabel = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+const dayLabelByNumber = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+const makeExistingUpload = (path, url, label) => {
+  if (!path) return null;
+  const isPdf = path.toLowerCase().endsWith('.pdf');
+  return {
+    id: `existing-${label}-${path}`,
+    existing: true,
+    path,
+    preview: isPdf ? null : url,
+    isImage: !isPdf,
+    file: {
+      name: path.split('/').pop() || label,
+      size: 0,
+      type: isPdf ? 'application/pdf' : 'image/jpeg'
+    }
+  };
+};
+
+const getNewUploads = (files) => (files || []).filter(item => !item?.existing && item?.file);
+
 const HostOnboarding = () => {
   const navigate = useNavigate();
-  const { user } = useAuthStore();
+  const { user, reloadUser } = useAuthStore();
   const [step, setStep] = useState(1);
   const [showErrors, setShowErrors] = useState(false);
   const [submissionError, setSubmissionError] = useState('');
@@ -78,6 +100,19 @@ const HostOnboarding = () => {
   const [additionalPhotos, setAdditionalPhotos] = useState([]);
   const [propertyProofs, setPropertyProofs] = useState([]);
   const [onboardingListingId, setOnboardingListingId] = useState('');
+  const [serverDraftLoading, setServerDraftLoading] = useState(true);
+  const [existingOnboarding, setExistingOnboarding] = useState({
+    identitySubmitted: false,
+    propertyProofUploaded: false,
+    chargerProofUploaded: false,
+    setupFeePaid: false,
+    paymentStatus: null,
+  });
+
+  const verificationStatus = (user?.verificationStatus || 'draft').toLowerCase();
+  const isApproved = verificationStatus === 'approved';
+  const isRejected = verificationStatus === 'rejected';
+  const isPendingVerification = ['pending', 'under_review'].includes(verificationStatus);
 
   const amenityOptions = ['WiFi Available', 'CCTV Security', 'Covered Parking', 'Restroom Access', 'Drinking Water', 'Gated Community', 'Near Restaurants', 'Garden Seating', 'Overnight Available'];
 
@@ -95,15 +130,25 @@ const HostOnboarding = () => {
   };
 
   useEffect(() => {
-    if (user?.id) {
+    if (!user?.id) return;
+
+    let cancelled = false;
+
+    const restoreDraft = async () => {
+      setServerDraftLoading(true);
+      let restoredLocalDraft = false;
+      let preferredListingId = localStorage.getItem('currentHostOnboardingListingId');
+
       const saved = localStorage.getItem(`host_onboarding_draft_${user.id}`);
       if (saved) {
         try {
           const data = JSON.parse(saved);
+          restoredLocalDraft = true;
           if (data.profile) setProfile(data.profile);
           if (data.charger) {
             setCharger(data.charger);
             if (data.charger.listingId) {
+              preferredListingId = data.charger.listingId;
               setOnboardingListingId(data.charger.listingId);
               localStorage.setItem('currentHostOnboardingListingId', data.charger.listingId);
             }
@@ -111,18 +156,105 @@ const HostOnboarding = () => {
           if (data.pricing) setPricing(data.pricing);
           if (data.timeState) setTimeState(data.timeState);
           if (data.schedule) setSchedule(data.schedule);
-          if (data.step) setStep(data.step);
+          if (data.step && !isPendingVerification && !isApproved) setStep(data.step);
         } catch (e) {
           console.error("Failed to restore draft:", e);
         }
       }
-      const storedListingId = localStorage.getItem('currentHostOnboardingListingId');
-      if (storedListingId) {
-        setOnboardingListingId(storedListingId);
-        setCharger(prev => ({ ...prev, listingId: prev.listingId || storedListingId }));
+
+      try {
+        const draft = await hostService.getOnboardingDraft(user.id, preferredListingId);
+        if (cancelled || !draft) return;
+
+        const listing = draft.listing;
+        const docs = draft.verificationDocs || {};
+        const existingPayment = draft.payment || null;
+
+        setExistingOnboarding({
+          identitySubmitted: !!draft.profile?.identityVerified,
+          propertyProofUploaded: !!draft.profile?.propertyProofUploaded,
+          chargerProofUploaded: !!draft.profile?.chargerProofUploaded,
+          setupFeePaid: !!(listing?.setupFeePaid || existingPayment?.status === 'verified'),
+          paymentStatus: existingPayment?.status || null,
+        });
+
+        setProfile(prev => ({
+          ...prev,
+          phone: prev.phone || draft.profile?.phone || user.phone || '',
+        }));
+
+        if (listing?.id) {
+          setOnboardingListingId(listing.id);
+          localStorage.setItem('currentHostOnboardingListingId', listing.id);
+        }
+
+        if (listing && (!restoredLocalDraft || isRejected)) {
+          setCharger(prev => ({
+            ...prev,
+            listingId: listing.id,
+            address: listing.address || prev.address,
+            area: listing.area || prev.area,
+            chargerType: listing.chargerType || prev.chargerType,
+            description: listing.description || prev.description,
+            amenities: listing.amenities || prev.amenities,
+            houseRules: Array.isArray(listing.house_rules) ? listing.house_rules.join('\n') : (listing.houseRules || prev.houseRules),
+            lat: listing.lat ?? prev.lat,
+            lng: listing.lng ?? prev.lng,
+          }));
+          setProfile(prev => ({ ...prev, city: listing.city || prev.city }));
+          setPricing(prev => ({
+            ...prev,
+            priceDay: listing.priceDay || prev.priceDay,
+            priceNight: listing.priceNight || prev.priceNight,
+          }));
+
+          if (listing.availability?.length > 0) {
+            const nextDays = { Mon: false, Tue: false, Wed: false, Thu: false, Fri: false, Sat: false, Sun: false };
+            listing.availability.forEach(rule => {
+              const label = dayLabelByNumber[rule.dayOfWeek];
+              if (label) nextDays[label] = true;
+            });
+            setSchedule({ days: nextDays });
+            setTimeState(prev => ({
+              start: listing.availability[0]?.startTime || prev.start,
+              end: listing.availability[0]?.endTime || prev.end,
+            }));
+          }
+        }
+
+        if (!restoredLocalDraft || isRejected) {
+          const storedChargerProof = makeExistingUpload(docs.chargerProofPath, docs.chargerProofUrl, 'charger-proof');
+          const storedPropertyProof = makeExistingUpload(docs.propertyProofPath, docs.propertyProofUrl, 'property-proof');
+          const storedPaymentProof = makeExistingUpload(existingPayment?.screenshot_path, existingPayment?.receiptUrl, 'payment-proof');
+
+          const storedListingPhotos = (listing?.listing_photos || [])
+            .sort((a, b) => a.display_order - b.display_order)
+            .map((photo, index) => makeExistingUpload(photo.storage_path, listingService.resolveListingPhotoUrl(photo.storage_path), `listing-photo-${index}`))
+            .filter(Boolean);
+
+          if (storedListingPhotos.length > 0) {
+            setChargerPhotos(storedListingPhotos.slice(0, 1));
+            setAdditionalPhotos(storedListingPhotos.slice(1));
+          } else if (storedChargerProof) {
+            setChargerPhotos([storedChargerProof]);
+          }
+
+          if (storedPropertyProof) setPropertyProofs([storedPropertyProof]);
+          if (storedPaymentProof) setPayment(prev => ({ ...prev, screenshot: storedPaymentProof }));
+        }
+      } catch (e) {
+        console.warn('[EV-Net] Could not restore server onboarding draft:', e.message || e);
+      } finally {
+        if (!cancelled) setServerDraftLoading(false);
       }
-    }
-  }, [user?.id]);
+    };
+
+    restoreDraft();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id, user?.phone, isApproved, isPendingVerification, isRejected]);
 
   const handlePublish = async () => {
     if (isSubmitting) return;
@@ -135,7 +267,7 @@ const HostOnboarding = () => {
     }
 
     // Requirement 6: Validate payment screenshot (image type check)
-    const screenshotFile = payment.screenshot?.file || payment.screenshot;
+    const screenshotFile = payment.screenshot?.existing ? null : (payment.screenshot?.file || payment.screenshot);
     if (screenshotFile && !screenshotFile.type?.startsWith('image/') && !screenshotFile.name?.toLowerCase().endsWith('.pdf')) {
       console.error("[EV-Net] Invalid screenshot file type:", screenshotFile.type);
       setSubmissionError("Payment proof must be an image or PDF.");
@@ -174,6 +306,10 @@ const HostOnboarding = () => {
 
       console.log("[EV-Net] User loaded", user.id);
       await runStep('Initializing host profile', 'Initializing host profile...', () => hostService.promote(user.id));
+      await runStep('Saving host profile', 'Saving host profile...', () => hostService.updateProfile(user.id, {
+        phone: profile.phone,
+        identity_verified: true
+      }));
 
       // Build full address: prepend house/unit number if provided
       const fullAddress = charger.houseNo
@@ -270,44 +406,70 @@ const HostOnboarding = () => {
         ]), 30000
       );
 
-      // 3. Handle payment submission before finalizing host profile
-      const paymentResult = await runStep('Recording payment proof', 'Recording payment proof...', () => hostService.submitOnboardingPayment(user.id, {
-          method: 'BANK_TRANSFER',
-          amount: feeBreakdown.total,
-          screenshot: payment.screenshot,
-          listingId
-        }), 30000
-      );
-      console.log("[EV-Net] Payment record created", paymentResult?.payment?.id || paymentResult);
+      // 3. Handle payment submission before finalizing host profile.
+      const hasExistingPayment = ['pending', 'verified'].includes(existingOnboarding.paymentStatus) || existingOnboarding.setupFeePaid;
+      const hasNewPaymentProof = !!payment.screenshot && !payment.screenshot.existing;
+      if (!hasExistingPayment || hasNewPaymentProof) {
+        const paymentResult = await runStep('Recording payment proof', 'Recording payment proof...', () => hostService.submitOnboardingPayment(user.id, {
+            method: 'BANK_TRANSFER',
+            amount: feeBreakdown.total,
+            screenshot: payment.screenshot,
+            listingId
+          }), 30000
+        );
+        console.log("[EV-Net] Payment record created", paymentResult?.payment?.id || paymentResult);
+      } else {
+        console.log("[EV-Net] Reusing existing onboarding payment", existingOnboarding.paymentStatus);
+      }
 
-      await runStep('Marking listing pending review', 'Marking listing pending review...', () => listingService.markOnboardingSubmitted(listingId, user.id));
+      await runStep('Marking listing pending review', 'Marking listing pending review...', () => listingService.markOnboardingSubmitted(listingId, user.id, {
+        setupFeePaid: existingOnboarding.setupFeePaid && !hasNewPaymentProof
+      }));
+      await runStep('Saving availability', 'Saving availability...', () => availabilityService.set(
+        listingId,
+        Object.entries(schedule.days)
+          .filter(([, active]) => active)
+          .map(([day]) => ({
+            dayOfWeek: dayNumberByLabel[day],
+            startTime: timeState.start,
+            endTime: timeState.end
+          }))
+      ));
 
       // 4. Upload verification proofs. The RPC below owns host profile finalization.
       console.log("[EV-Net] Uploading verification documents");
       setPublishStatus('Uploading verification documents...');
-      if (propertyProofs[0]?.file) {
+      const newPropertyProof = getNewUploads(propertyProofs)[0];
+      const newChargerProof = getNewUploads(chargerPhotos)[0];
+
+      if (newPropertyProof?.file) {
         console.log("[EV-Net] Uploading property proof...");
-        await runStep('Uploading property proof', 'Uploading verification documents...', () => verificationService.uploadDocument(user.id, 'HOST', 'PROPERTY_PROOF', propertyProofs[0].file, {
+        await runStep('Uploading property proof', 'Uploading verification documents...', () => verificationService.uploadDocument(user.id, 'HOST', 'PROPERTY_PROOF', newPropertyProof.file, {
             updateProfileFlags: false
           }), 30000
         );
+      } else if (!existingOnboarding.propertyProofUploaded && !propertyProofs.some(file => file?.existing)) {
+        throw new Error('Property ownership proof is required.');
       }
-      if (chargerPhotos[0]?.file) {
+      if (newChargerProof?.file) {
         console.log("[EV-Net] Uploading charger setup photo...");
-        await runStep('Uploading charger proof', 'Uploading verification documents...', () => verificationService.uploadDocument(user.id, 'HOST', 'CHARGER_PROOF', chargerPhotos[0].file, {
+        await runStep('Uploading charger proof', 'Uploading verification documents...', () => verificationService.uploadDocument(user.id, 'HOST', 'CHARGER_PROOF', newChargerProof.file, {
             updateProfileFlags: false
           }), 30000
         );
+      } else if (!existingOnboarding.chargerProofUploaded && !chargerPhotos.some(file => file?.existing)) {
+        throw new Error('Charger setup proof is required.');
       }
       console.log("[EV-Net] Documents uploaded");
 
       await runStep('Finalizing onboarding', 'Finalizing onboarding...', () => hostService.finalizeOnboarding());
+      await reloadUser();
       console.log("[EV-Net] Submission complete");
       
       // Clear draft on successful submit
       console.log("[EV-Net] Clearing draft and showing success step.");
       localStorage.removeItem(`host_onboarding_draft_${user.id}`);
-      setPublishStatus('Your host application has been submitted and is pending admin review.');
+      setPublishStatus('Your host application has been submitted and is under admin review.');
       
       setStep(9); // Show success screen
     } catch (e) {
@@ -334,10 +496,17 @@ const HostOnboarding = () => {
 
   // Manual step validation
   const validateStep = (s) => {
-    if (s === 1) return profile.phone && profile.identityDoc && profile.identityDoc.length === 15;
+    if (s === 1) {
+      const identityOk = profile.identityDoc ? profile.identityDoc.length === 15 : existingOnboarding.identitySubmitted;
+      return profile.phone && identityOk;
+    }
     if (s === 2) return charger.address && charger.area && profile.city && charger.lat && charger.lng;
     if (s === 3) return true;
-    if (s === 4) return chargerPhotos.length > 0 && propertyProofs.length > 0;
+    if (s === 4) {
+      const hasChargerProof = chargerPhotos.length > 0 || existingOnboarding.chargerProofUploaded;
+      const hasPropertyProof = propertyProofs.length > 0 || existingOnboarding.propertyProofUploaded;
+      return hasChargerProof && hasPropertyProof;
+    }
     if (s === 5) return pricing.priceDay >= 10 && pricing.priceNight >= 10;
     if (s === 6) {
       const anyDaySelected = Object.values(schedule.days).some(d => d);
@@ -345,7 +514,7 @@ const HostOnboarding = () => {
     }
     if (s === 7) return true;
     if (s === 8) {
-      return payment.screenshot;
+      return payment.screenshot || ['pending', 'verified'].includes(existingOnboarding.paymentStatus) || existingOnboarding.setupFeePaid;
     }
     if (s === 9) return true;
     return true;
@@ -372,9 +541,76 @@ const HostOnboarding = () => {
     }
   };
 
+  if (serverDraftLoading && !isApproved && !isPendingVerification) {
+    return (
+      <div className="auth-page" style={{ background: 'var(--bg-main)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ color: 'var(--text-secondary)' }}>Loading your onboarding details...</div>
+      </div>
+    );
+  }
+
+  if (isApproved || (isPendingVerification && step !== 9)) {
+    return (
+      <div className="auth-page" style={{ background: 'var(--bg-main)' }}>
+        <div style={{ margin: 'auto', maxWidth: '560px', width: '100%', padding: '2rem 1.5rem' }}>
+          <div className="glass-card" style={{ padding: '2.5rem', textAlign: 'center' }}>
+            <div style={{
+              width: '72px',
+              height: '72px',
+              borderRadius: '50%',
+              background: isApproved ? 'rgba(0,210,106,0.12)' : 'rgba(251,191,36,0.12)',
+              border: `1px solid ${isApproved ? 'rgba(0,210,106,0.3)' : 'rgba(251,191,36,0.3)'}`,
+              color: isApproved ? 'var(--brand-green)' : '#fbbf24',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginBottom: '1.25rem'
+            }}>
+              {isApproved ? <CheckCircle size={34} /> : <Clock size={34} />}
+            </div>
+            <h2 style={{ margin: '0 0 0.75rem', fontFamily: 'var(--font-heading)' }}>
+              {isApproved ? 'Host verified' : 'Verification under review'}
+            </h2>
+            <p style={{ color: 'var(--text-secondary)', lineHeight: 1.6, margin: '0 0 2rem' }}>
+              {isApproved
+                ? 'You are verified. Your approved listing can stay active and receive bookings.'
+                : 'Your host application is with the admin team. You can return here after a decision is made.'}
+            </p>
+            <button className="btn btn-primary" onClick={() => navigate('/host/dashboard')} style={{ width: '100%', maxWidth: '260px' }}>
+              Go to Dashboard
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="auth-page" style={{ background: 'var(--bg-main)' }}>
       <div style={{ margin: 'auto', maxWidth: '600px', width: '100%', padding: '2rem 1.5rem' }}>
+        {isRejected && (
+          <div style={{
+            marginBottom: '1.5rem',
+            padding: '1rem 1.25rem',
+            borderRadius: '12px',
+            border: '1px solid rgba(239,68,68,0.35)',
+            background: 'rgba(239,68,68,0.1)',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: '1rem'
+          }}>
+            <div>
+              <div style={{ color: '#f87171', fontWeight: 700, marginBottom: '0.25rem' }}>Host application rejected</div>
+              <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+                Your host application was rejected. Please update your details and resubmit.
+              </div>
+            </div>
+            <button className="btn btn-primary" onClick={() => setStep(1)} style={{ flexShrink: 0, fontSize: '0.85rem' }}>
+              Edit & Resubmit
+            </button>
+          </div>
+        )}
         
         {/* Progress Header */}
         <div style={{ marginBottom: '2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -413,7 +649,7 @@ const HostOnboarding = () => {
 
               <ValidatedInput label="Full Name" value={user?.name || ''} disabled onChange={() => {}} />
               <ValidatedInput label="Phone Number" format="phone" placeholder="03XXXXXXXXX" required value={profile.phone} onChange={v => setProfile({...profile, phone: v})} forceError={showErrors} />
-              <ValidatedInput label="CNIC Number" format="cnic" placeholder="XXXXX-XXXXXXX-X" required value={profile.identityDoc} onChange={v => setProfile({...profile, identityDoc: v})} forceError={showErrors} />
+              <ValidatedInput label="CNIC Number" format="cnic" placeholder={existingOnboarding.identitySubmitted ? 'Previously submitted' : 'XXXXX-XXXXXXX-X'} required={!existingOnboarding.identitySubmitted} value={profile.identityDoc} onChange={v => setProfile({...profile, identityDoc: v})} forceError={showErrors && !existingOnboarding.identitySubmitted} />
               
               <div style={{ display: 'flex', gap: '1rem', marginTop: '1.5rem' }}>
                 <button className="btn btn-secondary" onClick={handleSaveAndExit} style={{ flex: 1 }}>Exit</button>
@@ -557,7 +793,7 @@ const HostOnboarding = () => {
                 mode="image" 
                 files={chargerPhotos} 
                 onChange={setChargerPhotos} 
-                error={showErrors && chargerPhotos.length === 0 ? "Charger setup photo is required" : ""}
+                error={showErrors && chargerPhotos.length === 0 && !existingOnboarding.chargerProofUploaded ? "Charger setup photo is required" : ""}
               />
               
               <FileUploadDropzone 
@@ -572,7 +808,7 @@ const HostOnboarding = () => {
                 label="Property Proof (Bill/Deed)" 
                 files={propertyProofs} 
                 onChange={setPropertyProofs} 
-                error={showErrors && propertyProofs.length === 0 ? "Property ownership proof is required" : ""}
+                error={showErrors && propertyProofs.length === 0 && !existingOnboarding.propertyProofUploaded ? "Property ownership proof is required" : ""}
               />
               <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
                 <button className="btn btn-secondary" onClick={() => setStep(3)} style={{ flex: 1 }}>Back</button>
@@ -802,7 +1038,7 @@ const HostOnboarding = () => {
                   mode="document"
                   files={payment.screenshot ? [payment.screenshot] : []}
                   onChange={(files) => setPayment({ ...payment, screenshot: files[0] })}
-                  error={showErrors && !payment.screenshot ? "Payment proof screenshot is required" : ""}
+                  error={showErrors && !validateStep(8) ? "Payment proof screenshot is required" : ""}
                 />
                 <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.5rem' }}>
                   Please upload an image or PDF receipt from your bank transfer.
@@ -835,7 +1071,7 @@ const HostOnboarding = () => {
               </div>
               <h2 style={{ marginBottom: '1rem' }}>Onboarding Submitted!</h2>
               <p style={{ color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: '2.5rem' }}>
-                Your host application has been submitted and is pending admin review.<br />
+                Your host application has been submitted and is under admin review.<br />
                 Your charger listing has been created and will be visible once your profile is approved.
               </p>
               <button className="btn btn-primary" onClick={() => navigate('/host/dashboard')} style={{ width: '100%', maxWidth: '300px' }}>

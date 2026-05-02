@@ -133,6 +133,16 @@ function resolveListingPhotoUrl(path) {
   return data.publicUrl;
 }
 
+function isUploadableFile(input) {
+  const file = input?.file || input;
+  return !!(
+    file &&
+    typeof file === 'object' &&
+    typeof file.name === 'string' &&
+    typeof file.arrayBuffer === 'function'
+  );
+}
+
 async function createVerificationSignedUrl(path) {
   if (!path) return null;
   if (/^(https?:|blob:|data:)/.test(path)) return path;
@@ -970,6 +980,77 @@ export const listingService = {
     };
   },
 
+  async getHostOnboardingListing(hostId, preferredListingId = null) {
+    if (!hostId) return null;
+
+    let listing = null;
+    if (preferredListingId) {
+      listing = await this.getOwnedById(preferredListingId, hostId);
+    }
+
+    if (!listing) {
+      const { data, error } = await supabase
+        .from('listings')
+        .select('*, listing_photos ( id, storage_path, display_order )')
+        .eq('host_id', hostId)
+        .order('is_approved', { ascending: true })
+        .order('setup_fee_paid', { ascending: false })
+        .order('updated_at', { ascending: false })
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      if (error) {
+        console.warn("[EV-Net] Could not load host onboarding listing:", error.message);
+        return null;
+      }
+
+      const row = data?.[0];
+      if (row) {
+        listing = {
+          ...row,
+          priceDay: row.price_day_per_kwh,
+          priceNight: row.price_night_per_kwh,
+          chargerType: row.charger_type,
+          chargerSpeed: row.charger_speed,
+          hostId: row.host_id,
+          isActive: row.is_active,
+          isApproved: row.is_approved,
+          setupFeePaid: row.setup_fee_paid,
+          images: (row.listing_photos || [])
+            .sort((a, b) => a.display_order - b.display_order)
+            .map(p => resolveListingPhotoUrl(p.storage_path))
+        };
+      }
+    }
+
+    if (!listing?.id) return null;
+
+    const [{ data: location }, { data: availability }] = await Promise.all([
+      supabase
+        .from('listing_locations')
+        .select('address, lat, lng')
+        .eq('listing_id', listing.id)
+        .maybeSingle(),
+      supabase
+        .from('availability_rules')
+        .select('id, day_of_week, start_time, end_time')
+        .eq('listing_id', listing.id)
+    ]);
+
+    return {
+      ...listing,
+      address: location?.address || listing.address || '',
+      lat: location?.lat ?? listing.lat ?? null,
+      lng: location?.lng ?? listing.lng ?? null,
+      availability: (availability || []).map(rule => ({
+        id: rule.id,
+        dayOfWeek: rule.day_of_week,
+        startTime: rule.start_time?.substring(0, 5),
+        endTime: rule.end_time?.substring(0, 5),
+      })),
+    };
+  },
+
   async findExistingOnboardingListing({ hostId, title, city, area, chargerType }) {
     console.log("[EV-Net] Checking for existing onboarding listing", {
       hostId,
@@ -1108,7 +1189,8 @@ export const listingService = {
   },
 
   async uploadListingPhotos(listingId, hostId, files) {
-    if (!files || files.length === 0) return [];
+    const uploadableFiles = (files || []).filter(file => isUploadableFile(file));
+    if (uploadableFiles.length === 0) return [];
     
     // 1. Get current max display order
     const { data: currentPhotos } = await supabase
@@ -1121,9 +1203,8 @@ export const listingService = {
     let nextOrder = currentPhotos && currentPhotos.length > 0 ? currentPhotos[0].display_order + 1 : 0;
 
     // 2. Upload files
-    const uploadedPaths = await Promise.all(files.map(async (image, index) => {
+    const uploadedPaths = await Promise.all(uploadableFiles.map(async (image, index) => {
       const file = image?.file || image;
-      if (!file || typeof file === 'string') return file;
       const extension = file.name?.split('.').pop() || 'jpg';
       const filePath = `${hostId}/${listingId}/${Date.now()}_added_${index}.${extension}`;
       const { error: uploadError } = await supabase.storage
@@ -1150,7 +1231,8 @@ export const listingService = {
   },
 
   async ensureOnboardingPhotos(listingId, hostId, files) {
-    if (!files || files.length === 0) {
+    const uploadableFiles = (files || []).filter(file => isUploadableFile(file));
+    if ((!files || files.length === 0) && uploadableFiles.length === 0) {
       throw new Error('At least one charger setup photo is required.');
     }
 
@@ -1164,7 +1246,7 @@ export const listingService = {
       throw new Error(`Could not check existing listing photos: ${existingError.message}`);
     }
 
-    if ((existingPhotos || []).length > 0) {
+    if ((existingPhotos || []).length > 0 && uploadableFiles.length === 0) {
       console.log("[EV-Net] Skipping duplicate photo upload", {
         listingId,
         count: existingPhotos.length
@@ -1172,15 +1254,20 @@ export const listingService = {
       return existingPhotos;
     }
 
-    return this.uploadListingPhotos(listingId, hostId, files);
+    if ((existingPhotos || []).length === 0 && uploadableFiles.length === 0) {
+      throw new Error('At least one charger setup photo is required.');
+    }
+
+    return this.uploadListingPhotos(listingId, hostId, uploadableFiles);
   },
 
-  async markOnboardingSubmitted(listingId, hostId) {
+  async markOnboardingSubmitted(listingId, hostId, options = {}) {
     console.log("[EV-Net] Marking onboarding listing pending review:", listingId);
+    const setupFeePaid = options.setupFeePaid ?? true;
     const { data, error } = await supabase
       .from('listings')
       .update({
-        setup_fee_paid: true,
+        setup_fee_paid: setupFeePaid,
         is_active: false,
         is_approved: false
       })
@@ -1821,14 +1908,17 @@ export const adminService = {
 
     const totalRevenue = (completedBookings || []).reduce((s, b) => s + b.service_fee, 0);
 
-    // 1. Pending Verifications (Drivers & Hosts)
-    const { data: verifData } = await supabase
-      .from('verification_submissions')
-      .select('type, profile_type')
-      .eq('status', 'pending');
-    
-    const pendingEvCount = (verifData || []).filter(v => (v.type || v.profile_type) === 'EV_USER').length;
-    const pendingHostCount = (verifData || []).filter(v => (v.type || v.profile_type) === 'HOST').length;
+    // 1. Pending Verifications (live profile state is the source of truth)
+    const [{ count: pendingEvCount }, { count: pendingHostCount }] = await Promise.all([
+      supabase
+        .from('ev_profiles')
+        .select('*', { count: 'exact', head: true })
+        .eq('verification_status', 'under_review'),
+      supabase
+        .from('host_profiles')
+        .select('*', { count: 'exact', head: true })
+        .in('verification_status', ['pending', 'under_review'])
+    ]);
 
     // 2. Pending Payments
     const { count: pendingPayments } = await supabase
@@ -1847,8 +1937,8 @@ export const adminService = {
       totalHosts: totalHosts || 0,
       totalListings: totalListings || 0,
       activeListings: activeListings || 0,
-      pendingEvVerifications: pendingEvCount,
-      pendingHostVerifications: pendingHostCount,
+      pendingEvVerifications: pendingEvCount || 0,
+      pendingHostVerifications: pendingHostCount || 0,
       pendingPayments: pendingPayments || 0,
       totalBookings: totalBookings || 0,
       totalRevenue
@@ -1973,7 +2063,7 @@ export const adminService = {
   async getVerificationSubmissions() {
     let { data, error } = await supabase
       .from('verification_submissions')
-      .select('*, user:profiles!user_id(*)')
+      .select('*, user:profiles!user_id(*, ev_profiles:ev_profiles!user_id(verification_status, updated_at), host_profiles:host_profiles!user_id(verification_status, moderation_notes, updated_at))')
       .order('submitted_at', { ascending: false });
     
     if (error) {
@@ -1988,7 +2078,7 @@ export const adminService = {
 
       const userIds = [...new Set(data.map(row => row.user_id).filter(Boolean))];
       const { data: users, error: usersError } = userIds.length > 0
-        ? await supabase.from('profiles').select('*').in('id', userIds)
+        ? await supabase.from('profiles').select('*, ev_profiles:ev_profiles!user_id(verification_status, updated_at), host_profiles:host_profiles!user_id(verification_status, moderation_notes, updated_at)').in('id', userIds)
         : { data: [], error: null };
 
       if (usersError) {
@@ -2009,6 +2099,9 @@ export const adminService = {
 
       const key = `${s.user_id}_${profileType}`;
       if (!acc[key]) {
+        const evProfile = s.user?.ev_profiles?.[0];
+        const hostProfile = s.user?.host_profiles?.[0];
+        
         acc[key] = {
           ...s,
           user: s.user ? {
@@ -2019,7 +2112,12 @@ export const adminService = {
           type: profileType,
           status: s.status || 'pending',
           submittedAt: s.submitted_at,
-          documentRows: []
+          documentRows: [],
+          evProfileStatus: evProfile?.verification_status || null,
+          hostProfileStatus: hostProfile?.verification_status || null,
+          moderationNotes: profileType === 'HOST' ? hostProfile?.moderation_notes : null,
+          profileUpdatedAt: profileType === 'HOST' ? hostProfile?.updated_at : evProfile?.updated_at,
+          reviewedAt: s.reviewed_at || (profileType === 'HOST' ? hostProfile?.updated_at : evProfile?.updated_at)
         };
       }
 
@@ -2038,18 +2136,33 @@ export const adminService = {
     }, {});
     
     return Promise.all(Object.values(grouped).map(async submission => {
-      const statuses = submission.documentRows.map(row => (row.status || '').toLowerCase());
-      const normalizedStatus = statuses.includes('pending')
-        ? 'pending'
-        : statuses.includes('rejected')
-          ? 'rejected'
-          : statuses.includes('approved')
-            ? 'approved'
-            : (submission.status || 'pending').toLowerCase();
+      let finalStatus = submission.status || 'pending';
+      if (submission.profile_type === 'EV_USER' && submission.evProfileStatus) {
+        finalStatus = submission.evProfileStatus.toLowerCase();
+      } else if (submission.profile_type === 'HOST' && submission.hostProfileStatus) {
+        finalStatus = submission.hostProfileStatus.toLowerCase();
+      }
+
+      const reviewedAt = submission.reviewed_at || submission.reviewedAt || submission.profileUpdatedAt || null;
+      const notes = submission.moderationNotes || submission.reviewer_notes || submission.admin_notes || '';
+
+      console.log('[EV-Net] admin normalized submission', {
+        user_id: submission.user_id,
+        email: submission.user?.email,
+        evProfileStatus: submission.evProfileStatus,
+        hostProfileStatus: submission.hostProfileStatus,
+        finalStatus
+      });
 
       return {
         ...submission,
-        status: normalizedStatus,
+        status: finalStatus,
+        currentStatus: finalStatus,
+        moderationNotes: notes,
+        admin_notes: submission.admin_notes || notes,
+        reviewer_notes: submission.reviewer_notes || notes,
+        reviewed_at: reviewedAt,
+        reviewedAt,
         documentUrls: {
           cnic_path: await createVerificationSignedUrl(submission.cnic_path),
           cnic_back_path: await createVerificationSignedUrl(submission.cnic_back_path),
@@ -2376,7 +2489,8 @@ export const onboardingPaymentService = {
       payment_status: payment.status,
       receiptUrl: await createVerificationSignedUrl(payment.screenshot_path),
       submittedAt: payment.created_at,
-      reviewedAt: payment.verified_at
+      reviewedAt: payment.verified_at,
+      reviewed_at: payment.verified_at
     })));
   },
 
@@ -2574,6 +2688,48 @@ export const hostService = {
       propertyProofUploaded: !!(hostProfileRow?.property_proof_uploaded || verificationDocs.property_proof_path),
       chargerProofUploaded: !!(hostProfileRow?.charger_proof_uploaded || verificationDocs.charger_proof_path),
       payoutSetupComplete: hostProfileRow?.payout_setup_complete || false,
+    };
+  },
+
+  async getOnboardingDraft(userId, preferredListingId = null) {
+    if (!userId) return null;
+
+    const [hostProfileRow, verificationDocs, listing] = await Promise.all([
+      getHostProfile(userId),
+      getLatestVerificationDocuments(userId, 'HOST'),
+      listingService.getHostOnboardingListing(userId, preferredListingId)
+    ]);
+
+    const payment = listing?.id
+      ? await onboardingPaymentService.getExistingPayment(userId, listing.id)
+      : await onboardingPaymentService.getExistingPayment(userId, null);
+
+    return {
+      profile: hostProfileRow ? {
+        phone: hostProfileRow.phone || '',
+        verificationStatus: hostProfileRow.verification_status || 'draft',
+        identityVerified: isHostIdentitySubmitted(hostProfileRow, verificationDocs),
+        cnicBackSubmitted: !!(hostProfileRow.cnic_back_submitted || verificationDocs.cnic_back_path),
+        propertyProofUploaded: !!(hostProfileRow.property_proof_uploaded || verificationDocs.property_proof_path),
+        chargerProofUploaded: !!(hostProfileRow.charger_proof_uploaded || verificationDocs.charger_proof_path),
+        payoutSetupComplete: !!hostProfileRow.payout_setup_complete,
+        moderationNotes: hostProfileRow.moderation_notes || ''
+      } : null,
+      listing,
+      payment: payment ? {
+        ...payment,
+        receiptUrl: await createVerificationSignedUrl(payment.screenshot_path)
+      } : null,
+      verificationDocs: {
+        cnicPath: verificationDocs.cnic_path || null,
+        cnicBackPath: verificationDocs.cnic_back_path || null,
+        propertyProofPath: verificationDocs.property_proof_path || null,
+        chargerProofPath: verificationDocs.charger_proof_path || null,
+        cnicUrl: await createVerificationSignedUrl(verificationDocs.cnic_path),
+        cnicBackUrl: await createVerificationSignedUrl(verificationDocs.cnic_back_path),
+        propertyProofUrl: await createVerificationSignedUrl(verificationDocs.property_proof_path),
+        chargerProofUrl: await createVerificationSignedUrl(verificationDocs.charger_proof_path),
+      }
     };
   },
 
@@ -2922,8 +3078,6 @@ export const verificationService = {
    * Final step: sets the overall profile status to under_review.
    */
   async submitForReview(userId, profileType) {
-    const table = profileType === 'HOST' ? 'host_profiles' : 'ev_profiles';
-    
     // Helper to wrap Supabase calls in timeout
     const withDbTimeout = async (promise, timeoutMs = 8000) => {
       const tPromise = new Promise((_, reject) => 
@@ -2941,10 +3095,8 @@ export const verificationService = {
       console.log('[EV-Net] submit_ev_verification_for_review response:', { data, error });
       updateError = error;
     } else {
-      const { error } = await withDbTimeout(supabase
-        .from(table)
-        .update({ verification_status: 'under_review' })
-        .eq('user_id', userId));
+      const { data, error } = await withDbTimeout(supabase.rpc('resubmit_host_onboarding'));
+      console.log('[EV-Net] resubmit_host_onboarding response:', { data, error });
       updateError = error;
     }
 

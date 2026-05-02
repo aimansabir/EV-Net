@@ -44,6 +44,9 @@ const ReviewActionModal = ({ isOpen, onClose, user, targetType = 'evType', submi
   }
 
   const getDocUrl = (doc) => doc?.url || null;
+  const normalizedStatus = (submission?.currentStatus || submission?.status || '').toLowerCase();
+  const decisionNotes = submission?.moderationNotes || submission?.reviewer_notes || submission?.admin_notes;
+  const reviewedAt = submission?.reviewed_at || submission?.reviewedAt || submission?.verified_at;
 
   const handleSubmit = async () => {
     console.log('[Admin] ReviewActionModal submit clicked', {
@@ -205,21 +208,21 @@ const ReviewActionModal = ({ isOpen, onClose, user, targetType = 'evType', submi
           {readOnly ? (
             <div style={{ background: 'rgba(255,255,255,0.03)', padding: '1.5rem', borderRadius: '12px', border: '1px solid var(--border-color)', marginTop: '2rem' }}>
               <h4 style={{ margin: '0 0 1rem 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                {submission?.status?.toLowerCase() === 'approved' || submission?.status?.toLowerCase() === 'verified' ? <CheckCircle size={20} color="var(--brand-green)" /> : <AlertTriangle size={20} color="#ef4444" />}
+                {normalizedStatus === 'approved' || normalizedStatus === 'verified' ? <CheckCircle size={20} color="var(--brand-green)" /> : <AlertTriangle size={20} color="#ef4444" />}
                 Review Decision
               </h4>
               <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem' }}>
-                Status: <strong style={{ color: submission?.status?.toLowerCase() === 'approved' || submission?.status?.toLowerCase() === 'verified' ? 'var(--brand-green)' : '#ef4444' }}>{submission?.status?.toUpperCase()}</strong>
+                Status: <strong style={{ color: normalizedStatus === 'approved' || normalizedStatus === 'verified' ? 'var(--brand-green)' : '#ef4444' }}>{(submission?.currentStatus || submission?.status || '').toUpperCase()}</strong>
               </p>
-              {submission?.reviewed_at && (
+              {reviewedAt && (
                  <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
-                   Reviewed On: {new Date(submission.reviewed_at).toLocaleString()}
+                   Reviewed On: {new Date(reviewedAt).toLocaleString()}
                  </p>
               )}
-              {(submission?.reviewer_notes || submission?.admin_notes) && (
+              {decisionNotes && (
                 <div style={{ marginTop: '1rem', background: 'rgba(0,0,0,0.2)', padding: '1rem', borderRadius: '8px' }}>
                   <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text-secondary)' }}>Notes:</p>
-                  <p style={{ margin: '4px 0 0 0', fontSize: '0.9rem', whiteSpace: 'pre-wrap' }}>{submission.reviewer_notes || submission.admin_notes}</p>
+                  <p style={{ margin: '4px 0 0 0', fontSize: '0.9rem', whiteSpace: 'pre-wrap' }}>{decisionNotes}</p>
                 </div>
               )}
             </div>

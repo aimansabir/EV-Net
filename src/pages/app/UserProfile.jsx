@@ -21,6 +21,7 @@ const UserProfile = () => {
   });
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
+  const verificationStatus = (user?.verificationStatus || 'draft').toLowerCase();
 
   const handleLogout = () => {
     logout();
@@ -165,21 +166,27 @@ const UserProfile = () => {
         </div>
 
         {/* Verification Status */}
-        <div className="glass-card" style={{ padding: '1.5rem', marginBottom: '1.5rem', background: user?.verificationStatus === 'approved' ? 'rgba(0, 210, 106, 0.05)' : 'var(--bg-card)' }}>
+        <div className="glass-card" style={{ padding: '1.5rem', marginBottom: '1.5rem', background: verificationStatus === 'approved' ? 'rgba(0, 210, 106, 0.05)' : 'var(--bg-card)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
               <h4 style={{ margin: '0 0 0.5rem 0' }}>Trust & Verification</h4>
-              {user?.verificationStatus === 'approved' ? (
+              {verificationStatus === 'approved' ? (
+                <p style={{ margin: 0, color: 'var(--brand-green)', fontSize: '0.85rem' }}>You are verified.</p>
+              ) : verificationStatus === 'approved' ? (
                 <p style={{ margin: 0, color: 'var(--brand-green)', fontSize: '0.85rem' }}>✅ Fully Verified EV User</p>
-              ) : user?.verificationStatus === 'under_review' ? (
+              ) : ['pending', 'under_review'].includes(verificationStatus) ? (
+                <p style={{ margin: 0, color: '#fbbf24', fontSize: '0.85rem' }}>Documents under review</p>
+              ) : ['pending', 'under_review'].includes(verificationStatus) ? (
                 <p style={{ margin: 0, color: '#fbbf24', fontSize: '0.85rem' }}>⏳ Documents Under Review</p>
+              ) : verificationStatus === 'rejected' ? (
+                <p style={{ margin: 0, color: '#f87171', fontSize: '0.85rem' }}>Verification rejected. Replace documents and resubmit.</p>
               ) : (
                 <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: '0.85rem' }}>Action required to unlock booking</p>
               )}
             </div>
-            {user?.verificationStatus !== 'approved' && (
+            {verificationStatus !== 'approved' && (
               <button className="btn btn-primary" style={{ padding: '0.4rem 1rem', fontSize: '0.85rem' }} onClick={() => navigate('/app/verification')}>
-                {user?.verificationStatus === 'under_review' ? 'View Status' : 'Complete Profile'}
+                {['pending', 'under_review'].includes(verificationStatus) ? 'View Status' : verificationStatus === 'rejected' ? 'Replace & Resubmit' : 'Complete Profile'}
               </button>
             )}
           </div>

@@ -17,11 +17,13 @@ const StatusBadge = ({ status, type = 'verification' }) => {
         config = { label: 'Draft', color: '#9CA3AF', bg: 'rgba(255,255,255,0.05)', icon: FileText };
         break;
       case VerificationStatus.PENDING_DOCS:
-      case 'pending':
         config = { label: 'Action Required', color: '#fbbf24', bg: 'rgba(251,191,36,0.1)', icon: AlertCircle };
         break;
+      case 'pending':
+        config = { label: 'Pending', color: '#fbbf24', bg: 'rgba(251,191,36,0.1)', icon: Clock };
+        break;
       case VerificationStatus.UNDER_REVIEW:
-        config = { label: 'Under Review', color: '#818cf8', bg: 'rgba(129,140,248,0.1)', icon: Clock };
+        config = { label: 'Pending', color: '#818cf8', bg: 'rgba(129,140,248,0.1)', icon: Clock };
         break;
       case VerificationStatus.APPROVED:
         config = { label: 'Verified', color: 'var(--brand-green)', bg: 'rgba(0,210,106,0.1)', icon: ShieldCheck };

@@ -64,7 +64,8 @@ const HostDashboard = () => {
     );
   }
 
-  const verificationStatus = dashboard.profile?.verificationStatus;
+  const verificationStatus = (dashboard.profile?.verificationStatus || 'draft').toLowerCase();
+  const isPendingVerification = ['pending', 'under_review'].includes(verificationStatus);
   const showVerificationBanner = verificationStatus && verificationStatus !== 'approved';
   const getListingStatus = (listing) => {
     if (!listing.setupFeePaid) return { label: 'Draft', bg: 'rgba(156,163,175,0.2)', color: '#9CA3AF' };
@@ -81,20 +82,22 @@ const HostDashboard = () => {
         {showVerificationBanner && (
           <div style={{
             padding: '1rem 1.5rem', borderRadius: '12px', marginBottom: '1.5rem',
-            background: verificationStatus === 'pending' ? 'rgba(251,191,36,0.1)' : verificationStatus === 'rejected' ? 'rgba(239,68,68,0.1)' : 'rgba(156,163,175,0.1)',
-            border: `1px solid ${verificationStatus === 'pending' ? 'rgba(251,191,36,0.3)' : verificationStatus === 'rejected' ? 'rgba(239,68,68,0.3)' : 'rgba(156,163,175,0.3)'}`,
+            background: isPendingVerification ? 'rgba(251,191,36,0.1)' : verificationStatus === 'rejected' ? 'rgba(239,68,68,0.1)' : 'rgba(156,163,175,0.1)',
+            border: `1px solid ${isPendingVerification ? 'rgba(251,191,36,0.3)' : verificationStatus === 'rejected' ? 'rgba(239,68,68,0.3)' : 'rgba(156,163,175,0.3)'}`,
             display: 'flex', justifyContent: 'space-between', alignItems: 'center',
           }}>
             <div>
-              <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '0.25rem', color: verificationStatus === 'pending' ? '#fbbf24' : verificationStatus === 'rejected' ? '#f87171' : '#9CA3AF' }}>
-                {verificationStatus === 'pending' ? <><Clock size={16} /> Verification Pending</> : verificationStatus === 'rejected' ? <><AlertCircle size={16} /> Verification Rejected</> : <><FileText size={16} /> Complete Your Profile</>}
+              <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '0.25rem', color: isPendingVerification ? '#fbbf24' : verificationStatus === 'rejected' ? '#f87171' : '#9CA3AF' }}>
+                {isPendingVerification ? <><Clock size={16} /> Verification Pending</> : verificationStatus === 'rejected' ? <><AlertCircle size={16} /> Verification Rejected</> : <><FileText size={16} /> Complete Your Profile</>}
               </div>
               <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                {verificationStatus === 'pending' ? 'Our team is reviewing your profile. This usually takes 1-2 business days.' : verificationStatus === 'rejected' ? 'Please update your details and resubmit.' : 'Complete onboarding to start receiving bookings.'}
+                {isPendingVerification ? 'Our team is reviewing your profile. This usually takes 1-2 business days.' : verificationStatus === 'rejected' ? 'Your host application was rejected. Please update your details and resubmit.' : 'Complete onboarding to start receiving bookings.'}
               </div>
             </div>
-            {verificationStatus === 'draft' && (
-              <button className="btn btn-primary" style={{ fontSize: '0.85rem', flexShrink: 0 }} onClick={() => navigate('/host/onboarding')}>Complete Setup</button>
+            {['draft', 'pending_docs', 'rejected'].includes(verificationStatus) && (
+              <button className="btn btn-primary" style={{ fontSize: '0.85rem', flexShrink: 0 }} onClick={() => navigate('/host/onboarding')}>
+                {verificationStatus === 'rejected' ? 'Edit & Resubmit' : 'Complete Setup'}
+              </button>
             )}
           </div>
         )}

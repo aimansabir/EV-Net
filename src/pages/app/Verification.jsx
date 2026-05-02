@@ -51,9 +51,10 @@ const Verification = () => {
 
   if (!user) return null;
 
-  const isUnderReview = user?.verificationStatus === VerificationStatus.UNDER_REVIEW;
+  const isUnderReview = [VerificationStatus.UNDER_REVIEW, 'pending'].includes(user?.verificationStatus);
   const isApproved = user?.verificationStatus === VerificationStatus.APPROVED;
   const isRejected = user?.verificationStatus === VerificationStatus.REJECTED;
+  const isHost = user?.role === 'HOST';
 
   const handleFileUpload = async (type, files) => {
     if (!files || files.length === 0) return;
@@ -232,8 +233,8 @@ const Verification = () => {
           <div style={{ background: 'rgba(0, 210, 106, 0.1)', border: '1px solid var(--brand-green)', padding: '1rem', borderRadius: '12px', marginBottom: '2rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
             <div style={{ color: 'var(--brand-green)' }}><CheckCircle size={24} /></div>
             <div>
-              <h4 style={{ margin: 0, color: 'var(--brand-green)' }}>Account Verified</h4>
-              <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: '0.9rem' }}>You have full booking access to the EV-Net network.</p>
+              <h4 style={{ margin: 0, color: 'var(--brand-green)' }}>{isHost ? 'Host verified' : 'You are verified.'}</h4>
+              <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: '0.9rem' }}>{isHost ? 'Your host account is verified.' : 'You have full booking access to the EV-Net network.'}</p>
             </div>
           </div>
         )}
@@ -253,7 +254,14 @@ const Verification = () => {
             <div style={{ color: '#ef4444' }}><AlertTriangle size={24} /></div>
             <div>
               <h4 style={{ margin: 0, color: '#ef4444' }}>Verification Rejected</h4>
-              <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Please review your documents and resubmit.</p>
+              <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+                {isHost ? 'Your host application was rejected. Please update your details and resubmit.' : 'Please review your documents and resubmit.'}
+              </p>
+              {isHost && (
+                <button className="btn btn-primary" style={{ marginTop: '0.75rem', padding: '0.45rem 0.9rem', fontSize: '0.85rem' }} onClick={() => navigate('/host/onboarding')}>
+                  Edit & Resubmit
+                </button>
+              )}
             </div>
           </div>
         )}
