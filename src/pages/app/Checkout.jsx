@@ -222,7 +222,7 @@ const Checkout = () => {
                       <div>
                         <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', textTransform: 'uppercase', fontWeight: 800, marginBottom: '2px' }}>Arrival Time</div>
                         <div style={{ fontSize: '1rem', fontWeight: 600 }}>{formatTime12h(startTime)}</div>
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '2px' }}>2 hr session window</div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '2px' }}>{duration} hr session window</div>
                       </div>
                     </div>
 

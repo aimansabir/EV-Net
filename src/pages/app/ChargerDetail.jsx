@@ -49,7 +49,8 @@ const ChargerDetail = () => {
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [slots, setSlots] = useState([]);
   const [selectedStart, setSelectedStart] = useState('');
-  const duration = 2;
+  const [duration, setDuration] = useState(2);
+  const [isDurationOpen, setIsDurationOpen] = useState(false);
   const [vehicleSize, setVehicleSize] = useState(VEHICLE_SIZES.SMALL);
   const [userBookings, setUserBookings] = useState([]);
   const [isStartOpen, setIsStartOpen] = useState(false);
@@ -117,6 +118,7 @@ const ChargerDetail = () => {
       if (!e.target.closest('.custom-dropdown-container')) {
         setIsStartOpen(false);
         setIsVehicleOpen(false);
+        setIsDurationOpen(false);
       }
     };
     window.addEventListener('mousedown', handleClickOutside);
@@ -663,40 +665,97 @@ const ChargerDetail = () => {
                         )}
                       </div>
 
-                      {/* Vehicle Size Selection — Responsive to Energy Pricing */}
-                      {hasEnergyPricing && (
-                        <div className="custom-dropdown-container" style={{ flex: 1.2, position: 'relative' }}>
+                      {/* Duration Dropdown */}
+                      <div className="custom-dropdown-container" style={{ flex: 0.7, position: 'relative' }}>
+                        <label style={{ display: 'block', fontSize: '0.65rem', color: 'var(--text-secondary)', marginBottom: '0.4rem', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 800 }}>Duration</label>
+                        <button
+                          onClick={() => setIsDurationOpen(!isDurationOpen)}
+                          type="button"
+                          style={{
+                            width: '100%',
+                            height: '64px',
+                            background: 'rgba(255,255,255,0.03)',
+                            border: `1px solid ${isDurationOpen ? 'var(--brand-green)' : 'var(--border-color)'}`,
+                            padding: '0.75rem 1rem',
+                            borderRadius: '12px',
+                            color: '#fff',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '8px',
+                            cursor: 'pointer',
+                            transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                            boxShadow: isDurationOpen ? '0 8px 16px rgba(0,0,0,0.3)' : 'none'
+                          }}
+                        >
+                          <span style={{ fontSize: '1rem', fontWeight: 700 }}>{duration} hr</span>
+                          <ChevronDown size={14} style={{ opacity: 0.3, marginLeft: 'auto', transform: isDurationOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+                        </button>
+
+                        {isDurationOpen && (
+                          <div style={{
+                            position: 'absolute', top: '100%', right: 0, width: '120px', marginTop: '10px',
+                            background: '#1a1a1a', border: '1px solid rgba(255,255,255,0.15)',
+                            borderRadius: '12px', overflow: 'hidden', zIndex: 9999,
+                            boxShadow: '0 20px 60px rgba(0,0,0,0.9)', backdropFilter: 'blur(40px)'
+                          }}>
+                            <div style={{ padding: '6px' }}>
+                              {[1, 2, 3, 4, 6, 8, 12].map(h => (
+                                <button
+                                  key={h}
+                                  onClick={() => { setDuration(h); setIsDurationOpen(false); }}
+                                  style={{
+                                    width: '100%', padding: '0.8rem', background: 'transparent',
+                                    border: 'none', color: duration === h ? 'var(--brand-green)' : '#fff',
+                                    textAlign: 'center', cursor: 'pointer', fontSize: '0.95rem',
+                                    borderRadius: '8px', transition: 'background 0.2s'
+                                  }}
+                                  onMouseOver={e => e.currentTarget.style.background = 'rgba(255,255,255,0.08)'}
+                                  onMouseOut={e => e.currentTarget.style.background = 'transparent'}
+                                >
+                                  {h} hr
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Row 3 — Vehicle Size */}
+                    {hasEnergyPricing && (
+                      <div className="custom-dropdown-container" style={{ width: '100%', position: 'relative' }}>
                           <label style={{ display: 'block', fontSize: '0.65rem', color: 'var(--text-secondary)', marginBottom: '0.4rem', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 800 }}>Vehicle</label>
                           <button
                             onClick={() => setIsVehicleOpen(!isVehicleOpen)}
                             style={{
                               width: '100%',
-                              height: '84px',
+                              height: '64px',
                               background: 'rgba(255,255,255,0.03)',
                               border: `1px solid ${isVehicleOpen ? 'var(--brand-green)' : 'var(--border-color)'}`,
-                              padding: '0.75rem',
+                              padding: '0.75rem 1.25rem',
                               borderRadius: '12px',
                               color: '#fff',
                               display: 'flex',
-                              flexDirection: 'column',
                               alignItems: 'center',
                               justifyContent: 'center',
-                              gap: '6px',
+                              gap: '12px',
                               cursor: 'pointer',
                               transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
                               boxShadow: isVehicleOpen ? '0 8px 16px rgba(0,0,0,0.3)' : 'none'
                             }}
                           >
-                            <Zap size={16} color="var(--brand-green)" />
-                            <span style={{ fontSize: '1rem', fontWeight: 600 }}>{vehicleSize === 'MEDIUM' ? 'Medium' : vehicleSize.charAt(0) + vehicleSize.slice(1).toLowerCase()}</span>
-                            <div style={{ fontSize: '0.75rem', color: 'var(--brand-cyan)', fontWeight: 600 }}>{ENERGY_BY_SIZE[vehicleSize]} kWh</div>
+                            <Zap size={18} color="var(--brand-green)" />
+                            <span style={{ fontSize: '1rem', fontWeight: 700 }}>{vehicleSize === 'MEDIUM' ? 'Medium-size' : vehicleSize.charAt(0) + vehicleSize.slice(1).toLowerCase()}</span>
+                            <div style={{ fontSize: '0.85rem', color: 'var(--brand-cyan)', fontWeight: 700, marginLeft: 'auto' }}>{ENERGY_BY_SIZE[vehicleSize]} kWh</div>
+                            <ChevronDown size={16} style={{ opacity: 0.3, marginLeft: '8px', transform: isVehicleOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
                           </button>
 
                           {isVehicleOpen && (
                             <div style={{
-                              position: 'absolute', top: '100%', right: 0, width: '310px', marginTop: '10px',
-                              background: 'rgba(18, 18, 18, 1)', border: '1px solid rgba(255,255,255,0.15)',
-                              borderRadius: '16px', overflow: 'hidden', zIndex: 1000,
+                              position: 'absolute', top: '100%', left: 0, width: '100%', marginTop: '10px',
+                              background: '#1a1a1a', border: '1px solid rgba(255,255,255,0.15)',
+                              borderRadius: '16px', overflow: 'hidden', zIndex: 9999,
                               boxShadow: '0 30px 80px rgba(0,0,0,0.95)', backdropFilter: 'blur(40px)'
                             }}>
                               <div style={{ padding: '8px' }}>
