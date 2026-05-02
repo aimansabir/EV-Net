@@ -2063,7 +2063,7 @@ export const adminService = {
   async getVerificationSubmissions() {
     let { data, error } = await supabase
       .from('verification_submissions')
-      .select('*, user:profiles!user_id(*, ev_profiles:ev_profiles!user_id(verification_status, updated_at), host_profiles:host_profiles!user_id(verification_status, moderation_notes, updated_at))')
+      .select('*, user:profiles!user_id(*, ev_profiles(*), host_profiles(*))')
       .order('submitted_at', { ascending: false });
     
     if (error) {

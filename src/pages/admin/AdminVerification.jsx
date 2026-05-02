@@ -73,17 +73,19 @@ const AdminVerification = () => {
     { label: 'Host Proofs', value: submissions.filter(s => (s.type || s.profile_type) === 'HOST').length, icon: Home, color: '#a78bfa' },
   ];
 
-  const filteredSubmissions = activeTab === 'Payments' 
-    ? payments.filter(p => isPendingStatus(p.status))
-    : submissions.filter(s => {
-        const type = (s.type || s.profile_type || '').toUpperCase();
-        if (activeTab === 'All') return true;
-        if (activeTab === 'Pending') return isPendingStatus(s.status);
-        if (activeTab === 'Hosts') return type === 'HOST';
-        if (activeTab === 'EV Users') return type === 'EV_USER';
-        if (activeTab === 'Rejected') return isRejectedStatus(s.status);
-        return true;
-    });
+  const allPending = [...submissions.filter(s => isPendingStatus(s.status)), ...payments.filter(p => isPendingStatus(p.status))];
+  const filteredSubmissions = activeTab === 'Pending' 
+    ? allPending
+    : activeTab === 'Payments'
+      ? payments.filter(p => isPendingStatus(p.status))
+      : submissions.filter(s => {
+          const type = (s.type || s.profile_type || '').toUpperCase();
+          if (activeTab === 'All') return true;
+          if (activeTab === 'Hosts') return type === 'HOST';
+          if (activeTab === 'EV Users') return type === 'EV_USER';
+          if (activeTab === 'Rejected') return isRejectedStatus(s.status);
+          return true;
+      });
 
   const handleReviewClick = (submission) => {
       setSelectedSubmission(submission);
