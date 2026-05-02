@@ -191,6 +191,7 @@ const HostOnboarding = () => {
         setProfile(prev => ({
           ...prev,
           phone: (shouldHydrateFromDB && draft.profile?.phone) ? draft.profile.phone : (prev.phone || user.phone || ''),
+          identityDoc: (shouldHydrateFromDB && draft.profile?.cnicNumber) ? draft.profile.cnicNumber : (prev.identityDoc || ''),
         }));
 
         if (listing?.id) {
@@ -319,6 +320,7 @@ const HostOnboarding = () => {
       await runStep('Initializing host profile', 'Initializing host profile...', () => hostService.promote(user.id));
       await runStep('Saving host profile', 'Saving host profile...', () => hostService.updateProfile(user.id, {
         phone: profile.phone,
+        cnic_number: profile.identityDoc,
         identity_verified: true
       }));
 

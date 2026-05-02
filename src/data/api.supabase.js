@@ -2710,6 +2710,7 @@ export const hostService = {
     return {
       profile: hostProfileRow ? {
         phone: hostProfileRow.phone || '',
+        cnicNumber: hostProfileRow.cnic_number || '',
         verificationStatus: hostProfileRow.verification_status || 'draft',
         identityVerified: isHostIdentitySubmitted(hostProfileRow, verificationDocs),
         cnicBackSubmitted: !!(hostProfileRow.cnic_back_submitted || verificationDocs.cnic_back_path),
