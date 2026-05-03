@@ -76,9 +76,11 @@ const Checkout = () => {
   const currentBand = getPricingBand(startTime);
   
   // Calculate Fees
-  const hasEnergyPricing = listing?.priceDayPerKwh !== undefined;
+  const energyFees = calculateEnergyBookingFees(vehicleSize, currentBand, listing.priceDayPerKwh, listing.priceNightPerKwh);
+  const hasEnergyPricing = !energyFees.isIncomplete;
+  
   const fees = hasEnergyPricing 
-    ? calculateEnergyBookingFees(vehicleSize, currentBand, listing.priceDayPerKwh, listing.priceNightPerKwh)
+    ? energyFees
     : calculateBookingFees(listing?.pricePerHour || 0, duration);
 
   const energyKwh = ENERGY_BY_SIZE[vehicleSize];

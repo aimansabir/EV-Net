@@ -169,7 +169,15 @@ export function calculateBookingFees(pricePerHour, hours) {
   const baseFee = pricePerHour * hours;
   const serviceFee = calculateServiceFee(baseFee);
   const totalFee = baseFee + serviceFee;
-  return { baseFee, serviceFee, totalFee };
+  return { 
+    baseFee, 
+    serviceFee, 
+    totalFee,
+    // Add compatibility aliases for the new fee model
+    baseCharge: baseFee,
+    userServiceFee: serviceFee,
+    userTotal: totalFee
+  };
 }
 
 /**
