@@ -21,12 +21,68 @@ const Checkout = () => {
   const { chargerId } = useParams();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const { user } = useAuthStore();
+  
   const [listing, setListing] = useState(null);
+  const [loading, setLoading] = useState(true);
   const [confirmed, setConfirmed] = useState(false);
   const [error, setError] = useState('');
   const [processing, setProcessing] = useState(false);
+  
+  const [paymentStep, setPaymentStep] = useState('summary'); // 'summary' | 'payment'
   const [paymentMethod, setPaymentMethod] = useState('BANK_TRANSFER'); // 'BANK_TRANSFER' | 'PAY_AFTER_CHARGING'
   const [proofFile, setProofFile] = useState(null);
+
+  // Extract params
+  const date = searchParams.get('date');
+  const startTime = searchParams.get('start');
+  const duration = parseInt(searchParams.get('duration') || '2');
+  const vehicleSize = searchParams.get('vehicleSize') || 'SMALL';
+
+  useEffect(() => {
+    const fetchListing = async () => {
+      try {
+        const data = await listingService.getById(chargerId);
+        setListing(data);
+      } catch (err) {
+        console.error(err);
+        setError('Failed to load charger details.');
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchListing();
+  }, [chargerId]);
+
+  const formatTime12h = (time24) => {
+    if (!time24) return '';
+    const [hStr, mStr] = time24.split(':');
+    let h = parseInt(hStr);
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    h = h % 12;
+    h = h === 0 ? 12 : h;
+    return `${h}:${mStr} ${ampm}`;
+  };
+
+  const getEndTime = (start, dur) => {
+    if (!start) return '';
+    const [h, m] = start.split(':').map(Number);
+    const endH = (h + dur) % 24;
+    return `${String(endH).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  };
+
+  const endTime = getEndTime(startTime, duration);
+  const isVehicleSizeValid = !!VEHICLE_SIZES[vehicleSize];
+  const currentBand = getPricingBand(startTime);
+  
+  // Calculate Fees
+  const hasEnergyPricing = listing?.priceDayPerKwh !== undefined;
+  const fees = hasEnergyPricing 
+    ? calculateEnergyBookingFees(vehicleSize, currentBand, listing.priceDayPerKwh, listing.priceNightPerKwh)
+    : calculateBookingFees(listing?.pricePerHour || 0, duration);
+
+  const energyKwh = ENERGY_BY_SIZE[vehicleSize];
+  const vehicleLabel = vehicleSize.charAt(0) + vehicleSize.slice(1).toLowerCase();
 
   const handleConfirm = async () => {
     if (processing) return;
@@ -85,6 +141,9 @@ const Checkout = () => {
     }
   };
 
+  if (loading) return <div className="section text-center"><div className="spinner" style={{ margin: '100px auto' }}></div></div>;
+  if (!listing) return <div className="section text-center"><h2 style={{ marginTop: '100px' }}>Charger not found</h2><button onClick={() => navigate('/app/explore')} className="btn btn-primary">Go Back</button></div>;
+
   return (
     <div className="section" style={{ minHeight: 'calc(100vh - 72px)', background: 'radial-gradient(circle at top right, rgba(0, 240, 255, 0.05), transparent 400px)' }}>
       <div className="container" style={{ maxWidth: '850px', paddingTop: '2rem', paddingBottom: '4rem' }}>
@@ -121,7 +180,7 @@ const Checkout = () => {
               </div>
             </div>
 
-                    {error && (
+            {error && (
               <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171', padding: '1.25rem', borderRadius: '16px', fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '14px' }}>
                 <AlertTriangle size={20} />
                 {error}
@@ -249,53 +308,48 @@ const Checkout = () => {
 
                   </div>
 
-                  {fees.isLegacy && (
-                    <div style={{ padding: '1rem', borderRadius: '12px', background: 'rgba(251, 191, 36, 0.05)', border: '1px solid rgba(251, 191, 36, 0.2)', marginBottom: '1.5rem' }}>
-                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#fbbf24', fontSize: '0.7rem', fontWeight: 900, textTransform: 'uppercase', marginBottom: '4px' }}>
-                         <AlertTriangle size={12} /> Legacy Listing
-                       </div>
-                       <p style={{ margin: 0, fontSize: '0.8rem', color: 'rgba(255,255,255,0.6)', lineHeight: 1.4 }}>
-                         This host uses legacy hourly pricing. Energy estimation is not available.
-                       </p>
-                    </div>
-                  )}
-
                   {paymentStep === 'payment' && (
-                    <div style={{ marginBottom: '2rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-                      <h4 style={{ fontSize: '0.9rem', fontWeight: 700, margin: 0, color: '#fff' }}>Payment Method</h4>
-                      
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '1rem', borderRadius: '14px', background: paymentMethod === 'BANK_TRANSFER' ? 'rgba(0,210,106,0.1)' : 'rgba(255,255,255,0.03)', border: paymentMethod === 'BANK_TRANSFER' ? '1px solid var(--brand-green)' : '1px solid var(--border-color)', cursor: 'pointer' }}>
-                          <input type="radio" name="payment" value="BANK_TRANSFER" checked={paymentMethod === 'BANK_TRANSFER'} onChange={() => setPaymentMethod('BANK_TRANSFER')} style={{ accentColor: 'var(--brand-green)' }} />
+                    <div style={{ marginBottom: '2.5rem', animation: 'fadeIn 0.4s ease' }}>
+                      <h4 style={{ fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--text-secondary)', fontWeight: 800, letterSpacing: '1px', marginBottom: '1.25rem' }}>Select Payment Method</h4>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                        <div 
+                          onClick={() => setPaymentMethod('BANK_TRANSFER')}
+                          style={{ padding: '1rem', borderRadius: '16px', border: paymentMethod === 'BANK_TRANSFER' ? '2px solid var(--brand-green)' : '1px solid var(--border-color)', background: paymentMethod === 'BANK_TRANSFER' ? 'rgba(0, 210, 106, 0.05)' : 'rgba(255,255,255,0.02)', cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: '12px' }}
+                        >
+                          <div style={{ width: '20px', height: '20px', borderRadius: '50%', border: '2px solid var(--brand-green)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            {paymentMethod === 'BANK_TRANSFER' && <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: 'var(--brand-green)' }} />}
+                          </div>
                           <div>
                             <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>Bank Transfer</div>
-                            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Upload proof now for instant confirmation.</div>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Submit screenshot after transfer</div>
                           </div>
-                        </label>
+                        </div>
 
-                        <label style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '1rem', borderRadius: '14px', background: paymentMethod === 'PAY_AFTER_CHARGING' ? 'rgba(0,210,106,0.1)' : 'rgba(255,255,255,0.03)', border: paymentMethod === 'PAY_AFTER_CHARGING' ? '1px solid var(--brand-green)' : '1px solid var(--border-color)', cursor: 'pointer' }}>
-                          <input type="radio" name="payment" value="PAY_AFTER_CHARGING" checked={paymentMethod === 'PAY_AFTER_CHARGING'} onChange={() => setPaymentMethod('PAY_AFTER_CHARGING')} style={{ accentColor: 'var(--brand-green)' }} />
+                        <div 
+                          onClick={() => setPaymentMethod('PAY_AFTER_CHARGING')}
+                          style={{ padding: '1rem', borderRadius: '16px', border: paymentMethod === 'PAY_AFTER_CHARGING' ? '2px solid var(--brand-cyan)' : '1px solid var(--border-color)', background: paymentMethod === 'PAY_AFTER_CHARGING' ? 'rgba(0, 240, 255, 0.05)' : 'rgba(255,255,255,0.02)', cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: '12px' }}
+                        >
+                          <div style={{ width: '20px', height: '20px', borderRadius: '50%', border: '2px solid var(--brand-cyan)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            {paymentMethod === 'PAY_AFTER_CHARGING' && <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: 'var(--brand-cyan)' }} />}
+                          </div>
                           <div>
                             <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>Pay After Charging</div>
-                            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Reserve now, pay after your session.</div>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Pay once the session ends</div>
                           </div>
-                        </label>
+                        </div>
                       </div>
 
                       {paymentMethod === 'BANK_TRANSFER' ? (
-                        <div style={{ marginTop: '1.5rem', padding: '1.5rem', background: 'rgba(255,255,255,0.02)', borderRadius: '16px', border: '1px dashed var(--border-color)' }}>
-                          <div style={{ marginBottom: '1.5rem' }}>
-                            <h5 style={{ fontSize: '0.8rem', color: 'var(--brand-green)', textTransform: 'uppercase', marginBottom: '10px', letterSpacing: '1px' }}>Transfer to EV-Net</h5>
-                            <div style={{ fontSize: '0.9rem', color: '#fff', lineHeight: 1.8 }}>
-                              <strong>Bank:</strong> Meezan Bank Ltd.<br />
-                              <strong>Name:</strong> EV-Net Solutions<br />
-                              <strong>Account #:</strong> 0210-XXXXXXXXXX<br />
-                              <strong>IBAN:</strong> PK21MEZNXXXXXXXXXXXXXXXX
-                            </div>
+                        <div style={{ marginTop: '1.5rem', padding: '1.25rem', borderRadius: '16px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-color)' }}>
+                          <h5 style={{ margin: '0 0 0.75rem', fontSize: '0.85rem', color: '#fff' }}>EV-Net Bank Details</h5>
+                          <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            <div>Bank: <strong>Meezan Bank Ltd.</strong></div>
+                            <div>Name: <strong>EV-Net Solutions</strong></div>
+                            <div>Account: <strong>0210-0104678901</strong></div>
+                            <div>IBAN: <strong>PK21 MEZN 0002 1001 0467 8901</strong></div>
                           </div>
-                          
-                          <div style={{ position: 'relative' }}>
-                            <label style={{ display: 'block', fontSize: '0.85rem', marginBottom: '8px', color: 'var(--text-secondary)' }}>Upload Payment Screenshot</label>
+                          <div style={{ marginTop: '1.25rem' }}>
+                            <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, marginBottom: '8px', color: 'var(--brand-green)' }}>UPLOAD PROOF</label>
                             <input 
                               type="file" 
                               accept="image/*"
