@@ -47,16 +47,18 @@ begin
 
   -- 5. Notification to User
   insert into public.notifications (
-    user_id, type, message, metadata
+    user_id, type, title, message, data
   ) values (
     v_booking.user_id, 
     'BOOKING_STATUS_UPDATE', 
+    'Booking confirmed',
     format('Your booking for %s has been confirmed!', v_listing_title),
     jsonb_build_object(
       'bookingId', p_booking_id,
       'booking_id', p_booking_id,
       'listingId', v_booking.listing_id,
       'route', '/app/bookings',
+      'hostRoute', '/host/bookings',
       'type', 'ACCEPT'
     )
   );
@@ -111,16 +113,18 @@ begin
 
   -- 5. Notification to User
   insert into public.notifications (
-    user_id, type, message, metadata
+    user_id, type, title, message, data
   ) values (
     v_booking.user_id, 
     'BOOKING_STATUS_UPDATE', 
+    'Booking declined',
     format('Your booking for %s was declined by the host.', v_listing_title),
     jsonb_build_object(
       'bookingId', p_booking_id,
       'booking_id', p_booking_id,
       'listingId', v_booking.listing_id,
       'route', '/app/bookings',
+      'hostRoute', '/host/bookings',
       'type', 'DECLINE'
     )
   );

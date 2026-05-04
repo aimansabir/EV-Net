@@ -190,12 +190,38 @@ BEGIN
   -- 5. Notifications
   BEGIN
     -- To User
-    INSERT INTO public.notifications (user_id, type, message, metadata)
-    VALUES (v_user_id, 'BOOKING_SUBMITTED', 'Booking submitted. Waiting for host confirmation.', jsonb_build_object('booking_id', v_booking_id, 'listing_id', p_listing_id));
+    INSERT INTO public.notifications (user_id, type, title, message, data)
+    VALUES (
+      v_user_id,
+      'BOOKING_SUBMITTED',
+      'Booking submitted',
+      'Booking submitted. Waiting for host confirmation.',
+      jsonb_build_object(
+        'bookingId', v_booking_id,
+        'booking_id', v_booking_id,
+        'listingId', p_listing_id,
+        'listing_id', p_listing_id,
+        'route', '/app/bookings',
+        'hostRoute', '/host/bookings'
+      )
+    );
     
     -- To Host
-    INSERT INTO public.notifications (user_id, type, message, metadata)
-    VALUES (v_host_id, 'NEW_BOOKING_REQUEST', 'New booking request for your listing.', jsonb_build_object('booking_id', v_booking_id, 'listing_id', p_listing_id));
+    INSERT INTO public.notifications (user_id, type, title, message, data)
+    VALUES (
+      v_host_id,
+      'NEW_BOOKING_REQUEST',
+      'New booking request',
+      'New booking request for your listing.',
+      jsonb_build_object(
+        'bookingId', v_booking_id,
+        'booking_id', v_booking_id,
+        'listingId', p_listing_id,
+        'listing_id', p_listing_id,
+        'route', '/app/bookings',
+        'hostRoute', '/host/bookings'
+      )
+    );
   EXCEPTION WHEN OTHERS THEN
     -- Don't fail booking if notification fails
     NULL;
@@ -242,8 +268,19 @@ BEGIN
   FROM public.bookings WHERE id = p_booking_id;
 
   -- Notify Host
-  INSERT INTO public.notifications (user_id, type, message, metadata)
-  VALUES (v_host_id, 'PAYMENT_PROOF_SUBMITTED', 'Payment proof uploaded for booking at ' || v_listing_title, jsonb_build_object('booking_id', p_booking_id));
+  INSERT INTO public.notifications (user_id, type, title, message, data)
+  VALUES (
+    v_host_id,
+    'PAYMENT_PROOF_SUBMITTED',
+    'Payment proof uploaded',
+    'Payment proof uploaded for booking at ' || v_listing_title,
+    jsonb_build_object(
+      'bookingId', p_booking_id,
+      'booking_id', p_booking_id,
+      'route', '/app/bookings',
+      'hostRoute', '/host/bookings'
+    )
+  );
 
 END;
 $$;
