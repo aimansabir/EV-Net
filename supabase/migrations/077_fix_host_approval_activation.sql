@@ -74,3 +74,18 @@ end;
 $$;
 
 grant execute on function public.admin_verify_host_v2(text, boolean, text) to authenticated;
+
+update public.listings l
+set
+  is_active = true,
+  is_approved = true,
+  setup_fee_paid = true,
+  updated_at = now()
+from public.host_profiles hp
+where hp.user_id = l.host_id
+  and lower(coalesce(hp.verification_status, '')) in ('approved', 'verified')
+  and (
+    l.is_active is distinct from true
+    or l.is_approved is distinct from true
+    or l.setup_fee_paid is distinct from true
+  );
