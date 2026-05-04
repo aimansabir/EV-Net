@@ -74,14 +74,22 @@ const Checkout = () => {
   const endTime = getEndTime(startTime, duration);
   const isVehicleSizeValid = !!VEHICLE_SIZES[vehicleSize];
   const currentBand = getPricingBand(startTime);
+  const dayRate = Number(listing?.priceDay ?? listing?.price_day_per_kwh ?? listing?.priceDayPerKwh);
+  const nightRate = Number(listing?.priceNight ?? listing?.price_night_per_kwh ?? listing?.priceNightPerKwh);
+  const legacyHourlyRate = Number(listing?.pricePerHour ?? listing?.price_per_hour ?? 0);
   
   // Calculate Fees
-  const energyFees = calculateEnergyBookingFees(vehicleSize, currentBand, listing.priceDayPerKwh, listing.priceNightPerKwh);
+  const energyFees = calculateEnergyBookingFees(
+    vehicleSize,
+    currentBand,
+    Number.isFinite(dayRate) ? dayRate : null,
+    Number.isFinite(nightRate) ? nightRate : null
+  );
   const hasEnergyPricing = !energyFees.isIncomplete;
   
   const fees = hasEnergyPricing 
     ? energyFees
-    : calculateBookingFees(listing?.pricePerHour || 0, duration);
+    : calculateBookingFees(legacyHourlyRate, duration);
 
   const energyKwh = ENERGY_BY_SIZE[vehicleSize];
   const vehicleLabel = vehicleSize.charAt(0) + vehicleSize.slice(1).toLowerCase();
@@ -125,7 +133,9 @@ const Checkout = () => {
         endTime,
         vehicleSize,
         paymentMethod,
-        paymentProofFile: proofFile
+        paymentProofFile: proofFile,
+        estimatedKwh: energyKwh,
+        pricingBand: currentBand
       });
       setConfirmed(true);
       setTimeout(() => navigate('/app/bookings'), 2500);
@@ -259,7 +269,7 @@ const Checkout = () => {
                       <div>
                         <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', textTransform: 'uppercase', fontWeight: 800, marginBottom: '2px' }}>Pricing Mode</div>
                         <div style={{ fontSize: '1rem', fontWeight: 600 }}>{hasEnergyPricing ? `${currentBand} Band` : 'Legacy Mode'}</div>
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '2px' }}>{hasEnergyPricing ? `${formatPKR(fees.rateUsed)} / kWh` : `${formatPKR(listing.pricePerHour)} / hr`}</div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '2px' }}>{hasEnergyPricing ? `${formatPKR(fees.rateUsed)} / kWh` : `${formatPKR(legacyHourlyRate)} / hr`}</div>
                       </div>
                     </div>
 

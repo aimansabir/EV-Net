@@ -14,11 +14,13 @@ const HostBookings = () => {
 
   const loadBookings = async () => {
     try {
+      setFetchLoading(true);
+      setError(null);
       const data = await bookingService.getByHost(user?.id);
       setBookings(data || []);
     } catch (err) {
       console.error("[EV-Net] Failed to load host bookings:", err);
-      setError("Failed to load bookings.");
+      setError(err.message || "Failed to load bookings.");
     } finally {
       setFetchLoading(false);
     }
@@ -27,10 +29,12 @@ const HostBookings = () => {
   useEffect(() => {
     if (user?.id) {
       loadBookings();
+    } else {
+      setFetchLoading(false);
     }
   }, [user]);
 
-  const filtered = filter === 'all' ? bookings : bookings.filter(b => b.status === filter.toUpperCase());
+  const filtered = filter === 'all' ? bookings : bookings.filter(b => String(b.status || '').toUpperCase() === filter.toUpperCase());
 
   const handleStatusChange = async (bookingId, newStatus) => {
     try {
@@ -52,6 +56,13 @@ const HostBookings = () => {
     PAY_AFTER_CHARGING: 'Pay After Charging'
   };
 
+  const statusColors = {
+    PENDING: { bg: 'rgba(251, 191, 36, 0.15)', color: '#fbbf24', label: 'Pending' },
+    CONFIRMED: { bg: 'rgba(0, 210, 106, 0.15)', color: '#00D26A', label: 'Confirmed' },
+    COMPLETED: { bg: 'rgba(0, 240, 255, 0.15)', color: '#00F0FF', label: 'Completed' },
+    CANCELLED: { bg: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', label: 'Cancelled' },
+  };
+
   const paymentStatusMap = {
     unpaid: { label: 'Unpaid', color: '#f87171' },
     pay_later: { label: 'Pay Later', color: 'var(--brand-cyan)' },
@@ -67,7 +78,14 @@ const HostBookings = () => {
   };
 
   if (fetchLoading) return <div className="section" style={{ minHeight: 'calc(100vh - 72px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><div style={{ color: 'var(--text-secondary)' }}>Loading...</div></div>;
-  if (error) return <div className="section" style={{ minHeight: 'calc(100vh - 72px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><div style={{ color: 'var(--brand-red)' }}>{error}</div></div>;
+  if (error) return (
+    <div className="section" style={{ minHeight: 'calc(100vh - 72px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ textAlign: 'center' }}>
+        <div style={{ color: 'var(--brand-red)', marginBottom: '1rem' }}>{error}</div>
+        <button className="btn btn-secondary" onClick={loadBookings}>Try Again</button>
+      </div>
+    </div>
+  );
 
   return (
     <div className="section" style={{ minHeight: 'calc(100vh - 72px)' }}>
@@ -86,22 +104,23 @@ const HostBookings = () => {
         {filtered.length === 0 ? (
           <div className="glass-card" style={{ padding: '4rem 2rem', textAlign: 'center' }}>
             <div style={{ marginBottom: '1rem', color: 'var(--text-secondary)', display: 'flex', justifyContent: 'center' }}><Bookmark size={48} strokeWidth={1.5} /></div>
-            <h3>No bookings found</h3>
+            <h3>No booking requests yet.</h3>
             <p style={{ color: 'var(--text-secondary)' }}>When users book your chargers, they'll appear here.</p>
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
             {filtered.map(booking => {
-              const status = statusColors[booking.status] || statusColors.PENDING;
-              const payStatus = paymentStatusMap[booking.paymentStatus] || { label: booking.paymentStatus, color: 'var(--text-secondary)' };
+              const bookingStatus = String(booking.status || 'PENDING').toUpperCase();
+              const status = statusColors[bookingStatus] || { bg: 'rgba(255,255,255,0.08)', color: 'var(--text-secondary)', label: bookingStatus };
+              const payStatus = paymentStatusMap[booking.paymentStatus] || { label: booking.paymentStatus || 'Not recorded', color: 'var(--text-secondary)' };
               const isUpdating = updatingId === booking.id;
               
               return (
                 <div key={booking.id} className="glass-card" style={{ padding: '1.5rem' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
                     <div>
-                      <h4 style={{ margin: 0 }}>{booking.user?.name || 'User'}</h4>
-                      <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', margin: '0.2rem 0' }}>{booking.listing?.title}</p>
+                      <h4 style={{ margin: 0 }}>{booking.user?.name || 'Guest'}</h4>
+                      <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', margin: '0.2rem 0' }}>{booking.listing?.title || 'Listing unavailable'}</p>
                     </div>
                     <div style={{ display: 'flex', gap: '8px' }}>
                       <span style={{ padding: '0.2rem 0.7rem', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 600, background: status.bg, color: status.color }}>{status.label}</span>
@@ -115,7 +134,7 @@ const HostBookings = () => {
                         {booking.date} • {booking.startTime} – {booking.endTime}
                       </div>
                       <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                        <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Method: <strong>{paymentMethodLabel[booking.paymentMethod] || booking.paymentMethod}</strong></span>
+                        <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Method: <strong>{paymentMethodLabel[booking.paymentMethod] || booking.paymentMethod || 'Not recorded'}</strong></span>
                         {booking.paymentProofPath && (
                           <a href={getProofUrl(booking.paymentProofPath)} target="_blank" rel="noopener noreferrer" style={{ fontSize: '0.75rem', color: 'var(--brand-cyan)', textDecoration: 'none', borderBottom: '1px solid var(--brand-cyan)' }}>View Proof</a>
                         )}
@@ -124,10 +143,10 @@ const HostBookings = () => {
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
                       <div style={{ textAlign: 'right' }}>
-                        <div style={{ color: 'var(--brand-green)', fontWeight: 700, fontSize: '1.05rem' }}>{formatPKR(booking.hostPayout)}</div>
+                        <div style={{ color: 'var(--brand-green)', fontWeight: 700, fontSize: '1.05rem' }}>{formatPKR(booking.hostPayout ?? booking.baseFee ?? 0)}</div>
                         <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>Payout</div>
                       </div>
-                      {booking.status === 'PENDING' && (
+                      {bookingStatus === 'PENDING' && (
                         <div style={{ display: 'flex', gap: '0.5rem' }}>
                           <button 
                             disabled={isUpdating}

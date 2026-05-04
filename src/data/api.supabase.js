@@ -1517,15 +1517,19 @@ export const bookingService = {
       const extension = file.name?.split('.').pop() || 'jpg';
       const filePath = `${user.id}/${Date.now()}_payment_proof.${extension}`;
       
-      const { error: uploadError } = await supabase.storage
-        .from('payment_proofs')
-        .upload(filePath, file);
+      try {
+        const { error: uploadError } = await supabase.storage
+          .from('payment_proofs')
+          .upload(filePath, file);
 
-      if (uploadError) throw uploadError;
-      proofPath = filePath;
+        if (uploadError) throw uploadError;
+        proofPath = filePath;
+      } catch (uploadError) {
+        console.warn('[EV-Net] Payment proof upload skipped; continuing with booking only:', uploadError.message);
+      }
     }
 
-    const { data: rpcBooking, error } = await supabase.rpc('create_booking', {
+    let { data: rpcBooking, error } = await supabase.rpc('create_booking', {
       p_listing_id: data.listingId,
       p_date: data.date,
       p_start_time: data.startTime + ':00',
@@ -1534,6 +1538,23 @@ export const bookingService = {
       p_payment_method: data.paymentMethod,
       p_payment_proof_path: proofPath
     });
+
+    if (error && (
+      error.code === 'PGRST202' ||
+      (error.message || '').includes('p_payment_method') ||
+      (error.message || '').includes('p_payment_proof_path')
+    )) {
+      console.warn('[EV-Net] create_booking payment RPC signature unavailable; retrying legacy booking RPC.');
+      ({ data: rpcBooking, error } = await supabase.rpc('create_booking', {
+        p_listing_id: data.listingId,
+        p_date: data.date,
+        p_start_time: data.startTime + ':00',
+        p_end_time: data.endTime + ':00',
+        p_vehicle_size: data.vehicleSize,
+        p_estimated_kwh: data.estimatedKwh ?? null,
+        p_pricing_band: data.pricingBand ?? null
+      }));
+    }
     
     if (error) throw new Error(error.message);
 
@@ -1555,8 +1576,8 @@ export const bookingService = {
     const result = {
       ...booking,
       listingId: booking.listing_id,
-      startTime: booking.start_time.substring(0, 5),
-      endTime: booking.end_time.substring(0, 5),
+      startTime: booking.start_time?.substring(0, 5) || '',
+      endTime: booking.end_time?.substring(0, 5) || '',
       // Map new fee fields with fallbacks
       baseFee: booking.base_fee ?? booking.total_fee ?? 0,
       userServiceFee: booking.user_service_fee ?? booking.service_fee ?? 0,
@@ -1566,8 +1587,8 @@ export const bookingService = {
       hostPayout: booking.host_payout ?? 0,
       estimatedKwh: booking.estimated_kwh,
       pricingBand: booking.pricing_band,
-      paymentMethod: booking.payment_method,
-      paymentStatus: booking.payment_status,
+      paymentMethod: booking.payment_method || data.paymentMethod || null,
+      paymentStatus: booking.payment_status || null,
       paymentProofPath: booking.payment_proof_path,
       createdAt: booking.created_at,
     };
@@ -1593,8 +1614,8 @@ export const bookingService = {
         ...b.listing,
         images: (b.listing.images || []).map(p => resolveListingPhotoUrl(p.storage_path))
       } : null,
-      startTime: b.start_time.substring(0, 5),
-      endTime: b.end_time.substring(0, 5),
+      startTime: b.start_time?.substring(0, 5) || '',
+      endTime: b.end_time?.substring(0, 5) || '',
       // New fee model fields with fallbacks
       baseFee: b.base_fee ?? b.total_fee ?? 0,
       userServiceFee: b.user_service_fee ?? b.service_fee ?? 0,
@@ -1610,6 +1631,8 @@ export const bookingService = {
   },
 
   async getByHost(hostId) {
+    if (!hostId) return [];
+
     // Note: RLS ensures users can only read bookings tied to their own listings
     const { data, error } = await supabase
       .from('bookings')
@@ -1619,26 +1642,31 @@ export const bookingService = {
     
     if (error) throw error;
     
-    return (data || []).map(b => ({
-      ...b,
-      listingId: b.listing_id,
-      userId: b.user_id,
-      startTime: b.start_time.substring(0, 5),
-      endTime: b.end_time.substring(0, 5),
-      // New fee model fields with fallbacks for display
-      baseFee: b.base_fee ?? b.total_fee ?? 0,
-      userServiceFee: b.user_service_fee ?? b.service_fee ?? 0,
-      hostPlatformFee: b.host_platform_fee ?? 0,
-      gatewayFee: b.gateway_fee ?? 0,
-      userTotal: b.total_user_price ?? b.total_fee ?? 0,
-      hostPayout: b.host_payout ?? 0,
-      pricingBand: b.pricing_band,
-      estimatedKwh: b.estimated_kwh,
-      paymentMethod: b.payment_method,
-      paymentStatus: b.payment_status,
-      paymentProofPath: b.payment_proof_path,
-      createdAt: b.created_at,
-    }));
+    return (data || []).map(b => {
+      const baseFee = b.base_fee ?? b.total_fee ?? 0;
+      const payout = b.host_payout ?? calculateHostPayout(baseFee).hostPayout ?? 0;
+
+      return {
+        ...b,
+        listingId: b.listing_id,
+        userId: b.user_id,
+        startTime: b.start_time?.substring(0, 5) || '',
+        endTime: b.end_time?.substring(0, 5) || '',
+        // New fee model fields with fallbacks for display
+        baseFee,
+        userServiceFee: b.user_service_fee ?? b.service_fee ?? 0,
+        hostPlatformFee: b.host_platform_fee ?? 0,
+        gatewayFee: b.gateway_fee ?? 0,
+        userTotal: b.total_user_price ?? b.total_fee ?? 0,
+        hostPayout: payout,
+        pricingBand: b.pricing_band,
+        estimatedKwh: b.estimated_kwh,
+        paymentMethod: b.payment_method || null,
+        paymentStatus: b.payment_status || null,
+        paymentProofPath: b.payment_proof_path || null,
+        createdAt: b.created_at,
+      };
+    });
   },
 
   async updateStatus(bookingId, status) {
@@ -2140,6 +2168,51 @@ export const adminService = {
 
       data = data.map(row => ({ ...row, user: usersById[row.user_id] || null }));
     }
+
+    const userIds = [...new Set((data || []).map(row => row.user_id).filter(Boolean))];
+    const [
+      { data: liveEvProfiles, error: liveEvError },
+      { data: liveHostProfiles, error: liveHostError },
+      { data: liveUsers, error: liveUsersError }
+    ] = userIds.length > 0
+      ? await Promise.all([
+          supabase
+            .from('ev_profiles')
+            .select('user_id, verification_status, updated_at')
+            .in('user_id', userIds),
+          supabase
+            .from('host_profiles')
+            .select('user_id, verification_status, moderation_notes, updated_at')
+            .in('user_id', userIds),
+          supabase
+            .from('profiles')
+            .select('id, name, email, avatar_url')
+            .in('id', userIds)
+        ])
+      : [
+          { data: [], error: null },
+          { data: [], error: null },
+          { data: [], error: null }
+        ];
+
+    if (liveEvError) console.warn('[EV-Net] Could not load live EV profile statuses:', liveEvError.message);
+    if (liveHostError) console.warn('[EV-Net] Could not load live host profile statuses:', liveHostError.message);
+    if (liveUsersError) console.warn('[EV-Net] Could not load live verification users:', liveUsersError.message);
+
+    const evProfilesByUserId = (liveEvProfiles || []).reduce((acc, profile) => {
+      acc[profile.user_id] = profile;
+      return acc;
+    }, {});
+
+    const hostProfilesByUserId = (liveHostProfiles || []).reduce((acc, profile) => {
+      acc[profile.user_id] = profile;
+      return acc;
+    }, {});
+
+    const usersById = (liveUsers || []).reduce((acc, profile) => {
+      acc[profile.id] = profile;
+      return acc;
+    }, {});
     
     const grouped = (data || []).reduce((acc, s) => {
       const rawType = (s.type || s.profile_type || '').toUpperCase();
@@ -2148,14 +2221,18 @@ export const adminService = {
 
       const key = `${s.user_id}_${profileType}`;
       if (!acc[key]) {
-        const u = s.user || {}; const evProfile = (Array.isArray(u.ev_profiles) ? u.ev_profiles[0] : u.ev_profiles) || (Array.isArray(s.ev_profiles) ? s.ev_profiles[0] : s.ev_profiles);
-        const hostProfile = (Array.isArray(u.host_profiles) ? u.host_profiles[0] : u.host_profiles) || (Array.isArray(s.host_profiles) ? s.host_profiles[0] : s.host_profiles);
+        const u = s.user || {};
+        const joinedEvProfile = (Array.isArray(u.ev_profiles) ? u.ev_profiles[0] : u.ev_profiles) || (Array.isArray(s.ev_profiles) ? s.ev_profiles[0] : s.ev_profiles);
+        const joinedHostProfile = (Array.isArray(u.host_profiles) ? u.host_profiles[0] : u.host_profiles) || (Array.isArray(s.host_profiles) ? s.host_profiles[0] : s.host_profiles);
+        const evProfile = evProfilesByUserId[s.user_id] || joinedEvProfile;
+        const hostProfile = hostProfilesByUserId[s.user_id] || joinedHostProfile;
+        const liveUser = usersById[s.user_id];
         
         acc[key] = {
           ...s,
-          user: s.user ? {
-            ...s.user,
-            avatar: s.user.avatar_url
+          user: s.user || liveUser ? {
+            ...(s.user || liveUser),
+            avatar: (s.user || liveUser)?.avatar_url
           } : null,
           profile_type: profileType,
           type: profileType,
@@ -2197,7 +2274,7 @@ export const adminService = {
       const notes = submission.moderationNotes || submission.reviewer_notes || submission.admin_notes || '';
 
       if (submission.profile_type === 'EV_USER') {
-        console.log('[EV-Net] admin normalized EV submission', {
+        console.log('[EV-Net] normalized admin EV submission', {
           email: submission.user?.email,
           evProfileStatus: submission.evProfileStatus,
           documentStatuses: submission.documentRows.map(dr => dr.status),
@@ -2301,9 +2378,20 @@ export const adminService = {
 // ─── ONBOARDING PAYMENT SERVICE ─────────────────────────
 
 async function markHostPaymentSetupComplete(userId, listingId = null) {
+  const { data: hostProfile } = await supabase
+    .from('host_profiles')
+    .select('verification_status')
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  const hostApproved = ['approved', 'verified'].includes(String(hostProfile?.verification_status || '').toLowerCase());
   let query = supabase
     .from('listings')
-    .update({ setup_fee_paid: true, is_active: false, is_approved: false })
+    .update({
+      setup_fee_paid: true,
+      is_active: hostApproved,
+      is_approved: hostApproved
+    })
     .eq('host_id', userId);
 
   if (listingId) query = query.eq('id', listingId);
