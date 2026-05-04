@@ -4,6 +4,48 @@ import { bookingService } from '../../data/api';
 import { formatPKR } from '../../data/feeConfig';
 import { Bookmark } from 'lucide-react';
 
+const BOOKING_STATUS_CONFIG = {
+  pending: {
+    label: 'Pending',
+    className: 'bg-yellow-500/15 text-yellow-300 border-yellow-500/30',
+    style: { background: 'rgba(251, 191, 36, 0.15)', color: '#fbbf24', borderColor: 'rgba(251, 191, 36, 0.3)' }
+  },
+  confirmed: {
+    label: 'Confirmed',
+    className: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30',
+    style: { background: 'rgba(0, 210, 106, 0.15)', color: '#00D26A', borderColor: 'rgba(0, 210, 106, 0.3)' }
+  },
+  accepted: {
+    label: 'Accepted',
+    className: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30',
+    style: { background: 'rgba(0, 210, 106, 0.15)', color: '#00D26A', borderColor: 'rgba(0, 210, 106, 0.3)' }
+  },
+  completed: {
+    label: 'Completed',
+    className: 'bg-blue-500/15 text-blue-300 border-blue-500/30',
+    style: { background: 'rgba(0, 240, 255, 0.15)', color: '#00F0FF', borderColor: 'rgba(0, 240, 255, 0.3)' }
+  },
+  declined: {
+    label: 'Declined',
+    className: 'bg-red-500/15 text-red-300 border-red-500/30',
+    style: { background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', borderColor: 'rgba(239, 68, 68, 0.3)' }
+  },
+  cancelled: {
+    label: 'Cancelled',
+    className: 'bg-red-500/15 text-red-300 border-red-500/30',
+    style: { background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', borderColor: 'rgba(239, 68, 68, 0.3)' }
+  }
+};
+
+const getBookingStatusConfig = (status) => {
+  const key = String(status || 'pending').toLowerCase();
+  return BOOKING_STATUS_CONFIG[key] || {
+    label: key ? key.replace(/_/g, ' ').toUpperCase() : 'Unknown',
+    className: 'bg-slate-500/15 text-slate-300 border-slate-500/30',
+    style: { background: 'rgba(255,255,255,0.08)', color: 'var(--text-secondary)', borderColor: 'rgba(148, 163, 184, 0.3)' }
+  };
+};
+
 const HostBookings = () => {
   const { user } = useAuthStore();
   const [bookings, setBookings] = useState([]);
@@ -20,7 +62,7 @@ const HostBookings = () => {
       setBookings(data || []);
     } catch (err) {
       console.error("[EV-Net] Failed to load host bookings:", err);
-      setError(err.message || "Failed to load bookings.");
+      setError("Could not load booking requests.");
     } finally {
       setFetchLoading(false);
     }
@@ -34,7 +76,7 @@ const HostBookings = () => {
     }
   }, [user]);
 
-  const filtered = filter === 'all' ? bookings : bookings.filter(b => String(b.status || '').toUpperCase() === filter.toUpperCase());
+  const filtered = filter === 'all' ? bookings : bookings.filter(b => String(b.status || 'pending').toLowerCase() === filter.toLowerCase());
 
   const handleStatusChange = async (bookingId, newStatus) => {
     try {
@@ -54,13 +96,6 @@ const HostBookings = () => {
   const paymentMethodLabel = {
     BANK_TRANSFER: 'Bank Transfer',
     PAY_AFTER_CHARGING: 'Pay After Charging'
-  };
-
-  const statusColors = {
-    PENDING: { bg: 'rgba(251, 191, 36, 0.15)', color: '#fbbf24', label: 'Pending' },
-    CONFIRMED: { bg: 'rgba(0, 210, 106, 0.15)', color: '#00D26A', label: 'Confirmed' },
-    COMPLETED: { bg: 'rgba(0, 240, 255, 0.15)', color: '#00F0FF', label: 'Completed' },
-    CANCELLED: { bg: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', label: 'Cancelled' },
   };
 
   const paymentStatusMap = {
@@ -110,8 +145,8 @@ const HostBookings = () => {
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
             {filtered.map(booking => {
-              const bookingStatus = String(booking.status || 'PENDING').toUpperCase();
-              const status = statusColors[bookingStatus] || { bg: 'rgba(255,255,255,0.08)', color: 'var(--text-secondary)', label: bookingStatus };
+              const bookingStatus = String(booking.status || 'pending').toLowerCase();
+              const statusConfig = getBookingStatusConfig(booking.status);
               const payStatus = paymentStatusMap[booking.paymentStatus] || { label: booking.paymentStatus || 'Not recorded', color: 'var(--text-secondary)' };
               const isUpdating = updatingId === booking.id;
               
@@ -123,7 +158,12 @@ const HostBookings = () => {
                       <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', margin: '0.2rem 0' }}>{booking.listing?.title || 'Listing unavailable'}</p>
                     </div>
                     <div style={{ display: 'flex', gap: '8px' }}>
-                      <span style={{ padding: '0.2rem 0.7rem', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 600, background: status.bg, color: status.color }}>{status.label}</span>
+                      <span
+                        className={statusConfig.className}
+                        style={{ padding: '0.2rem 0.7rem', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 600, border: '1px solid', ...statusConfig.style }}
+                      >
+                        {statusConfig.label}
+                      </span>
                       <span style={{ padding: '0.2rem 0.7rem', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 600, background: 'rgba(255,255,255,0.05)', color: payStatus.color, border: `1px solid ${payStatus.color}44` }}>{payStatus.label}</span>
                     </div>
                   </div>
@@ -146,7 +186,7 @@ const HostBookings = () => {
                         <div style={{ color: 'var(--brand-green)', fontWeight: 700, fontSize: '1.05rem' }}>{formatPKR(booking.hostPayout ?? booking.baseFee ?? 0)}</div>
                         <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>Payout</div>
                       </div>
-                      {bookingStatus === 'PENDING' && (
+                      {bookingStatus === 'pending' && (
                         <div style={{ display: 'flex', gap: '0.5rem' }}>
                           <button 
                             disabled={isUpdating}
