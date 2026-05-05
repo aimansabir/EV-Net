@@ -5,6 +5,19 @@ import useAuthStore from '../../store/authStore';
 import { messagingService } from '../../data/api';
 import '../app/Messages.css';
 
+const isBookingBackedConversation = (conversation) => Boolean(
+  conversation?.type === 'BOOKING' ||
+  conversation?.hasValidBooking ||
+  conversation?.isBookingBacked ||
+  conversation?.bookingId
+);
+
+const isLockedInquiry = (conversation) =>
+  conversation?.status === 'LOCKED' && !isBookingBackedConversation(conversation);
+
+const isClosedForMessaging = (conversation) =>
+  ['ARCHIVED', 'FLAGGED', 'CLOSED'].includes(conversation?.status);
+
 const HostMessages = () => {
   const { user } = useAuthStore();
   const [searchParams] = useSearchParams();
@@ -106,6 +119,9 @@ const HostMessages = () => {
   };
 
   const activeConv = conversations.find(c => c.id === activeConvId);
+  const activeIsBookingBacked = isBookingBackedConversation(activeConv);
+  const activeIsLockedInquiry = isLockedInquiry(activeConv);
+  const activeIsClosedForMessaging = isClosedForMessaging(activeConv);
 
   if (isLoading) return <div className="messages-loading"><div className="spinner"></div></div>;
 
@@ -139,7 +155,7 @@ const HostMessages = () => {
                         {conv.lastMessage?.type === 'SYSTEM' ? '[System Notice]' : conv.lastMessage?.content || 'No messages'}
                       </div>
                     </div>
-                    {conv.status === 'LOCKED' && <Lock size={14} className="status-icon locked" />}
+                    {isLockedInquiry(conv) && <Lock size={14} className="status-icon locked" />}
                   </div>
                 ))
               )}
@@ -159,12 +175,12 @@ const HostMessages = () => {
                     <div className="chat-subtitle">Re: {activeConv.listing?.title}</div>
                   </div>
                   <div className="chat-type-badge">
-                    {activeConv.type === 'INQUIRY' ? 'Pre-Booking Inquiry' : 'Booking Chat'}
+                    {activeIsBookingBacked ? 'Booking Chat' : 'Pre-Booking Inquiry'}
                   </div>
                 </div>
 
                 <div className="chat-messages">
-                  {activeConv.type === 'INQUIRY' && (
+                  {activeConv.type === 'INQUIRY' && !activeIsBookingBacked && (
                     <div className="safety-notice">
                       <ShieldAlert size={14} />
                       <span>Do not share exact address or phone before booking.</span>
@@ -207,7 +223,7 @@ const HostMessages = () => {
                 <div className="chat-input-area">
                   {error && <div className="chat-error">{error}</div>}
 
-                  {activeConv.extensionRequested && !activeConv.extensionApproved && (
+                  {activeConv.extensionRequested && !activeConv.extensionApproved && !activeIsBookingBacked && (
                     <div className="glass-card" style={{ padding: '1rem', marginBottom: '1rem', border: '1px solid var(--brand-green)', background: 'rgba(0, 210, 106, 0.05)' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem' }}>
                         <span style={{ fontSize: '0.9rem', fontWeight: 600 }}>Guest requested to continue this inquiry.</span>
@@ -218,14 +234,14 @@ const HostMessages = () => {
                     </div>
                   )}
 
-                  {activeConv.status === 'ARCHIVED' || activeConv.status === 'FLAGGED' || activeConv.status === 'CLOSED' ? (
+                  {activeIsClosedForMessaging ? (
                     <div className="chat-locked-notice">
                       <Lock size={16} />
                       <span>This conversation is {activeConv.status.toLowerCase()}. Replies are disabled.</span>
                     </div>
                   ) : (
                     <>
-                      {activeConv.status === 'LOCKED' && !activeConv.extensionApproved && (
+                      {activeIsLockedInquiry && !activeConv.extensionApproved && (
                         <div className="locked-badge-subtle" style={{ textAlign: 'center', fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.5rem', opacity: 0.7 }}>
                           <Lock size={12} style={{ marginRight: '4px' }} />
                           Guest reached limit. You can still reply to help them decide.
@@ -246,7 +262,7 @@ const HostMessages = () => {
                     </>
                   )}
 
-                  {activeConv.type === 'INQUIRY' && (
+                  {activeConv.type === 'INQUIRY' && !activeIsBookingBacked && (
                     <div className="inquiry-progress">
                       <Clock size={12} />
                       <span>Guests have a limited message count for inquiries. Your replies are always unlimited.</span>

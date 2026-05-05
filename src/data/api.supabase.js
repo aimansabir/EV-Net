@@ -18,6 +18,11 @@ let _cachedUser = null;
 let _userCacheTime = 0;
 const CACHE_TTL = 10000; // 10 seconds
 const VERIFICATION_BUCKET = 'verification_documents';
+const VALID_BOOKING_CHAT_STATUSES = new Set(['pending', 'confirmed', 'accepted', 'active', 'completed']);
+
+function hasValidBookingChatStatus(status) {
+  return VALID_BOOKING_CHAT_STATUSES.has(String(status || '').toLowerCase());
+}
 
 async function getAuthenticatedUser() {
   const now = Date.now();
@@ -1740,17 +1745,44 @@ export const messagingService = {
       .order('updated_at', { ascending: false });
 
     if (error) throw error;
+
+    const conversationRows = data || [];
+    const listingIds = [...new Set(conversationRows.map(c => c.listing_id).filter(Boolean))];
+    const driverIds = [...new Set(conversationRows.map(c => c.user_id).filter(Boolean))];
+    const validBookingPairs = new Set();
+
+    if (listingIds.length > 0 && driverIds.length > 0) {
+      const { data: bookings, error: bookingsError } = await supabase
+        .from('bookings')
+        .select('user_id, listing_id, status')
+        .in('listing_id', listingIds)
+        .in('user_id', driverIds);
+
+      if (bookingsError) {
+        console.warn('[EV-Net] Could not load booking-backed conversation state:', bookingsError.message);
+      } else {
+        (bookings || []).forEach(booking => {
+          if (hasValidBookingChatStatus(booking.status)) {
+            validBookingPairs.add(`${booking.user_id}:${booking.listing_id}`);
+          }
+        });
+      }
+    }
     
-    return data.map(c => {
+    return conversationRows.map(c => {
       // Sort embedded messages to find lastMessage
       const sortedMsgs = (c.messages || []).sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
       const isUser = c.user_id === userId;
+      const hasValidBooking = validBookingPairs.has(`${c.user_id}:${c.listing_id}`);
       
       return {
         ...c,
         listingId: c.listing_id,
         userId: c.user_id,
         hostId: c.host_id,
+        bookingId: c.booking_id,
+        hasValidBooking,
+        isBookingBacked: c.type === 'BOOKING' || hasValidBooking,
         messageCount: c.message_count,
         extensionRequested: c.extension_requested,
         extensionApproved: c.extension_approved,

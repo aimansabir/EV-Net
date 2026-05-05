@@ -29,6 +29,20 @@ let _notifications = [...seed.notifications];
 let _favorites = new Set(['listing_1', 'listing_3']); // Default favorites for demo
 let _onboardingPayments = [];
 
+const VALID_BOOKING_CHAT_STATUSES = new Set(['pending', 'confirmed', 'accepted', 'active', 'completed']);
+
+function hasValidBookingChatStatus(status) {
+  return VALID_BOOKING_CHAT_STATUSES.has(String(status || '').toLowerCase());
+}
+
+function hasValidBookingForConversation(conversation) {
+  return _bookings.some(booking =>
+    booking.userId === conversation.userId &&
+    booking.listingId === conversation.listingId &&
+    hasValidBookingChatStatus(booking.status)
+  );
+}
+
 // ─── AUTH SERVICE ───────────────────────────────────────
 
 export const authService = {
@@ -397,6 +411,18 @@ export const bookingService = {
     });
     _bookings.push(booking);
 
+    _conversations = _conversations.map(conversation => (
+      conversation.userId === data.userId && conversation.listingId === data.listingId
+        ? {
+            ...conversation,
+            type: 'BOOKING',
+            status: 'OPEN',
+            extensionApproved: true,
+            updatedAt: new Date().toISOString()
+          }
+        : conversation
+    ));
+
     // Notification Triggers
     if (listing) {
       notificationService.create({ userId: data.userId, type: 'BOOKING_SUBMITTED', message: `Booking submitted for ${listing.title}. Waiting for host confirmation.` });
@@ -442,6 +468,20 @@ export const bookingService = {
     const idx = _bookings.findIndex(b => b.id === bookingId);
     if (idx === -1) throw new Error('Booking not found');
     _bookings[idx].status = status;
+    if (hasValidBookingChatStatus(status)) {
+      const booking = _bookings[idx];
+      _conversations = _conversations.map(conversation => (
+        conversation.userId === booking.userId && conversation.listingId === booking.listingId
+          ? {
+              ...conversation,
+              type: 'BOOKING',
+              status: 'OPEN',
+              extensionApproved: true,
+              updatedAt: new Date().toISOString()
+            }
+          : conversation
+      ));
+    }
 
     // Notification Trigger
     const b = _bookings[idx];
@@ -940,6 +980,8 @@ export const messagingService = {
       .filter(c => c.userId === userId || c.hostId === userId)
       .map(c => ({
         ...c,
+        hasValidBooking: hasValidBookingForConversation(c),
+        isBookingBacked: c.type === 'BOOKING' || hasValidBookingForConversation(c),
         listing: _listings.find(l => l.id === c.listingId),
         user: _users.find(u => u.id === (c.userId === userId ? c.hostId : c.userId)), // the other party
         lastMessage: _messages.filter(m => m.conversationId === c.id).sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt))[0]
@@ -959,6 +1001,20 @@ export const messagingService = {
     const listing = _listings.find(l => l.id === listingId);
     if (!listing) throw new Error('Listing not found');
 
+    const existingBookingBacked = _conversations.find(c =>
+      c.listingId === listingId &&
+      c.userId === userId &&
+      hasValidBookingForConversation(c)
+    );
+
+    if (existingBookingBacked) {
+      existingBookingBacked.type = 'BOOKING';
+      existingBookingBacked.status = 'OPEN';
+      existingBookingBacked.extensionApproved = true;
+      existingBookingBacked.updatedAt = new Date().toISOString();
+      return existingBookingBacked;
+    }
+
     let conv = _conversations.find(c => c.listingId === listingId && c.userId === userId && c.type === 'INQUIRY');
     
     if (!conv) {
@@ -977,7 +1033,7 @@ export const messagingService = {
     await delay(200);
     const convIdx = _conversations.findIndex(c => c.id === conversationId);
     if (convIdx === -1) throw new Error('Conversation not found');
-    const conv = _conversations[convIdx];
+    let conv = _conversations[convIdx];
 
     const isHost = senderId === conv.hostId;
     const isUser = senderId === conv.userId;
@@ -985,6 +1041,16 @@ export const messagingService = {
     // Block logic
     if (conv.status === 'ARCHIVED' || conv.status === 'FLAGGED' || conv.status === 'CLOSED') {
       throw new Error(`Cannot send message. Conversation is ${conv.status}.`);
+    }
+
+    if (hasValidBookingForConversation(conv)) {
+      _conversations[convIdx] = {
+        ...conv,
+        type: 'BOOKING',
+        status: 'OPEN',
+        extensionApproved: true
+      };
+      conv = _conversations[convIdx];
     }
 
     if (conv.status === 'LOCKED' && !isHost) {
