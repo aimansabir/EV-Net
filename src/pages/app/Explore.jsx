@@ -112,17 +112,28 @@ const Explore = () => {
   const [chargers, setChargers] = useState([]);
   const [search, setSearch] = useState('');
   const [selectedId, setSelectedId] = useState(null);
+  const [loading, setLoading] = useState(true);
   const isMounted = true;
   const { favorites, loadFavorites, toggleFavorite } = useAppStore();
 
+
   useEffect(() => {
+    let cancelled = false;
     const load = async () => {
-      await loadFavorites();
-      const data = await listingService.getAll({ isActive: true, isApproved: true });
-      setChargers(data);
+      setLoading(true);
+      try {
+        await loadFavorites();
+        const data = await listingService.getAll({ isActive: true, isApproved: true });
+        if (!cancelled) setChargers(data);
+      } catch (err) {
+        console.error('[EV-Net] Failed to load explore listings:', err);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
     };
     load();
-  }, [loadFavorites]);
+    return () => { cancelled = true; };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const filters = [
     { key: 'All', label: 'All Chargers' },

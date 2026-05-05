@@ -15,20 +15,32 @@ const HostListings = () => {
   const [showPhotoModal, setShowPhotoModal] = useState(false);
   const [isUpdatingPhotos, setIsUpdatingPhotos] = useState(false);
 
+  const loadListings = async () => {
+    try {
+      setLoading(true);
+      const data = await listingService.getByHost(user?.id || 'host_ahsan');
+      setListings(data);
+    } catch (err) {
+      console.error("Failed to load listings:", err);
+      setListings([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const load = async () => {
-      try {
-        const data = await listingService.getByHost(user?.id || 'host_ahsan');
-        setListings(data);
-      } catch (err) {
-        console.error("Failed to load listings:", err);
-        setListings([]);
-      } finally {
-        setLoading(false);
+    loadListings();
+  }, [user?.id]);
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && user?.id) {
+        loadListings();
       }
     };
-    load();
-  }, [user]);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [user?.id]);
 
   const statusBadge = (listing) => {
     const setupFeePaid = listing.setupFeePaid ?? listing.setup_fee_paid;

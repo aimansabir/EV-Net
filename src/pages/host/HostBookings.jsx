@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import useAuthStore from '../../store/authStore';
 import { bookingService } from '../../data/api';
 import { formatPKR } from '../../data/feeConfig';
+import { supabase } from '../../lib/supabase';
 import { Bookmark } from 'lucide-react';
 
 const BOOKING_STATUS_CONFIG = {
@@ -54,7 +55,7 @@ const HostBookings = () => {
   const [error, setError] = useState(null);
   const [fetchLoading, setFetchLoading] = useState(true);
 
-  const loadBookings = async () => {
+  const loadBookings = useCallback(async () => {
     try {
       setFetchLoading(true);
       setError(null);
@@ -66,7 +67,7 @@ const HostBookings = () => {
     } finally {
       setFetchLoading(false);
     }
-  };
+  }, [user?.id]);
 
   useEffect(() => {
     if (user?.id) {
@@ -74,7 +75,18 @@ const HostBookings = () => {
     } else {
       setFetchLoading(false);
     }
-  }, [user]);
+  }, [user?.id, loadBookings]);
+
+  // Refetch when tab regains focus (stale data fix)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && user?.id) {
+        loadBookings();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [user?.id, loadBookings]);
 
   const filtered = filter === 'all' ? bookings : bookings.filter(b => String(b.status || 'pending').toLowerCase() === filter.toLowerCase());
 
@@ -109,7 +121,24 @@ const HostBookings = () => {
 
   const getProofUrl = (path) => {
     if (!path) return null;
-    return `https://yqomlyvshmqmrvstveps.supabase.co/storage/v1/object/public/payment_proofs/${path}`;
+    // If path is already a full URL, check if it's from the correct project
+    if (/^https?:\/\//.test(path)) {
+      const currentHost = (import.meta.env.VITE_SUPABASE_URL || '').replace(/^https?:\/\//, '').replace(/\/$/, '');
+      if (currentHost && path.includes(currentHost)) {
+        return path; // Already correct URL
+      }
+      // Wrong domain — try to extract relative path from the full URL
+      const match = path.match(/\/storage\/v1\/object\/public\/payment_proofs\/(.+)$/);
+      if (match) {
+        const relativePath = match[1];
+        const { data } = supabase.storage.from('payment_proofs').getPublicUrl(relativePath);
+        return data?.publicUrl || null;
+      }
+      return null; // Cannot resolve
+    }
+    // Relative path — build URL via storage client
+    const { data } = supabase.storage.from('payment_proofs').getPublicUrl(path);
+    return data?.publicUrl || null;
   };
 
   if (fetchLoading) return <div className="section" style={{ minHeight: 'calc(100vh - 72px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><div style={{ color: 'var(--text-secondary)' }}>Loading...</div></div>;
@@ -149,6 +178,7 @@ const HostBookings = () => {
               const statusConfig = getBookingStatusConfig(booking.status);
               const payStatus = paymentStatusMap[booking.paymentStatus] || { label: booking.paymentStatus || 'Not recorded', color: 'var(--text-secondary)' };
               const isUpdating = updatingId === booking.id;
+              const proofUrl = getProofUrl(booking.paymentProofPath);
               
               return (
                 <div key={booking.id} className="glass-card" style={{ padding: '1.5rem' }}>
@@ -176,7 +206,11 @@ const HostBookings = () => {
                       <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
                         <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Method: <strong>{paymentMethodLabel[booking.paymentMethod] || booking.paymentMethod || 'Not recorded'}</strong></span>
                         {booking.paymentProofPath && (
-                          <a href={getProofUrl(booking.paymentProofPath)} target="_blank" rel="noopener noreferrer" style={{ fontSize: '0.75rem', color: 'var(--brand-cyan)', textDecoration: 'none', borderBottom: '1px solid var(--brand-cyan)' }}>View Proof</a>
+                          proofUrl ? (
+                            <a href={proofUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: '0.75rem', color: 'var(--brand-cyan)', textDecoration: 'none', borderBottom: '1px solid var(--brand-cyan)' }}>View Proof</a>
+                          ) : (
+                            <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontStyle: 'italic' }}>Payment proof unavailable</span>
+                          )
                         )}
                       </div>
                     </div>

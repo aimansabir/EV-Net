@@ -68,16 +68,34 @@ const SignupHost = () => {
       return;
     }
 
+    // Safety timeout: reset loading after 30s no matter what
+    const safetyTimer = setTimeout(() => {
+      console.warn('[EV-Net][Signup] Safety timeout reached — resetting loading state');
+      useAuthStore.setState({ isLoading: false });
+      setLocalError('Signup is taking too long. Please check your internet connection and try again.');
+    }, 30000);
+
     try {
+      console.log('[EV-Net][Signup] starting host signup');
       const result = await signupHost({ ...formData, name: normalizedName, avatar: null });
+      console.log('[EV-Net][Signup] host signup completed', { verificationRequired: result?.verificationRequired });
       if (result?.verificationRequired) {
         setVerificationRequired(true);
         setIsSuccess(true);
-      } else {
+      } else if (result?.user || result?.success) {
         navigate('/host/onboarding');
+      } else {
+        // Edge case: result is truthy but has no useful data
+        console.warn('[EV-Net][Signup] Unexpected signup result:', result);
+        setLocalError('Account setup encountered an issue. Please try logging in.');
       }
-    } catch {
-      // error is set in store
+    } catch (err) {
+      console.error('[EV-Net][Signup] failed', err?.message || err);
+      if (!useAuthStore.getState().error) {
+        setLocalError(err?.message || 'Signup failed. Please try again.');
+      }
+    } finally {
+      clearTimeout(safetyTimer);
     }
   };
 

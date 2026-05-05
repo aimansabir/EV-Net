@@ -8,8 +8,7 @@ import '../app/Messages.css';
 const isBookingBackedConversation = (conversation) => Boolean(
   conversation?.type === 'BOOKING' ||
   conversation?.hasValidBooking ||
-  conversation?.isBookingBacked ||
-  conversation?.bookingId
+  conversation?.isBookingBacked
 );
 
 const isLockedInquiry = (conversation) =>

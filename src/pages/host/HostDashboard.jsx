@@ -12,21 +12,33 @@ const HostDashboard = () => {
   const [dashboard, setDashboard] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  const loadDashboard = async () => {
+    try {
+      setLoading(true);
+      const data = await hostService.getDashboard(user?.id || 'host_ahsan');
+      setDashboard(data);
+    } catch (err) {
+      console.error("[EV-Net] Failed to load host dashboard:", err);
+      setDashboard(null);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const load = async () => {
-      try {
-        const data = await hostService.getDashboard(user?.id || 'host_ahsan');
-        setDashboard(data);
-      } catch (err) {
-        console.error("Failed to load generic framework for dashboard", err);
-        setDashboard(null); // Wait, if dashboard is null, it displays "Loading dashboard...". 
-        // We should set a blank dashboard if it fails, or handle it in UI.
-      } finally {
-        setLoading(false);
+    loadDashboard();
+  }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Refetch when tab regains focus (stale data fix)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && user?.id) {
+        loadDashboard();
       }
     };
-    load();
-  }, [user]);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (loading) {
     return (

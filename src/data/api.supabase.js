@@ -18,7 +18,7 @@ let _cachedUser = null;
 let _userCacheTime = 0;
 const CACHE_TTL = 10000; // 10 seconds
 const VERIFICATION_BUCKET = 'verification_documents';
-const VALID_BOOKING_CHAT_STATUSES = new Set(['pending', 'confirmed', 'accepted', 'active', 'completed']);
+const VALID_BOOKING_CHAT_STATUSES = new Set(['confirmed', 'accepted', 'active', 'completed']);
 
 function hasValidBookingChatStatus(status) {
   return VALID_BOOKING_CHAT_STATUSES.has(String(status || '').toLowerCase());
@@ -454,6 +454,7 @@ export const authService = {
   },
 
   async signupUser(formData) {
+    console.log('[EV-Net][Signup] starting user signup');
     const normalizedName = normalizePersonName(formData.name);
     const normalizedEmail = formData.email.trim().toLowerCase();
 
@@ -462,6 +463,7 @@ export const authService = {
     if (checkError) {
       console.error("[EV-Net] email_exists check failed:", checkError);
     } else if (exists) {
+      console.log('[EV-Net][Signup] failed — duplicate email');
       throw new Error("An account with this email already exists. Please log in or reset your password.");
     }
 
@@ -479,7 +481,11 @@ export const authService = {
         },
       },
     });
-    if (error) throw new Error(friendlyAuthError(error));
+    if (error) {
+      console.error('[EV-Net][Signup] failed — auth error:', error.message);
+      throw new Error(friendlyAuthError(error));
+    }
+    console.log('[EV-Net][Signup] auth created');
 
     // If no session, email verification is likely required
     if (!data.session) {
@@ -515,6 +521,7 @@ export const authService = {
 
       evProfile = await syncEvEmailVerification(data.user.id, evProfile, data.user);
       const verificationDocs = await getLatestVerificationDocuments(data.user.id, 'EV_USER');
+      console.log('[EV-Net][Signup] profile created');
       return { 
         success: true, 
         user: mergeUserShape(profile, evProfile, null, data.user, verificationDocs)
@@ -523,6 +530,7 @@ export const authService = {
   },
 
   async signupHost(formData) {
+    console.log('[EV-Net][Signup] starting host signup');
     const normalizedName = normalizePersonName(formData.name);
     const normalizedEmail = formData.email.trim().toLowerCase();
 
@@ -531,6 +539,7 @@ export const authService = {
     if (checkError) {
       console.error("[EV-Net] email_exists check failed:", checkError);
     } else if (exists) {
+      console.log('[EV-Net][Signup] failed — duplicate email');
       throw new Error("An account with this email already exists. Please log in or reset your password.");
     }
 
@@ -545,7 +554,11 @@ export const authService = {
         },
       },
     });
-    if (error) throw new Error(friendlyAuthError(error));
+    if (error) {
+      console.error('[EV-Net][Signup] failed — auth error:', error.message);
+      throw new Error(friendlyAuthError(error));
+    }
+    console.log('[EV-Net][Signup] auth created');
 
     // If no session, email verification is likely required
     if (!data.session) {
@@ -567,10 +580,12 @@ export const authService = {
       }
 
       if (!hostProfile) {
+        console.error('[EV-Net][Signup] failed — host sub-profile not created');
         throw new Error('Host sub-profile could not be initialized. Please try logging in.');
       }
 
       const verificationDocs = await getLatestVerificationDocuments(data.user.id, 'HOST');
+      console.log('[EV-Net][Signup] profile created');
       return { 
         success: true, 
         user: mergeUserShape(profile, null, hostProfile, data.user, verificationDocs)
