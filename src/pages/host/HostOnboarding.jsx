@@ -69,11 +69,11 @@ const HostOnboarding = () => {
     amenities: [], houseRules: '',
     lat: null, lng: null
   });
-  
+
 
 
   const [pricing, setPricing] = useState({ priceDay: 40, priceNight: 60 });
-  
+
   // Refined Time State: Store as HH:mm internally
   const [timeState, setTimeState] = useState({
     start: '09:00',
@@ -87,7 +87,7 @@ const HostOnboarding = () => {
   const [schedule, setSchedule] = useState({
     days: { Mon: true, Tue: true, Wed: true, Thu: true, Fri: true, Sat: true, Sun: false },
   });
-  
+
   // File states
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [payment, setPayment] = useState({
@@ -270,7 +270,7 @@ const HostOnboarding = () => {
 
   const handlePublish = async () => {
     if (isSubmitting) return;
-    
+
     // Final validation check for Step 8
     if (!validateStep(8)) {
       console.warn("[EV-Net] handlePublish: Step 8 validation failed.");
@@ -349,7 +349,7 @@ const HostOnboarding = () => {
       console.log("[EV-Net] Checking for existing onboarding listing");
       setPublishStatus('Checking for existing listing...');
       let listingId = onboardingListingId || charger.listingId || localStorage.getItem('currentHostOnboardingListingId');
-      
+
       if (listingId) {
         const storedListing = await runStep(
           'Checking local onboarding listing',
@@ -397,26 +397,26 @@ const HostOnboarding = () => {
         listingId = newListing.id;
         console.log(`[EV-Net] Created listing: ${listingId}`);
       }
-      
+
       // Persist listingId in local state
       setOnboardingListingId(listingId);
       setCharger(prev => ({ ...prev, listingId }));
       localStorage.setItem('currentHostOnboardingListingId', listingId);
       await runStep('Checking duplicate listings', 'Checking for duplicate listings...', () => listingService.demoteDuplicateOnboardingListings({
-          hostId: user.id,
-          keepId: listingId,
-          title: listingTitle,
-          city: profile.city,
-          area: charger.area,
-          chargerType: charger.chargerType
-        })
+        hostId: user.id,
+        keepId: listingId,
+        title: listingTitle,
+        city: profile.city,
+        area: charger.area,
+        chargerType: charger.chargerType
+      })
       );
 
       // 2. Upload listing photos without duplicating existing rows on retry
       await runStep('Uploading listing photos', 'Uploading listing photos...', () => listingService.ensureOnboardingPhotos(listingId, user.id, [
-          ...chargerPhotos,
-          ...additionalPhotos
-        ]), 30000
+        ...chargerPhotos,
+        ...additionalPhotos
+      ]), 30000
       );
 
       // 3. Handle payment submission before finalizing host profile.
@@ -424,11 +424,11 @@ const HostOnboarding = () => {
       const hasNewPaymentProof = !!payment.screenshot && !payment.screenshot.existing;
       if (!hasExistingPayment || hasNewPaymentProof) {
         const paymentResult = await runStep('Recording payment proof', 'Recording payment proof...', () => hostService.submitOnboardingPayment(user.id, {
-            method: 'BANK_TRANSFER',
-            amount: feeBreakdown.total,
-            screenshot: payment.screenshot,
-            listingId
-          }), 30000
+          method: 'BANK_TRANSFER',
+          amount: feeBreakdown.total,
+          screenshot: payment.screenshot,
+          listingId
+        }), 30000
         );
         console.log("[EV-Net] Payment record created", paymentResult?.payment?.id || paymentResult);
       } else {
@@ -458,8 +458,8 @@ const HostOnboarding = () => {
       if (newPropertyProof?.file) {
         console.log("[EV-Net] Uploading property proof...");
         await runStep('Uploading property proof', 'Uploading verification documents...', () => verificationService.uploadDocument(user.id, 'HOST', 'PROPERTY_PROOF', newPropertyProof.file, {
-            updateProfileFlags: false
-          }), 30000
+          updateProfileFlags: false
+        }), 30000
         );
       } else if (!existingOnboarding.propertyProofUploaded && !propertyProofs.some(file => file?.existing)) {
         throw new Error('Property ownership proof is required.');
@@ -467,8 +467,8 @@ const HostOnboarding = () => {
       if (newChargerProof?.file) {
         console.log("[EV-Net] Uploading charger setup photo...");
         await runStep('Uploading charger proof', 'Uploading verification documents...', () => verificationService.uploadDocument(user.id, 'HOST', 'CHARGER_PROOF', newChargerProof.file, {
-            updateProfileFlags: false
-          }), 30000
+          updateProfileFlags: false
+        }), 30000
         );
       } else if (!existingOnboarding.chargerProofUploaded && !chargerPhotos.some(file => file?.existing)) {
         throw new Error('Charger setup proof is required.');
@@ -478,12 +478,12 @@ const HostOnboarding = () => {
       await runStep('Finalizing onboarding', 'Finalizing onboarding...', () => hostService.finalizeOnboarding());
       await reloadUser();
       console.log("[EV-Net] Submission complete");
-      
+
       // Clear draft on successful submit
       console.log("[EV-Net] Clearing draft and showing success step.");
       localStorage.removeItem(`host_onboarding_draft_${user.id}`);
       setPublishStatus('Your host application has been submitted and is under admin review.');
-      
+
       setStep(9); // Show success screen
     } catch (e) {
       console.error("[EV-Net] handlePublish failed at some step:", e);
@@ -545,7 +545,7 @@ const HostOnboarding = () => {
         step: nextStep
       };
       localStorage.setItem(`host_onboarding_draft_${user?.id}`, JSON.stringify(draft));
-      
+
       setStep(nextStep);
       setShowErrors(false);
       window.scrollTo(0, 0);
@@ -624,7 +624,7 @@ const HostOnboarding = () => {
             </button>
           </div>
         )}
-        
+
         {/* Progress Header */}
         <div style={{ marginBottom: '2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <div>
@@ -653,17 +653,17 @@ const HostOnboarding = () => {
         </div>
 
         <div className="glass-card" style={{ padding: '2.5rem' }}>
-          
+
           {/* Step 1: Profile */}
           {step === 1 && (
             <div className="animate-in" style={{ display: 'flex', flexDirection: 'column' }}>
               <h3 style={{ margin: '0 0 0.5rem 0' }}>Complete Your Profile</h3>
               <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', margin: '0 0 1.5rem 0' }}>Verify your identity to build trust with EV users.</p>
 
-              <ValidatedInput label="Full Name" value={user?.name || ''} disabled onChange={() => {}} />
-              <ValidatedInput label="Phone Number" format="phone" placeholder="03XXXXXXXXX" required value={profile.phone} onChange={v => setProfile({...profile, phone: v})} forceError={showErrors} />
-              <ValidatedInput label="CNIC Number" format="cnic" placeholder={existingOnboarding.identitySubmitted ? 'Previously submitted' : 'XXXXX-XXXXXXX-X'} required={!existingOnboarding.identitySubmitted} value={profile.identityDoc} onChange={v => setProfile({...profile, identityDoc: v})} forceError={showErrors && !existingOnboarding.identitySubmitted} />
-              
+              <ValidatedInput label="Full Name" value={user?.name || ''} disabled onChange={() => { }} />
+              <ValidatedInput label="Phone Number" format="phone" placeholder="03XXXXXXXXX" required value={profile.phone} onChange={v => setProfile({ ...profile, phone: v })} forceError={showErrors} />
+              <ValidatedInput label="CNIC Number" format="cnic" placeholder={existingOnboarding.identitySubmitted ? 'Previously submitted' : 'XXXXX-XXXXXXX-X'} required={!existingOnboarding.identitySubmitted} value={profile.identityDoc} onChange={v => setProfile({ ...profile, identityDoc: v })} forceError={showErrors && !existingOnboarding.identitySubmitted} />
+
               <div style={{ display: 'flex', gap: '1rem', marginTop: '1.5rem' }}>
                 <button className="btn btn-secondary" onClick={handleSaveAndExit} style={{ flex: 1 }}>Exit</button>
                 <button className="btn btn-primary" onClick={() => handleContinue(2)} style={{ flex: 1 }}>
@@ -681,17 +681,17 @@ const HostOnboarding = () => {
                 <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Search for your address and drag the pin to your exact parking spot.</p>
               </div>
 
-              <ListingLocationPicker 
+              <ListingLocationPicker
                 initialValue={charger.address}
                 initialLat={charger.lat || 31.5204}
                 initialLng={charger.lng || 74.3587}
                 onLocationChange={(loc) => {
-                  const updates = { 
+                  const updates = {
                     address: loc.address || charger.address,
-                    lat: loc.lat, 
-                    lng: loc.lng 
+                    lat: loc.lat,
+                    lng: loc.lng
                   };
-                  
+
                   // Update city/area when pin moves
                   if (loc.city) {
                     const normalized = normalizeCityName(loc.city);
@@ -700,7 +700,7 @@ const HostOnboarding = () => {
                   if (loc.area) {
                     updates.area = loc.area;
                   }
-                  
+
                   setCharger(prev => ({ ...prev, ...updates }));
                 }}
                 forceError={showErrors}
@@ -726,28 +726,28 @@ const HostOnboarding = () => {
 
               <div className="auth-row" style={{ display: 'flex', gap: '1rem', width: '100%', marginBottom: '1.25rem' }}>
                 <div style={{ flex: 1 }}>
-                  <SearchableSelect 
-                    label="City" 
-                    city={profile.city} 
-                    required 
-                    options={PakistanCitiesSorted.map(c => c.city)} 
-                    value={profile.city} 
+                  <SearchableSelect
+                    label="City"
+                    city={profile.city}
+                    required
+                    options={PakistanCitiesSorted.map(c => c.city)}
+                    value={profile.city}
                     onChange={v => {
-                      setProfile({...profile, city: v, area: ''});
-                    }} 
+                      setProfile({ ...profile, city: v, area: '' });
+                    }}
                   />
                 </div>
                 <div style={{ flex: 1 }}>
-                  <SearchableSelect 
-                    label="Area" 
-                    required 
-                    options={PakistanCitiesSorted.find(c => c.city === profile.city)?.areas || []} 
-                    placeholder={profile.city ? "Select area" : "Select city first"} 
-                    value={charger.area} 
+                  <SearchableSelect
+                    label="Area"
+                    required
+                    options={PakistanCitiesSorted.find(c => c.city === profile.city)?.areas || []}
+                    placeholder={profile.city ? "Select area" : "Select city first"}
+                    value={charger.area}
                     onChange={v => {
-                      setCharger({...charger, area: v});
-                    }} 
-                    disabled={!profile.city} 
+                      setCharger({ ...charger, area: v });
+                    }}
+                    disabled={!profile.city}
                   />
                   {showErrors && !charger.area && <p style={{ color: '#fb7185', fontSize: '0.75rem', marginTop: '0.4rem' }}>Area is required</p>}
                 </div>
@@ -755,7 +755,7 @@ const HostOnboarding = () => {
 
               <div className="auth-field" style={{ marginBottom: '1.25rem' }}>
                 <label>Description</label>
-                <textarea className="auth-input" rows={3} placeholder="Describe your setup..." value={charger.description} onChange={e => setCharger({...charger, description: e.target.value})} style={{ resize: 'vertical' }} />
+                <textarea className="auth-input" rows={3} placeholder="Describe your setup..." value={charger.description} onChange={e => setCharger({ ...charger, description: e.target.value })} style={{ resize: 'vertical' }} />
               </div>
               <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
                 <button className="btn btn-secondary" onClick={() => setStep(1)} style={{ flex: 1 }}>Back</button>
@@ -777,7 +777,7 @@ const HostOnboarding = () => {
                   {amenityOptions.map(a => {
                     const isSelected = charger.amenities.includes(a);
                     return (
-                      <button key={a} type="button" onClick={() => setCharger({...charger, amenities: isSelected ? charger.amenities.filter(x => x !== a) : [...charger.amenities, a]})}
+                      <button key={a} type="button" onClick={() => setCharger({ ...charger, amenities: isSelected ? charger.amenities.filter(x => x !== a) : [...charger.amenities, a] })}
                         style={{ padding: '0.5rem 1rem', borderRadius: '20px', border: isSelected ? '1px solid var(--brand-green)' : '1px solid var(--border-color)', background: isSelected ? 'rgba(0,210,106,0.15)' : 'transparent', color: isSelected ? 'var(--brand-green)' : 'var(--text-secondary)', cursor: 'pointer', fontSize: '0.85rem', transition: 'all 0.2s' }}>
                         {a}
                       </button>
@@ -787,7 +787,7 @@ const HostOnboarding = () => {
               </div>
               <div className="auth-field">
                 <label>House Rules (one per line)</label>
-                <textarea className="auth-input" rows={3} placeholder="e.g. Park in designated spot" value={charger.houseRules} onChange={e => setCharger({...charger, houseRules: e.target.value})} style={{ resize: 'vertical' }} />
+                <textarea className="auth-input" rows={3} placeholder="e.g. Park in designated spot" value={charger.houseRules} onChange={e => setCharger({ ...charger, houseRules: e.target.value })} style={{ resize: 'vertical' }} />
               </div>
               <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
                 <button className="btn btn-secondary" onClick={() => setStep(2)} style={{ flex: 1 }}>Back</button>
@@ -801,26 +801,26 @@ const HostOnboarding = () => {
             <div className="animate-in" style={{ display: 'flex', flexDirection: 'column' }}>
               <h3 style={{ margin: '0 0 0.5rem 0' }}>Upload Proof</h3>
               <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', margin: '0 0 1.5rem 0' }}>Maintain trust by verifying property ownership.</p>
-              <FileUploadDropzone 
-                label="Charger Setup Photo (Mandatory)" 
-                mode="image" 
-                files={chargerPhotos} 
-                onChange={setChargerPhotos} 
+              <FileUploadDropzone
+                label="Charger Setup Photo (Mandatory)"
+                mode="image"
+                files={chargerPhotos}
+                onChange={setChargerPhotos}
                 error={showErrors && chargerPhotos.length === 0 && !existingOnboarding.chargerProofUploaded ? "Charger setup photo is required" : ""}
               />
-              
-              <FileUploadDropzone 
-                label="Additional Photos (Optional - Socket, Driveway, etc.)" 
-                mode="image" 
-                multiple={true} 
-                files={additionalPhotos} 
-                onChange={setAdditionalPhotos} 
+
+              <FileUploadDropzone
+                label="Additional Photos (Optional - Socket, Driveway, etc.)"
+                mode="image"
+                multiple={true}
+                files={additionalPhotos}
+                onChange={setAdditionalPhotos}
               />
 
-              <FileUploadDropzone 
-                label="Property Proof (Bill/Deed)" 
-                files={propertyProofs} 
-                onChange={setPropertyProofs} 
+              <FileUploadDropzone
+                label="Property Proof (Bill/Deed)"
+                files={propertyProofs}
+                onChange={setPropertyProofs}
                 error={showErrors && propertyProofs.length === 0 && !existingOnboarding.propertyProofUploaded ? "Property ownership proof is required" : ""}
               />
               <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
@@ -837,38 +837,38 @@ const HostOnboarding = () => {
                 <h3 style={{ margin: '0 0 0.5rem 0' }}>Set Your Pricing</h3>
                 <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Choose fair rates per kWh. Solar availability makes day rates cheaper.</p>
               </div>
-              
+
               <div className="auth-field" style={{ marginBottom: '2rem' }}>
                 <label style={{ display: 'block', marginBottom: '0.8rem', opacity: 0.8, fontSize: '0.9rem', fontWeight: 600 }}>Charger Type <span style={{ color: 'var(--brand-cyan)' }}>*</span></label>
-                <select className="auth-select" value={charger.chargerType} onChange={e => setCharger({...charger, chargerType: e.target.value})} style={{ height: '44px', width: '100%', padding: '0 12px' }}>
+                <select className="auth-select" value={charger.chargerType} onChange={e => setCharger({ ...charger, chargerType: e.target.value })} style={{ height: '44px', width: '100%', padding: '0 12px' }}>
                   {Object.values(ChargerType).map(t => <option key={t}>{t}</option>)}
                 </select>
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginBottom: '2.5rem', alignItems: 'start' }}>
                 <div style={{ minWidth: 0 }}>
-                  <ValidatedInput 
-                    label="Day Rate" 
-                    format="money" 
-                    min={10} max={500} 
-                    required 
+                  <ValidatedInput
+                    label="Day Rate"
+                    format="money"
+                    min={10} max={500}
+                    required
                     compact
-                    value={pricing.priceDay} 
-                    onChange={v => setPricing({...pricing, priceDay: v})} 
+                    value={pricing.priceDay}
+                    onChange={v => setPricing({ ...pricing, priceDay: v })}
                     forceError={showErrors}
                   />
                   <p style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '-0.8rem', textAlign: 'center', opacity: 0.7 }}>08:00 AM - 08:00 PM</p>
                 </div>
 
                 <div style={{ minWidth: 0 }}>
-                  <ValidatedInput 
-                    label="Night Rate" 
-                    format="money" 
-                    min={10} max={500} 
-                    required 
+                  <ValidatedInput
+                    label="Night Rate"
+                    format="money"
+                    min={10} max={500}
+                    required
                     compact
-                    value={pricing.priceNight} 
-                    onChange={v => setPricing({...pricing, priceNight: v})} 
+                    value={pricing.priceNight}
+                    onChange={v => setPricing({ ...pricing, priceNight: v })}
                     forceError={showErrors}
                   />
                   <p style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', marginTop: '-0.8rem', textAlign: 'center', opacity: 0.7 }}>08:00 PM - 08:00 AM</p>
@@ -877,7 +877,7 @@ const HostOnboarding = () => {
 
               <div style={{ background: 'rgba(0,210,106,0.05)', border: '1px solid var(--border-color)', padding: '1.25rem', borderRadius: '12px', marginBottom: '2.5rem' }}>
                 <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text-secondary)', lineHeight: '1.6' }}>
-                  <strong style={{ color: '#fff' }}>Solar-First Network:</strong> Hosts typically set day rates ~30% lower to encourage daytime charging when solar yield is highest. 
+                  <strong style={{ color: '#fff' }}>Solar-First Network:</strong> Hosts typically set day rates ~30% lower to encourage daytime charging when solar yield is highest.
                   <br />
                   <span style={{ display: 'block', marginTop: '0.5rem' }}>
                     <strong style={{ color: '#fff' }}>You'll earn ~85%</strong> of the energy fee. Estimated day payout: <strong style={{ color: 'var(--brand-green)', fontSize: '1.1rem' }}>{formatPKR(Math.round((pricing.priceDay || 0) * 0.85))}/kWh</strong>
@@ -899,15 +899,15 @@ const HostOnboarding = () => {
                 <h3 style={{ margin: '0 0 0.5rem 0' }}>Available Days</h3>
                 <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Choose which days drivers can book your spot.</p>
               </div>
-              
+
               <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', justifyContent: 'center', marginBottom: '2.5rem' }}>
                 {Object.entries(schedule.days).map(([day, active]) => (
-                  <div key={day} onClick={() => setSchedule({...schedule, days: {...schedule.days, [day]: !active}})}
-                    style={{ 
-                      padding: '0.8rem 1.4rem', border: `1px solid ${active ? 'var(--brand-green)' : 'var(--border-color)'}`, 
-                      background: active ? 'rgba(0,210,106,0.15)' : 'transparent', 
-                      color: active ? 'var(--brand-green)' : 'var(--text-secondary)', 
-                      borderRadius: '12px', cursor: 'pointer', fontWeight: 600, transition: 'all 0.2s', fontSize: '0.95rem' 
+                  <div key={day} onClick={() => setSchedule({ ...schedule, days: { ...schedule.days, [day]: !active } })}
+                    style={{
+                      padding: '0.8rem 1.4rem', border: `1px solid ${active ? 'var(--brand-green)' : 'var(--border-color)'}`,
+                      background: active ? 'rgba(0,210,106,0.15)' : 'transparent',
+                      color: active ? 'var(--brand-green)' : 'var(--text-secondary)',
+                      borderRadius: '12px', cursor: 'pointer', fontWeight: 600, transition: 'all 0.2s', fontSize: '0.95rem'
                     }}>
                     {day}
                   </div>
@@ -922,12 +922,12 @@ const HostOnboarding = () => {
 
               <div style={{ textAlign: 'center', marginBottom: '2.5rem' }}>
                 <h3 style={{ margin: '0 0 1.5rem 0' }}>Service Hours</h3>
-                
+
                 <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', justifyContent: 'center' }}>
-                  <div 
+                  <div
                     onClick={() => { setActivePicker('start'); setModalOpen(true); }}
-                    style={{ 
-                      flex: 1, padding: '1.25rem', borderRadius: '16px', background: 'rgba(255,255,255,0.03)', 
+                    style={{
+                      flex: 1, padding: '1.25rem', borderRadius: '16px', background: 'rgba(255,255,255,0.03)',
                       border: '1px solid var(--border-color)', cursor: 'pointer', transition: 'all 0.2s'
                     }}
                     onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--brand-cyan)'}
@@ -936,13 +936,13 @@ const HostOnboarding = () => {
                     <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.4rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>From</span>
                     <span style={{ fontSize: '1.25rem', fontWeight: 700 }}>{formatDisplayTime(timeState.start)}</span>
                   </div>
-                  
+
                   <div style={{ color: 'var(--border-color)', fontSize: '1.5rem', fontWeight: 300 }}>&mdash;</div>
 
-                  <div 
+                  <div
                     onClick={() => { setActivePicker('end'); setModalOpen(true); }}
-                    style={{ 
-                      flex: 1, padding: '1.25rem', borderRadius: '16px', background: 'rgba(255,255,255,0.03)', 
+                    style={{
+                      flex: 1, padding: '1.25rem', borderRadius: '16px', background: 'rgba(255,255,255,0.03)',
                       border: '1px solid var(--border-color)', cursor: 'pointer', transition: 'all 0.2s'
                     }}
                     onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--brand-cyan)'}
@@ -959,7 +959,7 @@ const HostOnboarding = () => {
                   <ErrorMessage message="End time must be after start time" centered />
                 </div>
               )}
-              
+
               <div style={{ background: 'rgba(6, 182, 212, 0.05)', border: '1px solid rgba(6, 182, 212, 0.1)', padding: '1rem', borderRadius: '12px', display: 'flex', gap: '0.75rem', marginBottom: '2rem' }}>
                 <Info size={18} color="var(--brand-cyan)" style={{ flexShrink: 0, marginTop: '2px' }} />
                 <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', margin: 0, lineHeight: '1.5' }}>
@@ -1044,11 +1044,11 @@ const HostOnboarding = () => {
                   </p>
                   <div style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', lineHeight: '1.8' }}>
                     <p style={{ margin: 0 }}><strong style={{ color: 'var(--text-main)' }}>Bank:</strong> Meezan Bank Ltd.</p>
-                    <p style={{ margin: 0 }}><strong style={{ color: 'var(--text-main)' }}>Account Name:</strong> EV-Net Solutions</p>
-                    <p style={{ margin: 0 }}><strong style={{ color: 'var(--text-main)' }}>Account #:</strong> 0210-XXXXXXXXXX</p>
-                    <p style={{ margin: 0 }}><strong style={{ color: 'var(--text-main)' }}>IBAN:</strong> PK21MEZNXXXXXXXXXXXXXXXX</p>
+                    <p style={{ margin: 0 }}><strong style={{ color: 'var(--text-main)' }}>Account Name:</strong> MUHAMMAD ESHARIB BIN SAFWAN</p>
+                    <p style={{ margin: 0 }}><strong style={{ color: 'var(--text-main)' }}>Account #:</strong> 0030 0112950713</p>
+                    <p style={{ margin: 0 }}><strong style={{ color: 'var(--text-main)' }}>IBAN:</strong> PK15MEZN0000300112950713</p>
                   </div>
-                  </div>
+                </div>
               )}
 
               {/* Common Screenshot Upload for both methods */}
@@ -1082,8 +1082,8 @@ const HostOnboarding = () => {
           {/* Step 9: Success Message */}
           {step === 9 && (
             <div className="animate-in" style={{ textAlign: 'center', padding: '2rem 0' }}>
-              <div style={{ 
-                width: '80px', height: '80px', borderRadius: '50%', background: 'rgba(0,210,106,0.1)', 
+              <div style={{
+                width: '80px', height: '80px', borderRadius: '50%', background: 'rgba(0,210,106,0.1)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.5rem',
                 border: '1px solid rgba(0,210,106,0.2)'
               }}>
@@ -1108,9 +1108,9 @@ const HostOnboarding = () => {
           )}
         </div>
       </div>
-      
-      <TimePickerModal 
-        isOpen={modalOpen} 
+
+      <TimePickerModal
+        isOpen={modalOpen}
         onClose={() => setModalOpen(false)}
         activeValue={timeState[activePicker]}
         onSelect={(val) => setTimeState({ ...timeState, [activePicker]: val })}
