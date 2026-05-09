@@ -14,8 +14,13 @@ const useAppStore = create((set, get) => ({
 
   loadFavorites: async () => {
     if (get().favoritesLoaded) return;
-    const favs = await favoriteService.getAll();
-    set({ favorites: new Set(favs), favoritesLoaded: true });
+    try {
+      const favs = await favoriteService.getAll();
+      set({ favorites: new Set(favs), favoritesLoaded: true });
+    } catch (err) {
+      console.warn('[EV-Net] Favorites load failed:', err.message);
+      set({ favoritesLoaded: true });
+    }
   },
 
   toggleFavorite: async (listingId) => {

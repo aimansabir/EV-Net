@@ -1,12 +1,19 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { adminService } from '../../data/api';
 import { formatPKR } from '../../data/feeConfig';
 
 const AdminBookings = () => {
   const [bookings, setBookings] = useState([]);
   const [filter, setFilter] = useState('all');
+  const [verifyingId, setVerifyingId] = useState(null);
+  const [payoutId, setPayoutId] = useState(null);
 
-  useEffect(() => { adminService.getBookings().then(setBookings); }, []);
+  const loadBookings = useCallback(async () => {
+    const data = await adminService.getBookings();
+    setBookings(data);
+  }, []);
+
+  useEffect(() => { loadBookings(); }, [loadBookings]);
 
   const filtered = filter === 'all' ? bookings : bookings.filter(b => b.status === filter.toUpperCase());
 
@@ -23,12 +30,50 @@ const AdminBookings = () => {
     rejected: 'Payment Rejected',
   };
 
-  const handleMarkPaid = async (bookingId) => {
+  const getBookingStatusLabel = (booking) => {
+    if (booking.status === 'PENDING' && booking.payment_status === 'paid') {
+      return 'AWAITING HOST';
+    }
+    if (booking.status === 'PENDING' && booking.payment_status === 'proof_submitted') {
+      return 'AWAITING PAYMENT';
+    }
+    return booking.status || 'PENDING';
+  };
+
+  const handleVerifyPayment = async (booking) => {
+    if (verifyingId) return;
+    if (booking.payment_status !== 'proof_submitted') {
+      await loadBookings();
+      return;
+    }
+
     try {
+      setVerifyingId(booking.id);
+      await adminService.verifyPayment(booking.id);
+      await loadBookings();
+    } catch (err) {
+      const message = err.message || '';
+      if (message.includes('payment_status to be proof_submitted')) {
+        await loadBookings();
+      } else {
+        alert(message || 'Could not verify payment.');
+      }
+    } finally {
+      setVerifyingId(null);
+    }
+  };
+
+  const handleMarkPaid = async (bookingId) => {
+    if (payoutId) return;
+
+    try {
+      setPayoutId(bookingId);
       await adminService.markPayoutPaid(bookingId);
-      adminService.getBookings().then(setBookings);
+      await loadBookings();
     } catch (err) {
       alert(err.message);
+    } finally {
+      setPayoutId(null);
     }
   };
 
@@ -66,7 +111,7 @@ const AdminBookings = () => {
                   <td style={{ padding: '0.75rem', color: 'var(--text-secondary)' }}>{formatPKR((b.user_service_fee || 0) + (b.host_platform_fee || 0))}</td>
                   <td style={{ padding: '0.75rem', color: 'var(--brand-cyan)' }}>{formatPKR(b.host_payout || 0)}</td>
                   <td style={{ padding: '0.75rem' }}>
-                    <span style={{ padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600, background: `${statusColors[b.status]}20`, color: statusColors[b.status] }}>{b.status}</span>
+                    <span style={{ padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600, background: `${statusColors[b.status]}20`, color: statusColors[b.status] }}>{getBookingStatusLabel(b)}</span>
                   </td>
                   <td style={{ padding: '0.75rem' }}>
                     {b.payment_method === 'PAY_AFTER_CHARGING' && (
@@ -91,25 +136,20 @@ const AdminBookings = () => {
                   <td style={{ padding: '0.75rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                     {b.payment_status === 'proof_submitted' && (
                       <button
-                        onClick={async () => {
-                          try {
-                            await adminService.verifyPayment(b.id);
-                            adminService.getBookings().then(setBookings);
-                          } catch (err) {
-                            alert(err.message);
-                          }
-                        }}
-                        style={{ padding: '0.3rem 0.6rem', borderRadius: '4px', border: '1px solid var(--brand-cyan)', background: 'rgba(0,240,255,0.1)', color: 'var(--brand-cyan)', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600 }}
+                        disabled={!!verifyingId}
+                        onClick={() => handleVerifyPayment(b)}
+                        style={{ padding: '0.3rem 0.6rem', borderRadius: '4px', border: '1px solid var(--brand-cyan)', background: 'rgba(0,240,255,0.1)', color: 'var(--brand-cyan)', cursor: verifyingId ? 'not-allowed' : 'pointer', fontSize: '0.75rem', fontWeight: 600, opacity: verifyingId && verifyingId !== b.id ? 0.55 : 1 }}
                       >
-                        Verify Payment Received
+                        {verifyingId === b.id ? 'Verifying...' : 'Verify Payment Received'}
                       </button>
                     )}
                     {b.status === 'COMPLETED' && b.payment_status === 'paid' && b.payout_status === 'pending' && (
                       <button
+                        disabled={!!payoutId}
                         onClick={() => handleMarkPaid(b.id)}
-                        style={{ padding: '0.3rem 0.6rem', borderRadius: '4px', border: 'none', background: 'var(--brand-cyan)', color: '#000', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600 }}
+                        style={{ padding: '0.3rem 0.6rem', borderRadius: '4px', border: 'none', background: 'var(--brand-cyan)', color: '#000', cursor: payoutId ? 'not-allowed' : 'pointer', fontSize: '0.75rem', fontWeight: 600, opacity: payoutId && payoutId !== b.id ? 0.55 : 1 }}
                       >
-                        Mark Payout Paid
+                        {payoutId === b.id ? 'Marking...' : 'Mark Payout Paid'}
                       </button>
                     )}
                   </td>

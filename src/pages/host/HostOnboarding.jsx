@@ -92,8 +92,7 @@ const HostOnboarding = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [payment, setPayment] = useState({
     method: 'BANK_TRANSFER', // default
-    screenshot: null,
-    card: { number: '', expiry: '', cvc: '' }
+    screenshot: null
   });
 
   const [chargerPhotos, setChargerPhotos] = useState([]);

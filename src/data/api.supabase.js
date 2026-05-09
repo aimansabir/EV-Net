@@ -20,6 +20,14 @@ const CACHE_TTL = 10000; // 10 seconds
 const VERIFICATION_BUCKET = 'verification_documents';
 const PAYMENT_PROOF_BUCKET = 'payment_proofs';
 const VALID_BOOKING_CHAT_STATUSES = new Set(['confirmed', 'accepted', 'active', 'completed']);
+const LISTING_CACHE_TTL = 2 * 60 * 1000;
+const _listingCache = new Map();
+const _listingInflight = new Map();
+const DASHBOARD_CACHE_TTL = 30 * 1000;
+let _adminDashboardCache = null;
+let _adminDashboardInflight = null;
+const _hostDashboardCache = new Map();
+const _hostDashboardInflight = new Map();
 
 function hasValidBookingChatStatus(status) {
   return VALID_BOOKING_CHAT_STATUSES.has(String(status || '').toLowerCase());
@@ -405,7 +413,9 @@ export const authService = {
           await supabase.rpc('ensure_ev_profile', { p_user_id: userId });
           evProfile = await getEvProfile(userId);
         }
-        evProfile = await syncEvEmailVerification(userId, evProfile, authUser);
+        syncEvEmailVerification(userId, evProfile, authUser).catch(err => {
+          console.warn('[EV-Net] Email verification sync skipped:', err.message);
+        });
       } else if (profile.role === 'HOST') {
         hostProfile = await getHostProfile(userId);
         if (!hostProfile) {
@@ -415,14 +425,8 @@ export const authService = {
         }
       }
 
-      const verificationDocs = profile.role === 'USER'
-        ? await getLatestVerificationDocuments(userId, 'EV_USER')
-        : profile.role === 'HOST'
-          ? await getLatestVerificationDocuments(userId, 'HOST')
-          : {};
-
-      return { user: mergeUserShape(profile, evProfile, hostProfile, authUser, verificationDocs) };
-    })(), 10000);
+      return { user: mergeUserShape(profile, evProfile, hostProfile, authUser, {}) };
+    })(), 20000);
   },
 
   /**
@@ -633,34 +637,38 @@ export const authService = {
     try {
       const profile = await getProfile(userId);
       if (!profile) return null;
-      
-      let evProfile = null;
-      let hostProfile = null;
 
-      if (profile.role === 'USER') {
+      const profileType = profile.role === 'USER'
+        ? 'EV_USER'
+        : profile.role === 'HOST'
+          ? 'HOST'
+          : null;
+
+      const [roleProfile, authResult, verificationDocs] = await Promise.all([
+        profile.role === 'USER'
+          ? getEvProfile(userId)
+          : profile.role === 'HOST'
+            ? getHostProfile(userId)
+            : Promise.resolve(null),
+        getAuthenticatedUser(),
+        profileType ? getLatestVerificationDocuments(userId, profileType) : Promise.resolve({})
+      ]);
+
+      let evProfile = profile.role === 'USER' ? roleProfile : null;
+      let hostProfile = profile.role === 'HOST' ? roleProfile : null;
+
+      if (profile.role === 'USER' && !evProfile) {
+        await supabase.rpc('ensure_ev_profile', { p_user_id: userId });
         evProfile = await getEvProfile(userId);
-        if (!evProfile) {
-          await supabase.rpc('ensure_ev_profile', { p_user_id: userId });
-          evProfile = await getEvProfile(userId);
-        }
-      } else if (profile.role === 'HOST') {
+      } else if (profile.role === 'HOST' && !hostProfile) {
+        await supabase.rpc('ensure_host_profile', { p_user_id: userId });
         hostProfile = await getHostProfile(userId);
-        if (!hostProfile) {
-          await supabase.rpc('ensure_host_profile', { p_user_id: userId });
-          hostProfile = await getHostProfile(userId);
-        }
       }
 
-      const { data: { user: authUser } } = await getAuthenticatedUser();
+      const authUser = authResult?.data?.user || null;
       if (profile.role === 'USER') {
         evProfile = await syncEvEmailVerification(userId, evProfile, authUser);
       }
-
-      const verificationDocs = profile.role === 'USER'
-        ? await getLatestVerificationDocuments(userId, 'EV_USER')
-        : profile.role === 'HOST'
-          ? await getLatestVerificationDocuments(userId, 'HOST')
-          : {};
 
       return mergeUserShape(profile, evProfile, hostProfile, authUser, verificationDocs);
     } catch (err) {
@@ -787,6 +795,16 @@ export const listingService = {
   resolveListingPhotoUrl,
 
   async getAll(filters = {}) {
+    const cacheKey = JSON.stringify(filters || {});
+    const cached = _listingCache.get(cacheKey);
+    if (cached && Date.now() - cached.time < LISTING_CACHE_TTL) {
+      return cached.data;
+    }
+
+    if (_listingInflight.has(cacheKey)) {
+      return _listingInflight.get(cacheKey);
+    }
+
     let query = supabase
       .from('listings')
       .select(`
@@ -803,14 +821,14 @@ export const listingService = {
       `title.ilike.%${filters.search}%,area.ilike.%${filters.search}%,city.ilike.%${filters.search}%`
     );
 
-    try {
+    const request = (async () => {
       const { data, error } = await query.order('created_at', { ascending: false });
       if (error) {
         console.error("ListingService.getAll Error:", error);
         throw error;
       }
 
-      return (data || []).map(l => ({
+      const listings = (data || []).map(l => ({
         ...l,
         images: (l.listing_photos || [])
           .sort((a, b) => a.display_order - b.display_order)
@@ -829,9 +847,20 @@ export const listingService = {
         houseRules: l.house_rules,
         createdAt: l.created_at,
       }));
+
+      _listingCache.set(cacheKey, { data: listings, time: Date.now() });
+      return listings;
+    })();
+
+    _listingInflight.set(cacheKey, request);
+
+    try {
+      return await request;
     } catch (error) {
       console.error("listingService.getAll fetch failed", error);
       throw error;
+    } finally {
+      _listingInflight.delete(cacheKey);
     }
   },
 
@@ -1673,6 +1702,44 @@ export const bookingService = {
     }));
   },
 
+  async getById(bookingId) {
+    const { data: b, error } = await supabase
+      .from('bookings')
+      .select(`
+        *,
+        listing:listings ( id, title, area, city, images:listing_photos ( storage_path ) )
+      `)
+      .eq('id', bookingId)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!b) return null;
+
+    return {
+      ...b,
+      listingId: b.listing_id,
+      userId: b.user_id,
+      listing: b.listing ? {
+        ...b.listing,
+        images: (b.listing.images || []).map(p => resolveListingPhotoUrl(p.storage_path))
+      } : null,
+      startTime: b.start_time?.substring(0, 5) || '',
+      endTime: b.end_time?.substring(0, 5) || '',
+      baseFee: b.base_fee ?? b.total_fee ?? 0,
+      userServiceFee: b.user_service_fee ?? b.service_fee ?? 0,
+      hostPlatformFee: b.host_platform_fee ?? 0,
+      gatewayFee: b.gateway_fee ?? 0,
+      userTotal: b.total_user_price ?? b.total_fee ?? 0,
+      pricingBand: b.pricing_band,
+      estimatedKwh: b.estimated_kwh,
+      hostPayout: b.host_payout ?? 0,
+      paymentMethod: b.payment_method,
+      paymentStatus: b.payment_status,
+      paymentProofPath: b.payment_proof_path,
+      createdAt: b.created_at,
+    };
+  },
+
   async getByHost(hostId) {
     if (!hostId) return [];
 
@@ -2043,69 +2110,76 @@ export const messagingService = {
 
 export const adminService = {
   async getDashboard() {
-    // In prod, this would be a dedicated RPC 'get_admin_dashboard_stats' to avoid mass roundtrips.
-    // Simplifying with basic parallel queries for now since Admin Dashboard load is infrequent.
-    const [
-      { count: totalUsers },
-      { count: totalListings },
-      { count: activeListings },
-      { count: totalBookings },
-      { data: bookingMoneyRows }
-    ] = await Promise.all([
-      supabase.from('profiles').select('*', { count: 'exact', head: true }),
-      supabase.from('listings').select('*', { count: 'exact', head: true }),
-      supabase.from('listings').select('*', { count: 'exact', head: true }).eq('is_active', true).eq('is_approved', true),
-      supabase.from('bookings').select('*', { count: 'exact', head: true }),
-      supabase.from('bookings').select('status, payment_status, user_service_fee, host_platform_fee, host_payout, payout_status, total_user_price, total_fee')
-    ]);
+    const now = Date.now();
+    if (_adminDashboardCache && now - _adminDashboardCache.time < DASHBOARD_CACHE_TTL) {
+      return _adminDashboardCache.data;
+    }
+    if (_adminDashboardInflight) return _adminDashboardInflight;
 
-    const moneyRows = bookingMoneyRows || [];
-    const completedBookings = moneyRows.filter(b => b.status === 'COMPLETED' && b.payment_status === 'paid');
-    const totalRevenue = completedBookings.reduce((s, b) => s + (b.user_service_fee || 0) + (b.host_platform_fee || 0), 0);
-    const hostEarnings = completedBookings.reduce((s, b) => s + (b.host_payout || 0), 0);
-    const hostPayoutsDue = completedBookings.filter(b => b.payout_status === 'pending').reduce((s, b) => s + (b.host_payout || 0), 0);
-    const hostPayoutsPaid = moneyRows.filter(b => b.payout_status === 'paid_to_host').reduce((s, b) => s + (b.host_payout || 0), 0);
-    const totalCollected = completedBookings.reduce((s, b) => s + (b.total_user_price ?? b.total_fee ?? 0), 0);
+    _adminDashboardInflight = (async () => {
+      const [
+        { count: totalUsers },
+        { count: totalHosts },
+        { count: totalListings },
+        { count: activeListings },
+        { count: totalBookings },
+        { data: bookingMoneyRows },
+        { count: pendingEvCount },
+        { count: pendingHostCount },
+        { count: pendingPayments }
+      ] = await Promise.all([
+        supabase.from('profiles').select('*', { count: 'exact', head: true }),
+        supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('role', 'HOST'),
+        supabase.from('listings').select('*', { count: 'exact', head: true }),
+        supabase.from('listings').select('*', { count: 'exact', head: true }).eq('is_active', true).eq('is_approved', true),
+        supabase.from('bookings').select('*', { count: 'exact', head: true }),
+        supabase.from('bookings').select('status, payment_status, user_service_fee, host_platform_fee, host_payout, payout_status, total_user_price, total_fee'),
+        supabase
+          .from('ev_profiles')
+          .select('*', { count: 'exact', head: true })
+          .eq('verification_status', 'under_review'),
+        supabase
+          .from('host_profiles')
+          .select('*', { count: 'exact', head: true })
+          .in('verification_status', ['pending', 'under_review']),
+        supabase
+          .from('onboarding_payments')
+          .select('*', { count: 'exact', head: true })
+          .eq('status', 'pending')
+      ]);
 
-    // 1. Pending Verifications (live profile state is the source of truth)
-    const [{ count: pendingEvCount }, { count: pendingHostCount }] = await Promise.all([
-      supabase
-        .from('ev_profiles')
-        .select('*', { count: 'exact', head: true })
-        .eq('verification_status', 'under_review'),
-      supabase
-        .from('host_profiles')
-        .select('*', { count: 'exact', head: true })
-        .in('verification_status', ['pending', 'under_review'])
-    ]);
+      const moneyRows = bookingMoneyRows || [];
+      const completedBookings = moneyRows.filter(b => b.status === 'COMPLETED' && b.payment_status === 'paid');
+      const totalRevenue = completedBookings.reduce((s, b) => s + (b.user_service_fee || 0) + (b.host_platform_fee || 0), 0);
+      const hostEarnings = completedBookings.reduce((s, b) => s + (b.host_payout || 0), 0);
+      const hostPayoutsDue = completedBookings.filter(b => b.payout_status === 'pending').reduce((s, b) => s + (b.host_payout || 0), 0);
+      const hostPayoutsPaid = moneyRows.filter(b => b.payout_status === 'paid_to_host').reduce((s, b) => s + (b.host_payout || 0), 0);
+      const totalCollected = completedBookings.reduce((s, b) => s + (b.total_user_price ?? b.total_fee ?? 0), 0);
 
-    // 2. Pending Payments
-    const { count: pendingPayments } = await supabase
-      .from('onboarding_payments')
-      .select('*', { count: 'exact', head: true })
-      .eq('status', 'pending');
+      return {
+        totalUsers: totalUsers || 0,
+        totalHosts: totalHosts || 0,
+        totalListings: totalListings || 0,
+        activeListings: activeListings || 0,
+        pendingEvVerifications: pendingEvCount || 0,
+        pendingHostVerifications: pendingHostCount || 0,
+        pendingPayments: pendingPayments || 0,
+        totalBookings: totalBookings || 0,
+        totalRevenue,
+        hostEarnings,
+        hostPayoutsDue,
+        hostPayoutsPaid,
+        totalCollected
+      };
+    })();
 
-    // 3. Unique Hosts Count
-    const { count: totalHosts } = await supabase
-      .from('profiles')
-      .select('*', { count: 'exact', head: true })
-      .eq('role', 'HOST');
-
-    return {
-      totalUsers: totalUsers || 0,
-      totalHosts: totalHosts || 0,
-      totalListings: totalListings || 0,
-      activeListings: activeListings || 0,
-      pendingEvVerifications: pendingEvCount || 0,
-      pendingHostVerifications: pendingHostCount || 0,
-      pendingPayments: pendingPayments || 0,
-      totalBookings: totalBookings || 0,
-      totalRevenue,
-      hostEarnings,
-      hostPayoutsDue,
-      hostPayoutsPaid,
-      totalCollected
-    };
+    try {
+      const data = await _adminDashboardInflight;
+      _adminDashboardCache = { data, time: Date.now() };
+      return data;
+    } finally {
+      _adminDashboardInflight = null;
+    }
   },
 
   async markPayoutPaid(bookingId) {
@@ -2783,83 +2857,135 @@ export const onboardingPaymentService = {
 
 export const hostService = {
   async getDashboard(hostId) {
-    // 1. Fetch Host sub-profile (for verification status)
-    const hostProfileData = await getHostProfile(hostId);
-    const verificationDocs = await getLatestVerificationDocuments(hostId, 'HOST');
-    
-    // 2. Fetch Listings
-    const { data: listingsData, error: lError } = await supabase
-      .from('listings')
-      .select(`
-        *,
-        listing_photos ( id, storage_path, display_order )
-      `)
-      .eq('host_id', hostId);
-    
-    if (lError) throw lError;
-    
-    const listings = (listingsData || []).map(l => ({
-      ...l,
-      images: (l.listing_photos || [])
-        .sort((a, b) => a.display_order - b.display_order)
-        .map(p => resolveListingPhotoUrl(p.storage_path)),
-      pricePerHour: l.price_per_hour,
-      priceDay: l.price_day_per_kwh,
-      priceNight: l.price_night_per_kwh,
-      chargerType: l.charger_type,
-      isActive: l.is_active,
-      isApproved: l.is_approved,
-      setupFeePaid: l.setup_fee_paid,
-    }));
+    if (!hostId) return null;
 
-    const hostListingIds = listings.map(l => l.id);
+    const cached = _hostDashboardCache.get(hostId);
+    if (cached && Date.now() - cached.time < DASHBOARD_CACHE_TTL) {
+      return cached.data;
+    }
+    if (_hostDashboardInflight.has(hostId)) {
+      return _hostDashboardInflight.get(hostId);
+    }
 
-    // 3. Fetch Bookings
-    const { data: bookingsData, error: bError } = await (hostListingIds.length > 0 
-      ? supabase
-          .from('bookings')
-          .select('*, user:profiles!user_id(id, name, ev_profiles(ev_model))')
-          .in('listing_id', hostListingIds)
-          .order('date', { ascending: false })
-          .order('start_time', { ascending: false })
-      : Promise.resolve({ data: [], error: null }));
+    const request = (async () => {
+      const [
+        hostProfileData,
+        verificationDocs,
+        { data: listingsData, error: lError }
+      ] = await Promise.all([
+        getHostProfile(hostId),
+        getLatestVerificationDocuments(hostId, 'HOST'),
+        supabase
+          .from('listings')
+          .select(`
+            id,
+            title,
+            charger_type,
+            price_day_per_kwh,
+            price_night_per_kwh,
+            price_per_hour,
+            is_active,
+            is_approved,
+            setup_fee_paid,
+            rating,
+            listing_photos ( id, storage_path, display_order )
+          `)
+          .eq('host_id', hostId)
+      ]);
 
-    if (bError) throw bError;
+      if (lError) throw lError;
 
-    const completedBookings = (bookingsData || []).filter(b => b.status === 'COMPLETED' && b.payment_status === 'paid');
-    const upcomingBookingsData = (bookingsData || []).filter(b => b.status === 'CONFIRMED' || b.status === 'PENDING');
+      const listings = (listingsData || []).map(l => ({
+        ...l,
+        images: (l.listing_photos || [])
+          .sort((a, b) => a.display_order - b.display_order)
+          .map(p => resolveListingPhotoUrl(p.storage_path)),
+        pricePerHour: l.price_per_hour,
+        priceDay: l.price_day_per_kwh,
+        priceNight: l.price_night_per_kwh,
+        chargerType: l.charger_type,
+        isActive: l.is_active,
+        isApproved: l.is_approved,
+        setupFeePaid: l.setup_fee_paid,
+      }));
 
-    const totalEarnings = completedBookings.reduce((sum, b) => sum + (b.host_payout || 0), 0);
+      const hostListingIds = listings.map(l => l.id);
 
-    const upcomingBookings = upcomingBookingsData.slice(0, 5).map(b => ({
-      ...b,
-      date: b.date,
-      startTime: b.start_time.substring(0, 5),
-      endTime: b.end_time.substring(0, 5),
-      baseFee: b.base_fee,
-      user: {
-        name: b.user?.name || 'Guest',
-        evModel: b.user?.ev_profiles?.[0]?.ev_model || null
-      }
-    }));
+      const { data: bookingsData, error: bError } = await (hostListingIds.length > 0
+        ? supabase
+            .from('bookings')
+            .select(`
+              id,
+              listing_id,
+              user_id,
+              date,
+              start_time,
+              end_time,
+              status,
+              base_fee,
+              host_payout,
+              payment_status,
+              payout_status,
+              user:profiles!user_id(id, name, ev_profiles(ev_model))
+            `)
+            .in('listing_id', hostListingIds)
+            .order('date', { ascending: false })
+            .order('start_time', { ascending: false })
+        : Promise.resolve({ data: [], error: null }));
 
-    return {
-      totalEarnings,
-      activeBookingCount: upcomingBookingsData.length,
-      totalSessions: completedBookings.length,
-      listings,
-      upcomingBookings,
-      profile: {
-        id: hostId,
-        verificationStatus: hostProfileData?.verification_status || 'draft',
-        phoneVerified: hostProfileData?.phone_verified || false,
-        identityVerified: isHostIdentitySubmitted(hostProfileData, verificationDocs),
-        propertyProofUploaded: !!(hostProfileData?.property_proof_uploaded || verificationDocs.property_proof_path),
-        chargerProofUploaded: !!(hostProfileData?.charger_proof_uploaded || verificationDocs.charger_proof_path),
-        payoutSetupComplete: hostProfileData?.payout_setup_complete || false,
-      },
-      avgRating: listings.reduce((sum, l) => sum + l.rating, 0) / (listings.filter(l => l.rating > 0).length || 1),
-    };
+      if (bError) throw bError;
+
+      // Strict earnings: only COMPLETED + paid
+      const paidBookings = (bookingsData || []).filter(b => b.status === 'COMPLETED' && b.payment_status === 'paid');
+      // Pending verification: COMPLETED + proof_submitted (not counted as earnings)
+      const pendingVerificationBookings = (bookingsData || []).filter(b => b.status === 'COMPLETED' && b.payment_status === 'proof_submitted');
+      const upcomingBookingsData = (bookingsData || []).filter(b => ['CONFIRMED', 'ACCEPTED', 'PENDING'].includes(b.status));
+      
+      const totalEarnings = paidBookings.reduce((sum, b) => sum + (b.host_payout || b.base_fee || 0), 0);
+      const pendingVerificationAmount = pendingVerificationBookings.reduce((sum, b) => sum + (b.host_payout || b.base_fee || 0), 0);
+      const totalCompletedSessions = paidBookings.length + pendingVerificationBookings.length;
+
+      const upcomingBookings = upcomingBookingsData.slice(0, 5).map(b => ({
+        ...b,
+        date: b.date,
+        startTime: b.start_time?.substring(0, 5) || '',
+        endTime: b.end_time?.substring(0, 5) || '',
+        baseFee: b.base_fee,
+        user: {
+          name: b.user?.name || 'Guest',
+          evModel: b.user?.ev_profiles?.[0]?.ev_model || null
+        }
+      }));
+
+      return {
+        totalEarnings,
+        pendingVerificationAmount,
+        pendingVerificationCount: pendingVerificationBookings.length,
+        activeBookingCount: upcomingBookingsData.length,
+        totalSessions: totalCompletedSessions,
+        listings,
+        upcomingBookings,
+        profile: {
+          id: hostId,
+          verificationStatus: hostProfileData?.verification_status || 'draft',
+          phoneVerified: hostProfileData?.phone_verified || false,
+          identityVerified: isHostIdentitySubmitted(hostProfileData, verificationDocs),
+          propertyProofUploaded: !!(hostProfileData?.property_proof_uploaded || verificationDocs.property_proof_path),
+          chargerProofUploaded: !!(hostProfileData?.charger_proof_uploaded || verificationDocs.charger_proof_path),
+          payoutSetupComplete: hostProfileData?.payout_setup_complete || false,
+        },
+        avgRating: listings.reduce((sum, l) => sum + (l.rating || 0), 0) / (listings.filter(l => l.rating > 0).length || 1),
+      };
+    })();
+
+    _hostDashboardInflight.set(hostId, request);
+    try {
+      const data = await request;
+      _hostDashboardCache.set(hostId, { data, time: Date.now() });
+      return data;
+    } finally {
+      _hostDashboardInflight.delete(hostId);
+    }
   },
 
   async getEarnings(hostId) {
@@ -2873,13 +2999,13 @@ export const hostService = {
     if (lError) throw lError;
     const hostListingIds = (listings || []).map(l => l.id);
 
+    // Fetch ALL completed bookings (paid + proof_submitted)
     const { data: bookings, error: bError } = await (hostListingIds.length > 0 
       ? supabase
           .from('bookings')
           .select('*')
           .in('listing_id', hostListingIds)
           .eq('status', 'COMPLETED')
-          .eq('payment_status', 'paid')
       : Promise.resolve({ data: [], error: null }));
 
     if (bError) throw bError;
@@ -2887,36 +3013,46 @@ export const hostService = {
     let totalEarnings = 0;
     let pendingPayout = 0;
     let paidOut = 0;
+    let pendingVerificationAmount = 0;
+    let pendingVerificationCount = 0;
     const byMonth = {};
 
     (bookings || []).forEach(b => {
-      const hostPayout = b.host_payout || 0;
-      
-      totalEarnings += hostPayout;
-      if (b.payout_status === 'paid_to_host') {
-        paidOut += hostPayout;
-      } else {
-        pendingPayout += hostPayout;
+      const hostPayout = b.host_payout || b.base_fee || 0;
+      const monthKey = b.date ? b.date.substring(0, 7) : 'Unknown';
+
+      if (!byMonth[monthKey]) {
+        byMonth[monthKey] = { earnings: 0, pending: 0, paid: 0, sessions: 0, pendingVerification: 0 };
       }
 
-      const monthKey = b.date ? b.date.substring(0, 7) : 'Unknown';
-      if (!byMonth[monthKey]) {
-        byMonth[monthKey] = { earnings: 0, pending: 0, paid: 0, sessions: 0 };
+      if (b.payment_status === 'paid') {
+        // Real confirmed earnings
+        totalEarnings += hostPayout;
+        if (b.payout_status === 'paid_to_host') {
+          paidOut += hostPayout;
+          byMonth[monthKey].paid += hostPayout;
+        } else {
+          pendingPayout += hostPayout;
+          byMonth[monthKey].pending += hostPayout;
+        }
+        byMonth[monthKey].earnings += hostPayout;
+        byMonth[monthKey].sessions += 1;
+      } else if (b.payment_status === 'proof_submitted') {
+        // NOT counted as earnings — awaiting EV-Net verification
+        pendingVerificationAmount += hostPayout;
+        pendingVerificationCount += 1;
+        byMonth[monthKey].pendingVerification += hostPayout;
+        byMonth[monthKey].sessions += 1;
       }
-      byMonth[monthKey].earnings += hostPayout;
-      if (b.payout_status === 'paid_to_host') {
-        byMonth[monthKey].paid += hostPayout;
-      } else {
-        byMonth[monthKey].pending += hostPayout;
-      }
-      byMonth[monthKey].sessions += 1;
     });
 
     return {
       totalEarnings,
       pendingPayout,
       paidOut,
-      totalSessions: bookings?.length || 0,
+      pendingVerificationAmount,
+      pendingVerificationCount,
+      totalSessions: (bookings || []).filter(b => b.payment_status === 'paid' || b.payment_status === 'proof_submitted').length,
       byMonth
     };
   },
@@ -3062,19 +3198,47 @@ export const reviewService = {
   },
 
   async create(data) {
+    const insertPayload = {
+      author_id: data.authorId,
+      listing_id: data.listingId,
+      rating: data.rating,
+      comment: data.comment,
+    };
+    // booking_id is required by RLS policy for insert
+    if (data.bookingId) insertPayload.booking_id = data.bookingId;
+
     const { data: review, error } = await supabase
       .from('reviews')
-      .insert({
-        author_id: data.authorId,
-        listing_id: data.listingId,
-        rating: data.rating,
-        comment: data.comment
-      })
+      .insert(insertPayload)
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) {
+      // Unique constraint violation = already reviewed
+      if (error.code === '23505') {
+        throw new Error('You have already reviewed this booking.');
+      }
+      throw error;
+    }
     return review;
+  },
+
+  /**
+   * Check if a user has already reviewed a specific booking.
+   */
+  async hasReviewedBooking(userId, bookingId) {
+    if (!userId || !bookingId) return false;
+    const { data, error } = await supabase
+      .from('reviews')
+      .select('id')
+      .eq('author_id', userId)
+      .eq('booking_id', bookingId)
+      .maybeSingle();
+    if (error) {
+      console.warn('[EV-Net] hasReviewedBooking check failed:', error.message);
+      return false;
+    }
+    return !!data;
   }
 };
 

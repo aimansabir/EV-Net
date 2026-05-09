@@ -15,6 +15,7 @@ import Explore from './pages/app/Explore';
 import ChargerDetail from './pages/app/ChargerDetail';
 const Checkout = React.lazy(() => import('./pages/app/Checkout'));
 import Bookings from './pages/app/Bookings';
+const BookingDetail = React.lazy(() => import('./pages/app/BookingDetail'));
 import Favorites from './pages/app/Favorites';
 import UserProfile from './pages/app/UserProfile';
 import Verification from './pages/app/Verification';
@@ -95,6 +96,11 @@ function App() {
         <Route path="/app/bookings" element={
           <ProtectedRoute allowedRoles={['user', 'admin']}>
             <AppLayout><Bookings /></AppLayout>
+          </ProtectedRoute>
+        } />
+        <Route path="/app/bookings/:bookingId" element={
+          <ProtectedRoute allowedRoles={['user', 'admin']}>
+            <AppLayout><BookingDetail /></AppLayout>
           </ProtectedRoute>
         } />
         <Route path="/app/favorites" element={

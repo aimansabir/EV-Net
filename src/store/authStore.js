@@ -10,7 +10,7 @@ import { authService } from '../data/api.js';
 
 const STORAGE_KEY = 'EV-Net_auth';
 const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true';
-const AUTH_TIMEOUT_MS = 5000;
+const AUTH_TIMEOUT_MS = 12000;
 
 function withAuthTimeout(promise, label, timeoutMs = AUTH_TIMEOUT_MS) {
   let timeoutId;
@@ -70,6 +70,8 @@ const useAuthStore = create((set, get) => ({
     if (!options.force && get()._initPromise) return get()._initPromise;
 
     const promise = (async () => {
+      const persisted = loadPersistedAuth();
+
       // Clean up any existing subscription on re-init
       const existingSub = get()._authSubscription;
       if (existingSub) {
@@ -134,7 +136,6 @@ const useAuthStore = create((set, get) => ({
           return;
         }
 
-        const persisted = loadPersistedAuth();
         if (persisted.user) {
           // Provisionally trust persisted state for mock speed
           set({ ...persisted, isInitialized: true });
@@ -193,7 +194,9 @@ const useAuthStore = create((set, get) => ({
       }
     } catch (err) {
       console.warn('[EV-Net][Auth] timeout/fallback', err.message);
-      if (!USE_MOCK) {
+      if (persisted.user) {
+        set({ ...persisted, isInitialized: true, isAuthHydrating: false, error: null });
+      } else if (!USE_MOCK) {
         get()._clearAuth();
       }
     } finally {

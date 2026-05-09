@@ -19,7 +19,16 @@ const AdminDashboard = () => {
   const [stats, setStats] = useState(null);
 
   useEffect(() => {
-    adminService.getDashboard().then(setStats);
+    let mounted = true;
+    adminService
+      .getDashboard()
+      .then(data => {
+        if (mounted) setStats(data);
+      })
+      .catch(err => console.error('[EV-Net] Failed to load admin dashboard:', err));
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   if (!stats) return (

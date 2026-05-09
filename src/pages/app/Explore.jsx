@@ -113,27 +113,59 @@ const Explore = () => {
   const [search, setSearch] = useState('');
   const [selectedId, setSelectedId] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const isMounted = true;
   const { favorites, loadFavorites, toggleFavorite } = useAppStore();
 
 
   useEffect(() => {
     let cancelled = false;
+    let retryId;
+
     const load = async () => {
       setLoading(true);
+      setLoadError('');
       try {
-        await loadFavorites();
         const data = await listingService.getAll({ isActive: true, isApproved: true });
         if (!cancelled) setChargers(data);
       } catch (err) {
         console.error('[EV-Net] Failed to load explore listings:', err);
+        if (!cancelled) {
+          setLoadError('Chargers are taking longer than expected to load.');
+          retryId = setTimeout(load, 1500);
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
     };
+
     load();
-    return () => { cancelled = true; };
+
+    loadFavorites().catch(err => {
+      console.warn('[EV-Net] Favorites load skipped on Explore:', err.message);
+    });
+
+    return () => {
+      cancelled = true;
+      if (retryId) clearTimeout(retryId);
+    };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && chargers.length === 0 && !loading) {
+        listingService.getAll({ isActive: true, isApproved: true })
+          .then(data => {
+            setChargers(data);
+            setLoadError('');
+          })
+          .catch(err => console.warn('[EV-Net] Explore visibility reload failed:', err.message));
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [chargers.length, loading]);
 
   const filters = [
     { key: 'All', label: 'All Chargers' },
@@ -207,7 +239,15 @@ const Explore = () => {
         </div>
 
         <div className="explore-list">
-          <div className="explore-list-count">{filtered.length} chargers found</div>
+          <div className="explore-list-count">
+            {loading && chargers.length === 0 ? 'Loading chargers...' : `${filtered.length} chargers found`}
+          </div>
+
+          {loadError && chargers.length === 0 && (
+            <div style={{ padding: '0.75rem 1rem', color: '#fbbf24', fontSize: '0.85rem' }}>
+              {loadError}
+            </div>
+          )}
 
           {filtered.map(charger => {
             const availText = getAvailabilityText(charger);

@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Calendar } from 'lucide-react';
+import { Calendar, MessageSquare } from 'lucide-react';
 import useAuthStore from '../../store/authStore';
-import { bookingService } from '../../data/api';
+import { bookingService, messagingService } from '../../data/api';
 import { formatPKR } from '../../data/feeConfig';
 import { ListSkeleton } from '../../components/ui/Skeleton';
 
@@ -22,6 +22,7 @@ const Bookings = () => {
   const [bookings, setBookings] = useState([]);
   const [filter, setFilter] = useState('all');
   const [loading, setLoading] = useState(true);
+  const [messagingId, setMessagingId] = useState(null);
 
   useEffect(() => {
     const load = async () => {
@@ -37,6 +38,28 @@ const Bookings = () => {
   const filtered = filter === 'all' ? bookings : bookings.filter(b => b.status === filter.toUpperCase());
 
   const [uploadingId, setUploadingId] = useState(null);
+
+  const openBooking = (booking) => {
+    if (booking?.id) {
+      navigate(`/app/bookings/${booking.id}`);
+    }
+  };
+
+  const handleMessageHost = async (e, booking) => {
+    e.stopPropagation();
+    if (!booking?.listingId || messagingId) return;
+
+    try {
+      setMessagingId(booking.id);
+      const conversation = await messagingService.createOrGetInquiry(booking.listingId);
+      navigate(`/app/messages?conversation=${conversation.id}`);
+    } catch (err) {
+      console.error(err);
+      alert(err.message || 'Unable to message the host. Please try again.');
+    } finally {
+      setMessagingId(null);
+    }
+  };
 
   const handleUploadProof = async (bookingId, file) => {
     if (!file) return;
@@ -58,13 +81,14 @@ const Bookings = () => {
   const statusColors = {
     PENDING: { bg: 'rgba(251, 191, 36, 0.15)', color: '#fbbf24', label: 'Pending' },
     CONFIRMED: { bg: 'rgba(0, 210, 106, 0.15)', color: '#00D26A', label: 'Confirmed' },
+    ACCEPTED: { bg: 'rgba(0, 210, 106, 0.15)', color: '#00D26A', label: 'Accepted' },
     COMPLETED: { bg: 'rgba(0, 240, 255, 0.15)', color: '#00F0FF', label: 'Completed' },
     CANCELLED: { bg: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', label: 'Cancelled' },
   };
 
   const paymentStatusMap = {
     unpaid: { label: 'Unpaid', color: '#f87171' },
-    pay_later: { label: 'Pay Later', color: 'var(--brand-cyan)' },
+    pay_later: { label: 'Legacy Pay Later', color: 'var(--brand-cyan)' },
     payment_due: { label: 'Payment Due', color: '#fbbf24' },
     proof_submitted: { label: 'Proof Submitted', color: 'var(--brand-green)' },
     paid: { label: 'Paid', color: 'var(--brand-green)' },
@@ -139,7 +163,26 @@ const Bookings = () => {
               const isUploading = uploadingId === booking.id;
 
               return (
-                <div key={booking.id} className="glass-card" style={{ padding: '1.5rem', display: 'flex', gap: '1.5rem', alignItems: 'center' }}>
+                <div
+                  key={booking.id}
+                  className="glass-card"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => openBooking(booking)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      openBooking(booking);
+                    }
+                  }}
+                  style={{
+                    padding: '1.5rem',
+                    display: 'flex',
+                    gap: '1.5rem',
+                    alignItems: 'center',
+                    cursor: booking.id ? 'pointer' : 'default',
+                  }}
+                >
                   {/* Listing Image */}
                   <div style={{
                     width: '100px', height: '80px', borderRadius: '10px', flexShrink: 0,
@@ -149,7 +192,7 @@ const Bookings = () => {
                   {/* Details */}
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem', flexWrap: 'wrap' }}>
-                      <h4 style={{ margin: 0, fontSize: '1.1rem', cursor: 'pointer' }} onClick={() => navigate(`/app/charger/${booking.listingId}`)}>{booking.listing?.title || 'Charger'}</h4>
+                      <h4 style={{ margin: 0, fontSize: '1.1rem' }}>{booking.listing?.title || 'Charger'}</h4>
                       <div style={{ display: 'flex', gap: '8px' }}>
                         <span style={{
                           padding: '0.2rem 0.7rem', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 600,
@@ -171,7 +214,19 @@ const Bookings = () => {
                     <div style={{ marginTop: '0.8rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
                       <span style={{ color: 'var(--brand-green)', fontWeight: 600 }}>{formatPKR(booking.userTotal)}</span>
                       
-                      <div style={{ display: 'flex', gap: '8px' }}>
+                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }} onClick={(e) => e.stopPropagation()}>
+                        {booking.listingId && booking.status !== 'CANCELLED' && (
+                          <button
+                            type="button"
+                            className="btn btn-secondary"
+                            style={{ padding: '0.4rem 0.8rem', fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                            disabled={messagingId === booking.id}
+                            onClick={(e) => handleMessageHost(e, booking)}
+                          >
+                            <MessageSquare size={14} />
+                            {messagingId === booking.id ? 'Opening...' : 'Message Host'}
+                          </button>
+                        )}
                         {needsProof && (
                           <label style={{ 
                             padding: '0.4rem 0.8rem', borderRadius: '8px', background: 'var(--brand-cyan)', color: '#000', 
@@ -182,11 +237,24 @@ const Bookings = () => {
                           </label>
                         )}
                         {booking.status === 'COMPLETED' && (
-                          <button className="btn btn-secondary" style={{ padding: '0.4rem 0.8rem', fontSize: '0.75rem' }}
-                            onClick={() => navigate(`/app/charger/${booking.listingId}`)}
-                          >
-                            Book Again
-                          </button>
+                          <>
+                            <button className="btn btn-primary" style={{ padding: '0.4rem 0.8rem', fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigate(`/app/bookings/${booking.id}`);
+                              }}
+                            >
+                              ★ Leave Review
+                            </button>
+                            <button className="btn btn-secondary" style={{ padding: '0.4rem 0.8rem', fontSize: '0.75rem' }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigate(`/app/charger/${booking.listingId}`);
+                              }}
+                            >
+                              Book Again
+                            </button>
+                          </>
                         )}
                       </div>
                     </div>

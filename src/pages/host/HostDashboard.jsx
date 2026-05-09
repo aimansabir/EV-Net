@@ -12,16 +12,16 @@ const HostDashboard = () => {
   const [dashboard, setDashboard] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  const loadDashboard = async () => {
+  const loadDashboard = async ({ silent = false } = {}) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       const data = await hostService.getDashboard(user?.id || 'host_ahsan');
       setDashboard(data);
     } catch (err) {
       console.error("[EV-Net] Failed to load host dashboard:", err);
-      setDashboard(null);
+      if (!silent) setDashboard(null);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -33,7 +33,7 @@ const HostDashboard = () => {
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible' && user?.id) {
-        loadDashboard();
+        loadDashboard({ silent: true });
       }
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
@@ -129,8 +129,13 @@ const HostDashboard = () => {
         {/* Stats */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', marginBottom: '2.5rem' }}>
           <div className="glass-card" style={{ padding: '1.5rem' }}>
-            <div style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '0.5rem' }}>Total Earnings</div>
+            <div style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '0.5rem' }}>Total Host Earnings</div>
             <div style={{ fontSize: '1.8rem', fontWeight: 'bold', color: 'var(--brand-green)' }}>{formatPKR(dashboard.totalEarnings)}</div>
+            {(dashboard.pendingVerificationAmount || 0) > 0 && (
+              <div style={{ fontSize: '0.7rem', color: '#fbbf24', marginTop: '0.3rem' }}>
+                + {formatPKR(dashboard.pendingVerificationAmount)} awaiting verification
+              </div>
+            )}
           </div>
           <div className="glass-card" style={{ padding: '1.5rem' }}>
             <div style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '0.5rem' }}>Active Bookings</div>
