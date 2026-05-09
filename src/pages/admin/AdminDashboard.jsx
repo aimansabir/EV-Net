@@ -11,7 +11,6 @@ import {
   ShieldCheck, 
   Flag, 
   AlertTriangle,
-  CreditCard,
   ArrowRight,
   Receipt
 } from 'lucide-react';
@@ -55,13 +54,30 @@ const AdminDashboard = () => {
             <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '2.2rem', marginBottom: '0.5rem', letterSpacing: '-0.5px' }}>Admin Overview</h2>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem' }}>Real-time platform metrics and security posture.</p>
           </div>
-          <div className="glass-card" style={{ padding: '0.75rem 1.25rem', display: 'flex', alignItems: 'center', gap: '12px', border: '1px solid rgba(0, 210, 106, 0.2)', background: 'rgba(0, 210, 106, 0.05)' }}>
-            <div style={{ padding: '8px', borderRadius: '8px', background: 'rgba(0, 210, 106, 0.1)', color: '#00D26A' }}>
-              <CreditCard size={20} />
+          <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+            <div className="glass-card" style={{ padding: '0.75rem 1.25rem', display: 'flex', alignItems: 'center', gap: '12px', border: '1px solid rgba(0, 210, 106, 0.2)', background: 'rgba(0, 210, 106, 0.05)' }}>
+              <div>
+                <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', textTransform: 'uppercase', fontWeight: 600 }}>Platform Revenue</div>
+                <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#00D26A' }}>{formatPKR(stats.totalRevenue)}</div>
+              </div>
             </div>
-            <div>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.5px' }}>Total Revenue</div>
-              <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#00D26A' }}>{formatPKR(stats.totalRevenue)}</div>
+            <div className="glass-card" style={{ padding: '0.75rem 1.25rem', display: 'flex', alignItems: 'center', gap: '12px', border: '1px solid rgba(251, 191, 36, 0.2)', background: 'rgba(251, 191, 36, 0.05)' }}>
+              <div>
+                <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', textTransform: 'uppercase', fontWeight: 600 }}>Host Earnings</div>
+                <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#fbbf24' }}>{formatPKR(stats.hostEarnings)}</div>
+              </div>
+            </div>
+            <div className="glass-card" style={{ padding: '0.75rem 1.25rem', display: 'flex', alignItems: 'center', gap: '12px', border: '1px solid rgba(0, 240, 255, 0.2)', background: 'rgba(0, 240, 255, 0.05)' }}>
+              <div>
+                <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', textTransform: 'uppercase', fontWeight: 600 }}>Host Payouts Due</div>
+                <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#00F0FF' }}>{formatPKR(stats.hostPayoutsDue)}</div>
+              </div>
+            </div>
+            <div className="glass-card" style={{ padding: '0.75rem 1.25rem', display: 'flex', alignItems: 'center', gap: '12px', border: '1px solid rgba(167, 139, 250, 0.2)', background: 'rgba(167, 139, 250, 0.05)' }}>
+              <div>
+                <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', textTransform: 'uppercase', fontWeight: 600 }}>Host Payouts Paid</div>
+                <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#a78bfa' }}>{formatPKR(stats.hostPayoutsPaid)}</div>
+              </div>
             </div>
           </div>
         </div>

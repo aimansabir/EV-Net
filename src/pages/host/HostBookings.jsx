@@ -107,19 +107,21 @@ const HostBookings = () => {
 
   const paymentMethodLabel = {
     BANK_TRANSFER: 'Bank Transfer',
-    PAY_AFTER_CHARGING: 'Pay After Charging'
+    PAY_AFTER_CHARGING: 'Legacy Pay Later'
   };
 
   const paymentStatusMap = {
     unpaid: { label: 'Unpaid', color: '#f87171' },
-    pay_later: { label: 'Pay Later', color: 'var(--brand-cyan)' },
+    pay_later: { label: 'Legacy Pay Later', color: 'var(--brand-cyan)' },
     payment_due: { label: 'Payment Due', color: '#fbbf24' },
-    proof_submitted: { label: 'Proof Submitted', color: 'var(--brand-green)' },
-    paid: { label: 'Paid', color: 'var(--brand-green)' },
+    proof_submitted: { label: 'Payment Proof Submitted', color: 'var(--brand-cyan)' },
+    paid: { label: 'Payment Verified by EV-Net', color: 'var(--brand-green)' },
     rejected: { label: 'Payment Rejected', color: '#f87171' },
   };
 
-  const getProofUrl = (path) => {
+  const getProofUrl = (bookingOrPath) => {
+    if (bookingOrPath && typeof bookingOrPath === 'object') return bookingOrPath.paymentProofUrl || null;
+    const path = bookingOrPath;
     if (!path) return null;
     // If path is already a full URL, check if it's from the correct project
     if (/^https?:\/\//.test(path)) {
@@ -178,7 +180,8 @@ const HostBookings = () => {
               const statusConfig = getBookingStatusConfig(booking.status);
               const payStatus = paymentStatusMap[booking.paymentStatus] || { label: booking.paymentStatus || 'Not recorded', color: 'var(--text-secondary)' };
               const isUpdating = updatingId === booking.id;
-              const proofUrl = getProofUrl(booking.paymentProofPath);
+              const proofUrl = getProofUrl(booking);
+              const paymentVerified = booking.paymentStatus === 'paid';
               
               return (
                 <div key={booking.id} className="glass-card" style={{ padding: '1.5rem' }}>
@@ -205,6 +208,9 @@ const HostBookings = () => {
                       </div>
                       <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
                         <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Method: <strong>{paymentMethodLabel[booking.paymentMethod] || booking.paymentMethod || 'Not recorded'}</strong></span>
+                        {booking.paymentMethod === 'PAY_AFTER_CHARGING' && (
+                          <span style={{ fontSize: '0.65rem', padding: '0.1rem 0.3rem', background: 'rgba(251,191,36,0.15)', color: '#fbbf24', borderRadius: '4px' }}>Legacy</span>
+                        )}
                         {booking.paymentProofPath && (
                           proofUrl ? (
                             <a href={proofUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: '0.75rem', color: 'var(--brand-cyan)', textDecoration: 'none', borderBottom: '1px solid var(--brand-cyan)' }}>View Proof</a>
@@ -215,29 +221,61 @@ const HostBookings = () => {
                       </div>
                     </div>
 
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                      <div style={{ textAlign: 'right' }}>
-                        <div style={{ color: 'var(--brand-green)', fontWeight: 700, fontSize: '1.05rem' }}>{formatPKR(booking.hostPayout ?? booking.baseFee ?? 0)}</div>
-                        <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>Payout</div>
-                      </div>
-                      {bookingStatus === 'pending' && (
-                        <div style={{ display: 'flex', gap: '0.5rem' }}>
-                          <button 
-                            disabled={isUpdating}
-                            onClick={() => handleStatusChange(booking.id, 'CONFIRMED')} 
-                            style={{ padding: '0.4rem 1rem', borderRadius: '8px', border: '1px solid var(--brand-green)', background: 'rgba(0,210,106,0.15)', color: 'var(--brand-green)', cursor: isUpdating ? 'not-allowed' : 'pointer', fontSize: '0.85rem', fontWeight: 600, fontFamily: 'var(--font-body)', transition: 'all 0.2s', minWidth: '80px' }}
-                          >
-                            {isUpdating ? '...' : 'Accept'}
-                          </button>
-                          <button 
-                            disabled={isUpdating}
-                            onClick={() => handleStatusChange(booking.id, 'CANCELLED')} 
-                            style={{ padding: '0.4rem 1rem', borderRadius: '8px', border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.1)', color: '#f87171', cursor: isUpdating ? 'not-allowed' : 'pointer', fontSize: '0.85rem', fontWeight: 600, fontFamily: 'var(--font-body)', transition: 'all 0.2s', minWidth: '80px' }}
-                          >
-                            {isUpdating ? '...' : 'Decline'}
-                          </button>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', flexWrap: 'wrap' }}>
+                      <div style={{ display: 'flex', gap: '1.5rem', textAlign: 'right' }}>
+                        <div>
+                          <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>{formatPKR(booking.userTotal || booking.total_fee || 0)}</div>
+                          <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary)' }}>User Paid</div>
                         </div>
-                      )}
+                        <div>
+                          <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>{formatPKR((booking.userServiceFee || 0) + (booking.hostPlatformFee || 0))}</div>
+                          <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary)' }}>Platform Fee</div>
+                        </div>
+                        <div>
+                          <div style={{ color: 'var(--brand-green)', fontWeight: 700, fontSize: '1.05rem' }}>{formatPKR(booking.hostPayout ?? booking.baseFee ?? 0)}</div>
+                          <div style={{ fontSize: '0.65rem', color: 'var(--brand-green)' }}>Host Earning</div>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                        {bookingStatus === 'pending' && (
+                          <>
+                            {paymentVerified ? (
+                              <button
+                                disabled={isUpdating}
+                                onClick={() => handleStatusChange(booking.id, 'CONFIRMED')}
+                                style={{ padding: '0.4rem 1rem', borderRadius: '8px', border: '1px solid var(--brand-green)', background: 'rgba(0,210,106,0.15)', color: 'var(--brand-green)', cursor: isUpdating ? 'not-allowed' : 'pointer', fontSize: '0.85rem', fontWeight: 600, transition: 'all 0.2s', minWidth: '80px' }}
+                              >
+                                {isUpdating ? '...' : 'Accept'}
+                              </button>
+                            ) : (
+                              <span style={{ padding: '0.4rem 0.75rem', borderRadius: '8px', border: '1px solid rgba(0,240,255,0.25)', color: 'var(--brand-cyan)', background: 'rgba(0,240,255,0.06)', fontSize: '0.75rem', fontWeight: 600 }}>
+                                Awaiting EV-Net payment verification
+                              </span>
+                            )}
+                            <button
+                              disabled={isUpdating}
+                              onClick={() => handleStatusChange(booking.id, 'CANCELLED')}
+                              style={{ padding: '0.4rem 1rem', borderRadius: '8px', border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.1)', color: '#f87171', cursor: isUpdating ? 'not-allowed' : 'pointer', fontSize: '0.85rem', fontWeight: 600, transition: 'all 0.2s', minWidth: '80px' }}
+                            >
+                              {isUpdating ? '...' : 'Decline'}
+                            </button>
+                          </>
+                        )}
+                        {['confirmed', 'accepted'].includes(bookingStatus) && (
+                          <>
+                            {paymentVerified && (
+                              <button
+                                disabled={isUpdating}
+                                onClick={() => handleStatusChange(booking.id, 'COMPLETED')}
+                                style={{ padding: '0.4rem 1rem', borderRadius: '8px', border: '1px solid #fbbf24', background: 'rgba(251, 191, 36, 0.15)', color: '#fbbf24', cursor: isUpdating ? 'not-allowed' : 'pointer', fontSize: '0.85rem', fontWeight: 600, transition: 'all 0.2s' }}
+                              >
+                                {isUpdating ? '...' : 'Mark Completed'}
+                              </button>
+                            )}
+                          </>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>

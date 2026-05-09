@@ -1,17 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { listingService, bookingService } from '../../data/api';
-import { 
-  calculateEnergyBookingFees, 
-  getPricingBand, 
-  PRICING_BAND, 
-  VEHICLE_SIZES, 
+import {
+  calculateEnergyBookingFees,
+  getPricingBand,
+  PRICING_BAND,
+  VEHICLE_SIZES,
   ENERGY_BY_SIZE,
   formatPKR,
   calculateBookingFees
 } from '../../data/feeConfig';
-import { 
-  Calendar, Clock, Zap, Moon, ShieldCheck, ArrowLeft, 
+import {
+  Calendar, Clock, Zap, Moon, ShieldCheck, ArrowLeft,
   Info, AlertTriangle, CheckCircle, Car, MapPin
 } from 'lucide-react';
 import useAuthStore from '../../store/authStore';
@@ -22,15 +22,15 @@ const Checkout = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { user } = useAuthStore();
-  
+
   const [listing, setListing] = useState(null);
   const [loading, setLoading] = useState(true);
   const [confirmed, setConfirmed] = useState(false);
   const [error, setError] = useState('');
   const [processing, setProcessing] = useState(false);
-  
+
   const [paymentStep, setPaymentStep] = useState('summary'); // 'summary' | 'payment'
-  const [paymentMethod, setPaymentMethod] = useState('BANK_TRANSFER'); // 'BANK_TRANSFER' | 'PAY_AFTER_CHARGING'
+  const [paymentMethod] = useState('BANK_TRANSFER'); // Hardcoded to 'BANK_TRANSFER'
   const [proofFile, setProofFile] = useState(null);
 
   // Extract params
@@ -77,7 +77,7 @@ const Checkout = () => {
   const dayRate = Number(listing?.priceDay ?? listing?.price_day_per_kwh ?? listing?.priceDayPerKwh);
   const nightRate = Number(listing?.priceNight ?? listing?.price_night_per_kwh ?? listing?.priceNightPerKwh);
   const legacyHourlyRate = Number(listing?.pricePerHour ?? listing?.price_per_hour ?? 0);
-  
+
   // Calculate Fees
   const energyFees = calculateEnergyBookingFees(
     vehicleSize,
@@ -86,8 +86,8 @@ const Checkout = () => {
     Number.isFinite(nightRate) ? nightRate : null
   );
   const hasEnergyPricing = !energyFees.isIncomplete;
-  
-  const fees = hasEnergyPricing 
+
+  const fees = hasEnergyPricing
     ? energyFees
     : calculateBookingFees(legacyHourlyRate, duration);
 
@@ -118,8 +118,8 @@ const Checkout = () => {
       return;
     }
 
-    if (paymentMethod === 'BANK_TRANSFER' && !proofFile) {
-      setError('Please upload payment proof for bank transfer.');
+    if (!proofFile) {
+      setError('Please upload payment proof before reserving.');
       return;
     }
 
@@ -159,14 +159,14 @@ const Checkout = () => {
   return (
     <div className="section" style={{ minHeight: 'calc(100vh - 72px)', background: 'radial-gradient(circle at top right, rgba(0, 240, 255, 0.05), transparent 400px)' }}>
       <div className="container" style={{ maxWidth: '850px', paddingTop: '2rem', paddingBottom: '4rem' }}>
-        
+
         {confirmed ? (
           <div className="glass-card text-center" style={{ padding: '5rem 2rem', borderRadius: '32px' }}>
             <div style={{ width: '90px', height: '90px', background: 'var(--brand-green)', borderRadius: '50%', color: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 2.5rem', fontSize: '2.5rem', boxShadow: '0 0 30px rgba(0, 210, 106, 0.4)' }}>
               <CheckCircle size={40} />
             </div>
-            <h2 style={{ fontSize: '2.2rem', marginBottom: '1rem', fontWeight: 800 }}>Booking Confirmed!</h2>
-            <p style={{ color: 'var(--text-secondary)', fontSize: '1.1rem' }}>Your charger has been reserved. Redirecting to your bookings...</p>
+            <h2 style={{ fontSize: '2.2rem', marginBottom: '1rem', fontWeight: 800 }}>Booking Submitted!</h2>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '1.1rem' }}>EV-Net will verify your payment, then the host can accept the booking. Redirecting to your bookings...</p>
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
@@ -208,7 +208,7 @@ const Checkout = () => {
             <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 0.9fr', gap: '2.5rem', alignItems: 'start' }}>
               {/* Left Column: Summary */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-                
+
                 {/* 1. Listing Summary */}
                 <div className="glass-card" style={{ padding: '1.5rem', borderRadius: '24px' }}>
                   <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center' }}>
@@ -226,10 +226,10 @@ const Checkout = () => {
                 {/* 2. Session Detail Grid */}
                 <div className="glass-card" style={{ padding: '2rem', borderRadius: '24px' }}>
                   <h4 style={{ fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--text-secondary)', fontWeight: 800, letterSpacing: '1px', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                     <Clock size={14} color="var(--brand-green)" /> Reservation Window
+                    <Clock size={14} color="var(--brand-green)" /> Reservation Window
                   </h4>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
-                    
+
                     <div style={{ display: 'flex', gap: '14px' }}>
                       <div style={{ background: 'rgba(255,255,255,0.03)', width: '48px', height: '48px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '12px', border: '1px solid var(--border-color)', flexShrink: 0 }}>
                         <Calendar size={20} color="var(--brand-green)" />
@@ -290,9 +290,9 @@ const Checkout = () => {
               <div style={{ position: 'sticky', top: '100px' }}>
                 <div className="glass-card" style={{ padding: '2rem', borderRadius: '28px', border: '1px solid var(--border-color)', boxShadow: '0 20px 40px rgba(0,0,0,0.3)' }}>
                   <h3 style={{ fontSize: '1.4rem', fontWeight: 800, marginBottom: '2rem' }}>Total Payable</h3>
-                  
+
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', marginBottom: '2.5rem' }}>
-                    
+
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div style={{ color: 'var(--text-secondary)', fontSize: '0.95rem' }}>
                         {hasEnergyPricing ? `Energy Usage (${energyKwh} kWh)` : `Session Duration (${duration} hrs)`}
@@ -324,12 +324,11 @@ const Checkout = () => {
                     <div style={{ marginBottom: '2.5rem', animation: 'fadeIn 0.4s ease' }}>
                       <h4 style={{ fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--text-secondary)', fontWeight: 800, letterSpacing: '1px', marginBottom: '1.25rem' }}>Select Payment Method</h4>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                        <div 
-                          onClick={() => setPaymentMethod('BANK_TRANSFER')}
-                          style={{ padding: '1rem', borderRadius: '16px', border: paymentMethod === 'BANK_TRANSFER' ? '2px solid var(--brand-green)' : '1px solid var(--border-color)', background: paymentMethod === 'BANK_TRANSFER' ? 'rgba(0, 210, 106, 0.05)' : 'rgba(255,255,255,0.02)', cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: '12px' }}
+                        <div
+                          style={{ padding: '1rem', borderRadius: '16px', border: '2px solid var(--brand-green)', background: 'rgba(0, 210, 106, 0.05)', display: 'flex', alignItems: 'center', gap: '12px' }}
                         >
                           <div style={{ width: '20px', height: '20px', borderRadius: '50%', border: '2px solid var(--brand-green)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            {paymentMethod === 'BANK_TRANSFER' && <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: 'var(--brand-green)' }} />}
+                            <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: 'var(--brand-green)' }} />
                           </div>
                           <div>
                             <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>Bank Transfer</div>
@@ -337,65 +336,44 @@ const Checkout = () => {
                           </div>
                         </div>
 
-                        <div 
-                          onClick={() => setPaymentMethod('PAY_AFTER_CHARGING')}
-                          style={{ padding: '1rem', borderRadius: '16px', border: paymentMethod === 'PAY_AFTER_CHARGING' ? '2px solid var(--brand-cyan)' : '1px solid var(--border-color)', background: paymentMethod === 'PAY_AFTER_CHARGING' ? 'rgba(0, 240, 255, 0.05)' : 'rgba(255,255,255,0.02)', cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: '12px' }}
-                        >
-                          <div style={{ width: '20px', height: '20px', borderRadius: '50%', border: '2px solid var(--brand-cyan)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            {paymentMethod === 'PAY_AFTER_CHARGING' && <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: 'var(--brand-cyan)' }} />}
-                          </div>
-                          <div>
-                            <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>Pay After Charging</div>
-                            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Pay once the session ends</div>
-                          </div>
-                        </div>
-                      </div>
-
-                      {paymentMethod === 'BANK_TRANSFER' ? (
                         <div style={{ marginTop: '1.5rem', padding: '1.25rem', borderRadius: '16px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-color)' }}>
                           <h5 style={{ margin: '0 0 0.75rem', fontSize: '0.85rem', color: '#fff' }}>EV-Net Bank Details</h5>
                           <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                             <div>Bank: <strong>Meezan Bank Ltd.</strong></div>
-                            <div>Name: <strong>EV-Net Solutions</strong></div>
-                            <div>Account: <strong>0210-0104678901</strong></div>
-                            <div>IBAN: <strong>PK21 MEZN 0002 1001 0467 8901</strong></div>
+                            <div>Name: <strong>MUHAMMAD ESHARIB BIN SAFWAN</strong></div>
+                            <div>Account: <strong>0030 0112950713</strong></div>
+                            <div>IBAN: <strong>PK15 MEZN 0000 3001 1295 0713</strong></div>
                           </div>
                           <div style={{ marginTop: '1.25rem' }}>
                             <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, marginBottom: '8px', color: 'var(--brand-green)' }}>UPLOAD PROOF</label>
-                            <input 
-                              type="file" 
+                            <input
+                              type="file"
                               accept="image/*"
                               onChange={e => setProofFile(e.target.files[0])}
                               style={{ width: '100%', fontSize: '0.8rem', color: 'var(--text-secondary)' }}
                             />
-                            {proofFile && <div style={{ marginTop: '5px', fontSize: '0.75rem', color: 'var(--brand-green)' }}>✓ {proofFile.name} attached</div>}
+                            {proofFile && <div style={{ marginTop: '5px', fontSize: '0.75rem', color: 'var(--brand-green)' }}>Attached: {proofFile.name}</div>}
                           </div>
                         </div>
-                      ) : (
-                        <div style={{ marginTop: '1rem', padding: '1rem', borderRadius: '12px', background: 'rgba(0, 240, 255, 0.05)', border: '1px solid rgba(0, 240, 255, 0.2)' }}>
-                           <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--brand-cyan)', lineHeight: 1.4 }}>
-                             <strong>Note:</strong> You can pay after your charging session. Payment proof will be required after completion.
-                           </p>
-                        </div>
-                      )}
+                      </div>
                     </div>
                   )}
 
-                  <button 
+                  <button
                     onClick={handleConfirm}
                     disabled={processing || !startTime || !isVehicleSizeValid}
-                    className="btn btn-primary" 
-                    style={{ 
-                      width: '100%', 
-                      padding: '1.25rem', 
-                      fontSize: '1.15rem', 
-                      fontWeight: 800, 
-                      borderRadius: '16px', 
+                    className="btn btn-primary"
+                    style={{
+                      width: '100%',
+                      padding: '1.25rem',
+                      fontSize: '1.15rem',
+                      fontWeight: 800,
+                      borderRadius: '16px',
                       boxShadow: '0 12px 30px rgba(0, 210, 106, 0.3)',
                       transition: 'all 0.3s ease'
                     }}
                   >
-                    {processing ? 'Processing...' : paymentStep === 'summary' ? 'Confirm Session' : paymentMethod === 'BANK_TRANSFER' ? 'Reserve & Submit Proof' : 'Reserve Now'}
+                    {processing ? 'Processing...' : paymentStep === 'summary' ? 'Confirm Session' : 'Reserve & Submit Proof'}
                   </button>
 
                   <div style={{ textAlign: 'center', marginTop: '1.25rem' }}>

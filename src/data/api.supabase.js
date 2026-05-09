@@ -18,6 +18,7 @@ let _cachedUser = null;
 let _userCacheTime = 0;
 const CACHE_TTL = 10000; // 10 seconds
 const VERIFICATION_BUCKET = 'verification_documents';
+const PAYMENT_PROOF_BUCKET = 'payment_proofs';
 const VALID_BOOKING_CHAT_STATUSES = new Set(['confirmed', 'accepted', 'active', 'completed']);
 
 function hasValidBookingChatStatus(status) {
@@ -161,6 +162,41 @@ async function createVerificationSignedUrl(path) {
     return data?.signedUrl || null;
   } catch (err) {
     console.warn('[EV-Net] Could not create verification document signed URL:', err.message);
+    return null;
+  }
+}
+
+function extractStoragePath(path, bucket) {
+  if (!path) return null;
+  if (!/^https?:\/\//.test(path)) return path;
+
+  const marker = `/storage/v1/object/public/${bucket}/`;
+  const signedMarker = `/storage/v1/object/sign/${bucket}/`;
+  const markerIndex = path.indexOf(marker);
+  const signedMarkerIndex = path.indexOf(signedMarker);
+  const startIndex = markerIndex >= 0
+    ? markerIndex + marker.length
+    : signedMarkerIndex >= 0
+      ? signedMarkerIndex + signedMarker.length
+      : -1;
+
+  if (startIndex < 0) return null;
+  return decodeURIComponent(path.slice(startIndex).split('?')[0]);
+}
+
+async function createPaymentProofSignedUrl(path) {
+  const storagePath = extractStoragePath(path, PAYMENT_PROOF_BUCKET);
+  if (!storagePath) return null;
+
+  try {
+    const { data, error } = await supabase.storage
+      .from(PAYMENT_PROOF_BUCKET)
+      .createSignedUrl(storagePath, 60 * 60);
+
+    if (error) throw error;
+    return data?.signedUrl || null;
+  } catch (err) {
+    console.warn('[EV-Net] Could not create payment proof signed URL:', err.message);
     return null;
   }
 }
@@ -1529,52 +1565,39 @@ export const bookingService = {
   async create(data) {
     // Calls the robust transaction-safe RPC
     // Note: Backend handles pricing_band derivation and fee calculation
-    // Payment Proof Upload (Optional but required for BANK_TRANSFER in checkout)
+    // New bookings are bank-transfer only and must include payment proof.
+    if (!data.paymentProofPath && !data.paymentProofFile) {
+      throw new Error('Please upload payment proof before reserving.');
+    }
+
     let proofPath = data.paymentProofPath || null;
     if (data.paymentProofFile) {
       const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Please log in before reserving.');
+
       const file = data.paymentProofFile;
       const extension = file.name?.split('.').pop() || 'jpg';
       const filePath = `${user.id}/${Date.now()}_payment_proof.${extension}`;
-      
-      try {
-        const { error: uploadError } = await supabase.storage
-          .from('payment_proofs')
-          .upload(filePath, file);
 
-        if (uploadError) throw uploadError;
-        proofPath = filePath;
-      } catch (uploadError) {
-        console.warn('[EV-Net] Payment proof upload skipped; continuing with booking only:', uploadError.message);
-      }
+      const { error: uploadError } = await supabase.storage
+        .from('payment_proofs')
+        .upload(filePath, file);
+
+      if (uploadError) throw new Error(`Payment proof upload failed: ${uploadError.message}`);
+      proofPath = filePath;
     }
 
-    let { data: rpcBooking, error } = await supabase.rpc('create_booking', {
+    const { data: rpcBooking, error } = await supabase.rpc('create_booking', {
       p_listing_id: data.listingId,
       p_date: data.date,
       p_start_time: data.startTime + ':00',
       p_end_time: data.endTime + ':00',
       p_vehicle_size: data.vehicleSize,
-      p_payment_method: data.paymentMethod,
-      p_payment_proof_path: proofPath
+      p_payment_method: 'BANK_TRANSFER',
+      p_payment_proof_path: proofPath,
+      p_estimated_kwh: data.estimatedKwh ?? null,
+      p_pricing_band: data.pricingBand ?? null
     });
-
-    if (error && (
-      error.code === 'PGRST202' ||
-      (error.message || '').includes('p_payment_method') ||
-      (error.message || '').includes('p_payment_proof_path')
-    )) {
-      console.warn('[EV-Net] create_booking payment RPC signature unavailable; retrying legacy booking RPC.');
-      ({ data: rpcBooking, error } = await supabase.rpc('create_booking', {
-        p_listing_id: data.listingId,
-        p_date: data.date,
-        p_start_time: data.startTime + ':00',
-        p_end_time: data.endTime + ':00',
-        p_vehicle_size: data.vehicleSize,
-        p_estimated_kwh: data.estimatedKwh ?? null,
-        p_pricing_band: data.pricingBand ?? null
-      }));
-    }
     
     if (error) throw new Error(error.message);
 
@@ -1607,7 +1630,7 @@ export const bookingService = {
       hostPayout: booking.host_payout ?? 0,
       estimatedKwh: booking.estimated_kwh,
       pricingBand: booking.pricing_band,
-      paymentMethod: booking.payment_method || data.paymentMethod || null,
+      paymentMethod: booking.payment_method || 'BANK_TRANSFER',
       paymentStatus: booking.payment_status || null,
       paymentProofPath: booking.payment_proof_path,
       createdAt: booking.created_at,
@@ -1662,9 +1685,10 @@ export const bookingService = {
     
     if (error) throw error;
     
-    return (data || []).map(b => {
+    return Promise.all((data || []).map(async b => {
       const baseFee = b.base_fee ?? b.total_fee ?? 0;
       const payout = b.host_payout ?? calculateHostPayout(baseFee).hostPayout ?? 0;
+      const paymentProofUrl = await createPaymentProofSignedUrl(b.payment_proof_path);
 
       return {
         ...b,
@@ -1684,19 +1708,24 @@ export const bookingService = {
         paymentMethod: b.payment_method || null,
         paymentStatus: b.payment_status || null,
         paymentProofPath: b.payment_proof_path || null,
+        paymentProofUrl,
         createdAt: b.created_at,
       };
-    });
+    }));
   },
 
   async updateStatus(bookingId, status) {
-    // Hosts use secure RPCs to Accept/Decline
+    // Hosts use secure RPCs to Accept/Decline/Complete
     if (status === 'CONFIRMED') {
       const { data, error } = await supabase.rpc('accept_booking', { p_booking_id: bookingId });
       if (error) throw new Error(error.message);
       return data;
     } else if (status === 'CANCELLED') {
       const { data, error } = await supabase.rpc('decline_booking', { p_booking_id: bookingId });
+      if (error) throw new Error(error.message);
+      return data;
+    } else if (status === 'COMPLETED') {
+      const { data, error } = await supabase.rpc('complete_booking', { p_booking_id: bookingId });
       if (error) throw new Error(error.message);
       return data;
     }
@@ -1732,7 +1761,8 @@ export const bookingService = {
 
     if (rpcError) throw rpcError;
     return { success: true, proofPath: filePath };
-  }
+  },
+
 };
 
 // ─── MESSAGING SERVICE (PHASE 3 RPCs) ───────────────────
@@ -2020,16 +2050,22 @@ export const adminService = {
       { count: totalListings },
       { count: activeListings },
       { count: totalBookings },
-      { data: completedBookings }
+      { data: bookingMoneyRows }
     ] = await Promise.all([
       supabase.from('profiles').select('*', { count: 'exact', head: true }),
       supabase.from('listings').select('*', { count: 'exact', head: true }),
       supabase.from('listings').select('*', { count: 'exact', head: true }).eq('is_active', true).eq('is_approved', true),
       supabase.from('bookings').select('*', { count: 'exact', head: true }),
-      supabase.from('bookings').select('service_fee').eq('status', 'COMPLETED')
+      supabase.from('bookings').select('status, payment_status, user_service_fee, host_platform_fee, host_payout, payout_status, total_user_price, total_fee')
     ]);
 
-    const totalRevenue = (completedBookings || []).reduce((s, b) => s + b.service_fee, 0);
+    const moneyRows = bookingMoneyRows || [];
+    const completedBookings = moneyRows.filter(b => b.status === 'COMPLETED' && b.payment_status === 'paid');
+    const totalRevenue = completedBookings.reduce((s, b) => s + (b.user_service_fee || 0) + (b.host_platform_fee || 0), 0);
+    const hostEarnings = completedBookings.reduce((s, b) => s + (b.host_payout || 0), 0);
+    const hostPayoutsDue = completedBookings.filter(b => b.payout_status === 'pending').reduce((s, b) => s + (b.host_payout || 0), 0);
+    const hostPayoutsPaid = moneyRows.filter(b => b.payout_status === 'paid_to_host').reduce((s, b) => s + (b.host_payout || 0), 0);
+    const totalCollected = completedBookings.reduce((s, b) => s + (b.total_user_price ?? b.total_fee ?? 0), 0);
 
     // 1. Pending Verifications (live profile state is the source of truth)
     const [{ count: pendingEvCount }, { count: pendingHostCount }] = await Promise.all([
@@ -2064,8 +2100,24 @@ export const adminService = {
       pendingHostVerifications: pendingHostCount || 0,
       pendingPayments: pendingPayments || 0,
       totalBookings: totalBookings || 0,
-      totalRevenue
+      totalRevenue,
+      hostEarnings,
+      hostPayoutsDue,
+      hostPayoutsPaid,
+      totalCollected
     };
+  },
+
+  async markPayoutPaid(bookingId) {
+    const { data, error } = await supabase.rpc('admin_mark_payout_paid', { p_booking_id: bookingId });
+    if (error) throw new Error(error.message);
+    return data;
+  },
+
+  async verifyPayment(bookingId) {
+    const { data, error } = await supabase.rpc('verify_booking_payment', { p_booking_id: bookingId });
+    if (error) throw new Error(error.message);
+    return data;
   },
 
   async getListings() {
@@ -2102,7 +2154,14 @@ export const adminService = {
       .select('*, listing:listings(*), user:profiles!user_id(*)')
       .order('created_at', { ascending: false });
     if (error) throw error;
-    return data.map(b => ({ ...b, createdAt: b.created_at, baseFee: b.base_fee, serviceFee: b.service_fee, totalFee: b.total_fee }));
+    return Promise.all(data.map(async b => ({
+      ...b,
+      createdAt: b.created_at,
+      baseFee: b.base_fee,
+      serviceFee: b.service_fee,
+      totalFee: b.total_fee,
+      paymentProofUrl: await createPaymentProofSignedUrl(b.payment_proof_path)
+    })));
   },
 
   async reviewListing(listingId, decision) {
@@ -2767,13 +2826,10 @@ export const hostService = {
 
     if (bError) throw bError;
 
-    const completedBookings = (bookingsData || []).filter(b => b.status === 'COMPLETED');
+    const completedBookings = (bookingsData || []).filter(b => b.status === 'COMPLETED' && b.payment_status === 'paid');
     const upcomingBookingsData = (bookingsData || []).filter(b => b.status === 'CONFIRMED' || b.status === 'PENDING');
 
-    const totalEarnings = completedBookings.reduce((sum, b) => {
-      const { hostPayout } = calculateHostPayout(b.base_fee);
-      return sum + hostPayout;
-    }, 0);
+    const totalEarnings = completedBookings.reduce((sum, b) => sum + (b.host_payout || 0), 0);
 
     const upcomingBookings = upcomingBookingsData.slice(0, 5).map(b => ({
       ...b,
@@ -2823,37 +2879,43 @@ export const hostService = {
           .select('*')
           .in('listing_id', hostListingIds)
           .eq('status', 'COMPLETED')
+          .eq('payment_status', 'paid')
       : Promise.resolve({ data: [], error: null }));
 
     if (bError) throw bError;
 
-    let totalRevenue = 0;
-    let totalPayout = 0;
-    let totalCommission = 0;
+    let totalEarnings = 0;
+    let pendingPayout = 0;
+    let paidOut = 0;
     const byMonth = {};
 
     (bookings || []).forEach(b => {
-      const revenue = b.base_fee || 0;
-      const { hostPayout, hostPlatformFee } = calculateHostPayout(revenue);
+      const hostPayout = b.host_payout || 0;
       
-      totalRevenue += revenue;
-      totalPayout += hostPayout;
-      totalCommission += hostPlatformFee;
+      totalEarnings += hostPayout;
+      if (b.payout_status === 'paid_to_host') {
+        paidOut += hostPayout;
+      } else {
+        pendingPayout += hostPayout;
+      }
 
       const monthKey = b.date ? b.date.substring(0, 7) : 'Unknown';
       if (!byMonth[monthKey]) {
-        byMonth[monthKey] = { revenue: 0, payout: 0, commission: 0, sessions: 0 };
+        byMonth[monthKey] = { earnings: 0, pending: 0, paid: 0, sessions: 0 };
       }
-      byMonth[monthKey].revenue += revenue;
-      byMonth[monthKey].payout += hostPayout;
-      byMonth[monthKey].commission += hostPlatformFee;
+      byMonth[monthKey].earnings += hostPayout;
+      if (b.payout_status === 'paid_to_host') {
+        byMonth[monthKey].paid += hostPayout;
+      } else {
+        byMonth[monthKey].pending += hostPayout;
+      }
       byMonth[monthKey].sessions += 1;
     });
 
     return {
-      totalRevenue,
-      totalPayout,
-      totalCommission,
+      totalEarnings,
+      pendingPayout,
+      paidOut,
       totalSessions: bookings?.length || 0,
       byMonth
     };
