@@ -173,7 +173,7 @@ const FileUploadDropzone = ({
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '1rem' }}>
               {files.map((fileObj) => (
                   <div key={fileObj.id} style={{
-                      display: 'flex', alignItems: 'center', pading: '0.75rem',
+                      display: 'flex', alignItems: 'center', padding: '0.75rem',
                       background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-color)', borderRadius: '8px',
                       overflow: 'hidden'
                   }}>

@@ -352,6 +352,21 @@ const useAuthStore = create((set, get) => ({
   },
 
   /**
+   * Patch the current user locally for optimistic UI updates.
+   */
+  patchUser: (partialUser) => {
+    const { user, role } = get();
+    if (!user || !partialUser) return null;
+
+    const nextUser = { ...user, ...partialUser };
+    const nextRole = (nextUser.role || role || 'guest').toLowerCase();
+    const state = { user: nextUser, role: nextRole, isAuthenticated: true };
+    set(state);
+    persistAuth({ ...get(), ...state });
+    return nextUser;
+  },
+
+  /**
    * Internal: clear auth state (used during init failures).
    */
   _clearAuth: () => {

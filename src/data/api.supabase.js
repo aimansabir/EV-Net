@@ -189,6 +189,67 @@ function isUploadableFile(input) {
   );
 }
 
+function isMissingRpcError(error) {
+  const message = error?.message || '';
+  return ['PGRST202', 'PGRST203', '42883'].includes(error?.code) || message.includes('Could not find the function');
+}
+
+function canvasToBlob(canvas, type, quality) {
+  return new Promise((resolve) => {
+    canvas.toBlob(resolve, type, quality);
+  });
+}
+
+async function optimizeVerificationUploadFile(file) {
+  if (
+    typeof window === 'undefined' ||
+    typeof Image === 'undefined' ||
+    !file?.type?.startsWith('image/') ||
+    file.size < 700 * 1024
+  ) {
+    return file;
+  }
+
+  const maxDimension = 1600;
+  const outputType = 'image/jpeg';
+  const quality = 0.82;
+  const objectUrl = URL.createObjectURL(file);
+
+  try {
+    const img = await new Promise((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => resolve(image);
+      image.onerror = () => reject(new Error('Could not optimize image before upload.'));
+      image.src = objectUrl;
+    });
+
+    const ratio = Math.min(1, maxDimension / Math.max(img.width, img.height));
+    const width = Math.max(1, Math.round(img.width * ratio));
+    const height = Math.max(1, Math.round(img.height * ratio));
+
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext('2d');
+    if (!context) return file;
+
+    context.drawImage(img, 0, 0, width, height);
+    const blob = await canvasToBlob(canvas, outputType, quality);
+    if (!blob || blob.size >= file.size) return file;
+
+    const baseName = file.name.replace(/\.[^.]+$/, '') || 'document';
+    return new File([blob], `${baseName}.jpg`, {
+      type: outputType,
+      lastModified: Date.now()
+    });
+  } catch (err) {
+    console.warn('[EV-Net] Image optimization skipped:', err.message);
+    return file;
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
 async function createVerificationSignedUrl(path) {
   if (!path) return null;
   if (/^(https?:|blob:|data:)/.test(path)) return path;
@@ -2173,7 +2234,12 @@ export const adminService = {
         supabase.from('listings').select('*', { count: 'exact', head: true }),
         supabase.from('listings').select('*', { count: 'exact', head: true }).eq('is_active', true).eq('is_approved', true),
         supabase.from('bookings').select('*', { count: 'exact', head: true }).is('archived_at', null).is('exclude_from_financials', false),
-        supabase.from('bookings').select('id, status, payment_status, user_service_fee, host_platform_fee, host_payout, payout_status, total_user_price, total_fee, listing_id, user_id, date, created_at, archived_at, exclude_from_financials'),
+        supabase
+          .from('bookings')
+          .select('id, status, payment_status, user_service_fee, host_platform_fee, host_payout, payout_status, total_user_price, total_fee, listing_id, user_id, date, created_at, archived_at, exclude_from_financials')
+          .is('archived_at', null)
+          .is('exclude_from_financials', false)
+          .in('status', ['COMPLETED', 'PENDING', 'CONFIRMED', 'ACCEPTED']),
         supabase
           .from('ev_profiles')
           .select('*', { count: 'exact', head: true })
@@ -2185,10 +2251,14 @@ export const adminService = {
         supabase
           .from('onboarding_payments')
           .select('*', { count: 'exact', head: true })
-          .eq('status', 'pending'),
+          .eq('status', 'pending')
+          .is('archived_at', null)
+          .is('exclude_from_financials', false),
         supabase
           .from('onboarding_payments')
-          .select('*, user:profiles!user_id(id, name, email), listing:listings(id, title)'),
+          .select('id, user_id, listing_id, amount, method, status, created_at, verified_at, archived_at, archive_reason, exclude_from_financials, user:profiles!user_id(id, name, email), listing:listings(id, title)')
+          .in('status', ['pending', 'verified'])
+          .order('created_at', { ascending: false }),
         supabase.from('bookings').select('*', { count: 'exact', head: true }) // Total raw bookings
       ]);
 
@@ -2327,9 +2397,31 @@ export const adminService = {
   async getListings() {
     const { data, error } = await supabase
       .from('listings')
-      .select('*, host:profiles!host_id(id, name, email), listing_photos(storage_path, display_order)')
+      .select('id, title, host_id, charger_type, price_day_per_kwh, price_night_per_kwh, price_per_hour, is_approved, is_active, setup_fee_paid, created_at, host:profiles!host_id(id, name, email)')
       .order('created_at', { ascending: false });
     if (error) throw error;
+
+    const listingIds = (data || []).map(l => l.id).filter(Boolean);
+    const firstPhotoByListing = new Map();
+
+    if (listingIds.length > 0) {
+      const { data: photos, error: photosError } = await supabase
+        .from('listing_photos')
+        .select('listing_id, storage_path, display_order')
+        .in('listing_id', listingIds)
+        .order('display_order', { ascending: true });
+
+      if (photosError) {
+        console.warn('[EV-Net] Could not hydrate listing thumbnails:', photosError.message);
+      } else {
+        (photos || []).forEach(photo => {
+          if (!firstPhotoByListing.has(photo.listing_id)) {
+            firstPhotoByListing.set(photo.listing_id, resolveListingPhotoUrl(photo.storage_path));
+          }
+        });
+      }
+    }
+
     return (data || []).map(l => ({
       ...l,
       hostId: l.host_id,
@@ -2340,9 +2432,7 @@ export const adminService = {
       priceDay: l.price_day_per_kwh,
       priceNight: l.price_night_per_kwh,
       pricePerHour: l.price_per_hour,
-      images: (l.listing_photos || [])
-        .sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
-        .map(p => resolveListingPhotoUrl(p.storage_path)),
+      images: firstPhotoByListing.get(l.id) ? [firstPhotoByListing.get(l.id)] : [],
       createdAt: l.created_at,
     }));
   },
@@ -2350,9 +2440,9 @@ export const adminService = {
   async getUsers() {
     // Fetch profiles, host_profiles, and ev_profiles in parallel to avoid RLS join issues
     const [profilesRes, hostRes, evRes] = await Promise.all([
-      supabase.from('profiles').select('*').order('created_at', { ascending: false }),
-      supabase.from('host_profiles').select('*'),
-      supabase.from('ev_profiles').select('*'),
+      supabase.from('profiles').select('id, name, email, role, avatar_url, is_suspended, created_at').order('created_at', { ascending: false }),
+      supabase.from('host_profiles').select('user_id, verification_status, avatar_path'),
+      supabase.from('ev_profiles').select('user_id, verification_status, avatar_path'),
     ]);
     if (profilesRes.error) throw profilesRes.error;
 
@@ -2391,21 +2481,27 @@ export const adminService = {
   async getBookings({ showArchived = false } = {}) {
     let query = supabase
       .from('bookings')
-      .select('*, listing:listings(*), user:profiles!user_id(*)')
+      .select('id, user_id, listing_id, date, start_time, end_time, status, payment_method, payment_status, payment_proof_path, payout_status, base_fee, service_fee, total_fee, total_user_price, user_service_fee, host_platform_fee, host_payout, created_at, archived_at, exclude_from_financials, listing:listings(id, title), user:profiles!user_id(id, name, email)')
       .order('created_at', { ascending: false });
     if (!showArchived) {
       query = query.is('archived_at', null).is('exclude_from_financials', false);
     }
     const { data, error } = await query;
     if (error) throw error;
-    return Promise.all((data || []).map(async b => ({
+    return (data || []).map(b => ({
       ...b,
       createdAt: b.created_at,
+      startTime: b.start_time?.substring(0, 5) || '',
+      endTime: b.end_time?.substring(0, 5) || '',
       baseFee: b.base_fee,
       serviceFee: b.service_fee,
       totalFee: b.total_fee,
-      paymentProofUrl: await createPaymentProofSignedUrl(b.payment_proof_path)
-    })));
+      paymentProofUrl: null
+    }));
+  },
+
+  async getPaymentProofUrl(path) {
+    return createPaymentProofSignedUrl(path);
   },
 
 
@@ -2490,7 +2586,7 @@ export const adminService = {
   async getVerificationSubmissions() {
     let { data, error } = await supabase
       .from('verification_submissions')
-      .select('*, user:profiles!user_id(*, ev_profiles(*), host_profiles(*))')
+      .select('id, user_id, type, status, cnic_path, cnic_back_path, ev_proof_path, property_proof_path, charger_proof_path, reviewer_notes, submitted_at, reviewed_at, profile_type, document_type, storage_path, user:profiles!user_id(id, name, email, avatar_url, ev_profiles(verification_status, updated_at), host_profiles(verification_status, moderation_notes, updated_at))')
       .order('submitted_at', { ascending: false });
     
     if (error) {
@@ -2612,7 +2708,7 @@ export const adminService = {
       return acc;
     }, {});
     
-    return Promise.all(Object.values(grouped).map(async submission => {
+    return Object.values(grouped).map(submission => {
       // Profile status is the absolute source of truth for the verification lifecycle
       let finalStatus = (submission.status || 'pending').toLowerCase();
       const profileStatus = (submission.profile_type === 'HOST' ? submission.hostProfileStatus : submission.evProfileStatus);
@@ -2624,15 +2720,6 @@ export const adminService = {
       const reviewedAt = submission.reviewed_at || submission.reviewedAt || submission.profileUpdatedAt || null;
       const notes = submission.moderationNotes || submission.reviewer_notes || submission.admin_notes || '';
 
-      if (submission.profile_type === 'EV_USER') {
-        console.log('[EV-Net] normalized admin EV submission', {
-          email: submission.user?.email,
-          evProfileStatus: submission.evProfileStatus,
-          documentStatuses: submission.documentRows.map(dr => dr.status),
-          finalStatus
-        });
-      }
-
       return {
         ...submission,
         status: finalStatus,
@@ -2642,15 +2729,9 @@ export const adminService = {
         reviewer_notes: submission.reviewer_notes || notes,
         reviewed_at: reviewedAt,
         reviewedAt,
-        documentUrls: {
-          cnic_path: await createVerificationSignedUrl(submission.cnic_path),
-          cnic_back_path: await createVerificationSignedUrl(submission.cnic_back_path),
-          ev_proof_path: await createVerificationSignedUrl(submission.ev_proof_path),
-          property_proof_path: await createVerificationSignedUrl(submission.property_proof_path),
-          charger_proof_path: await createVerificationSignedUrl(submission.charger_proof_path)
-        }
+        documentUrls: {}
       };
-    }));
+    });
   },
 
   async getConversations() {
@@ -2781,18 +2862,23 @@ export const onboardingPaymentService = {
         throw new Error('Payment proof must be an image or PDF.');
       }
 
-      const extension = screenshotFile.name?.split('.').pop() || 'png';
+      const screenshotUploadFile = await optimizeVerificationUploadFile(screenshotFile);
+      const extension = screenshotUploadFile.name?.split('.').pop() || (screenshotUploadFile.type === 'image/jpeg' ? 'jpg' : 'png');
       const safeListingId = data.listingId || 'general';
       const fileName = `${safeListingId}_${Date.now()}.${extension}`;
       const filePath = `payments/${userId}/${fileName}`;
       
       console.log(`[EV-Net] onboardingPaymentService.submitPayment: Uploading screenshot to '${VERIFICATION_BUCKET}' at: ${filePath}`);
-      const { error: uploadError } = await supabase.storage
-        .from(VERIFICATION_BUCKET)
-        .upload(filePath, screenshotFile, {
-          upsert: true,
-          contentType: screenshotFile.type || 'image/png'
-        });
+      const { error: uploadError } = await withOperationTimeout(
+        supabase.storage
+          .from(VERIFICATION_BUCKET)
+          .upload(filePath, screenshotUploadFile, {
+            upsert: true,
+            contentType: screenshotUploadFile.type || 'image/png'
+          }),
+        45000,
+        'Payment proof upload timed out after 45 seconds. Please check your connection.'
+      );
       
       if (uploadError) {
         console.error("[EV-Net] Error uploading payment screenshot:", uploadError);
@@ -2937,7 +3023,16 @@ export const onboardingPaymentService = {
     let { data, error } = await supabase
       .from('onboarding_payments')
       .select(`
-        *,
+        id,
+        user_id,
+        listing_id,
+        amount,
+        method,
+        screenshot_path,
+        status,
+        admin_notes,
+        created_at,
+        verified_at,
         user:profiles(id, name, email, avatar_url)
       `)
       .order('created_at', { ascending: false });
@@ -2973,15 +3068,15 @@ export const onboardingPaymentService = {
       data = data.map(row => ({ ...row, user: usersById[row.user_id] || null }));
     }
 
-    return Promise.all((data || []).map(async payment => ({
+    return (data || []).map(payment => ({
       ...payment,
       status: mapPaymentStatus(payment.status),
       payment_status: payment.status,
-      receiptUrl: await createVerificationSignedUrl(payment.screenshot_path),
+      receiptUrl: null,
       submittedAt: payment.created_at,
       reviewedAt: payment.verified_at,
       reviewed_at: payment.verified_at
-    })));
+    }));
   },
 
   async verifyPayment(paymentId, approved, notes) {
@@ -3551,33 +3646,30 @@ export const verificationService = {
 
     console.log(`[EV-Net] Starting upload for ${documentType} (User: ${userId})...`);
 
-    const fileExt = file.name.split('.').pop() || 'bin';
+    const uploadFile = await optimizeVerificationUploadFile(file);
+    const fileExt = uploadFile.name.split('.').pop() || (uploadFile.type === 'image/jpeg' ? 'jpg' : 'bin');
     const filePath = `${sessionUserId}/${documentType}_${Date.now()}.${fileExt}`;
     const normalizedProfileType = profileType === 'HOST' ? 'HOST' : 'EV_USER';
     const table = normalizedProfileType === 'HOST' ? 'host_profiles' : 'ev_profiles';
     const shouldUpdateProfileFlags = options.updateProfileFlags !== false;
 
-    // 1. Upload to Storage with a 30s timeout
+    // 1. Upload to Storage with a 45s timeout. Large camera images are compressed above.
     console.log(`[EV-Net] Uploading to bucket '${VERIFICATION_BUCKET}' at path: ${filePath}`);
     
     const uploadPromise = supabase.storage
       .from(VERIFICATION_BUCKET)
-      .upload(filePath, file, { 
+      .upload(filePath, uploadFile, { 
         upsert: true,
-        contentType: file.type || 'application/octet-stream'
+        contentType: uploadFile.type || 'application/octet-stream'
       });
 
-    const timeoutPromise = new Promise((_, reject) => 
-      setTimeout(() => {
-        console.error('[EV-Net] Upload timeout reached (20s)');
-        reject(new Error("Upload timed out after 20 seconds. Please check your connection."));
-      }, 20000)
+    const result = await withOperationTimeout(
+      uploadPromise,
+      45000,
+      "Upload timed out after 45 seconds. Please check your connection."
     );
 
-    console.log('[EV-Net] Racing upload against timeout...');
-    const result = await Promise.race([uploadPromise, timeoutPromise]);
-    
-    // Promise.race returns the raw result from the winner
+    // The storage helper returns Supabase's raw upload result.
     const { data: uploadData, error: uploadError } = result || {};
     
     if (uploadError) {
@@ -3592,8 +3684,43 @@ export const verificationService = {
 
     console.log(`[EV-Net] Storage upload successful:`, uploadData);
 
-    // 2. Record in submissions table (exact hybrid schema)
+    // 2. Record the submission and profile flag in one server-side operation when available.
     console.log(`[EV-Net] Recording submission in DB...`);
+    try {
+      const { error: rpcError } = await withOperationTimeout(
+        supabase.rpc('record_verification_document', {
+          p_profile_type: normalizedProfileType,
+          p_document_type: documentType,
+          p_storage_path: filePath,
+          p_update_profile_flags: shouldUpdateProfileFlags
+        }),
+        12000,
+        'Database operation timed out'
+      );
+
+      if (rpcError) {
+        if (isMissingRpcError(rpcError)) {
+          console.warn('[EV-Net] record_verification_document RPC unavailable; falling back to client-side recording.');
+        } else {
+          throw rpcError;
+        }
+      } else {
+        console.log(`[EV-Net] Submission recorded via RPC.`);
+        return {
+          success: true,
+          path: filePath,
+          originalSize: file.size,
+          uploadedSize: uploadFile.size
+        };
+      }
+    } catch (err) {
+      if (isMissingRpcError(err)) {
+        console.warn('[EV-Net] record_verification_document RPC unavailable; falling back to client-side recording.');
+      } else {
+        console.error('[EV-Net] Submission record RPC error:', err);
+        throw new Error(`Database error: ${err.message}`);
+      }
+    }
     
     // Map documentType to legacy path columns
     const legacyPathMap = {
@@ -3695,7 +3822,12 @@ export const verificationService = {
       console.log(`[EV-Net] Skipping profile flag update; caller will finalize via RPC.`);
     }
 
-    return { success: true, path: filePath };
+    return {
+      success: true,
+      path: filePath,
+      originalSize: file.size,
+      uploadedSize: uploadFile.size
+    };
   },
 
   /**

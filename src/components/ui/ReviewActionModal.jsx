@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { X, CheckCircle, AlertTriangle, FileText, Download, Loader2 } from 'lucide-react';
+import { verificationService } from '../../data/api';
 
 /**
  * ReviewActionModal
@@ -13,6 +14,18 @@ const ReviewActionModal = ({ isOpen, onClose, user, targetType = 'evType', submi
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState(null);
   const [validationError, setValidationError] = useState(null);
+  const [documentUrls, setDocumentUrls] = useState({});
+  const [receiptUrl, setReceiptUrl] = useState(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const submissionId = submission?.id;
+  const initialDocumentUrls = submission?.documentUrls;
+  const initialReceiptUrl = submission?.receiptUrl;
+  const screenshotPath = submission?.screenshot_path;
+  const cnicPath = submission?.cnic_path;
+  const cnicBackPath = submission?.cnic_back_path;
+  const evProofPath = submission?.ev_proof_path;
+  const propertyProofPath = submission?.property_proof_path;
+  const chargerProofPath = submission?.charger_proof_path;
 
   useEffect(() => {
     if (!isOpen) return;
@@ -21,26 +34,78 @@ const ReviewActionModal = ({ isOpen, onClose, user, targetType = 'evType', submi
     setIsSubmitting(false);
     setSubmitError(null);
     setValidationError(null);
-  }, [isOpen, submission?.id]);
+    setDocumentUrls(initialDocumentUrls || {});
+    setReceiptUrl(initialReceiptUrl || null);
+  }, [isOpen, submissionId, initialDocumentUrls, initialReceiptUrl]);
+
+  useEffect(() => {
+    if (!isOpen || !submissionId) return undefined;
+
+    let isMounted = true;
+    const loadPreviewUrls = async () => {
+      setPreviewLoading(true);
+      try {
+        if (targetType === 'payment') {
+          const signedReceiptUrl = screenshotPath
+            ? await verificationService.getSignedUrl(screenshotPath)
+            : null;
+          if (isMounted) setReceiptUrl(signedReceiptUrl);
+          return;
+        }
+
+        const paths = {
+          cnic_path: cnicPath,
+          cnic_back_path: cnicBackPath,
+          ev_proof_path: evProofPath,
+          property_proof_path: propertyProofPath,
+          charger_proof_path: chargerProofPath
+        };
+
+        const entries = await Promise.all(Object.entries(paths).map(async ([key, path]) => [
+          key,
+          path ? await verificationService.getSignedUrl(path) : null
+        ]));
+
+        if (isMounted) setDocumentUrls(Object.fromEntries(entries));
+      } finally {
+        if (isMounted) setPreviewLoading(false);
+      }
+    };
+
+    loadPreviewUrls();
+    return () => {
+      isMounted = false;
+    };
+  }, [
+    isOpen,
+    targetType,
+    submissionId,
+    screenshotPath,
+    cnicPath,
+    cnicBackPath,
+    evProofPath,
+    propertyProofPath,
+    chargerProofPath
+  ]);
   
   if (!isOpen || !user) return null;
 
   // Map real document paths from the submission object
   const realDocs = [];
   if (submission?.cnic_path) {
-    realDocs.push({ id: 'cnic', name: 'CNIC Front', path: submission.cnic_path, url: submission.documentUrls?.cnic_path });
+    realDocs.push({ id: 'cnic', name: 'CNIC Front', path: submission.cnic_path, url: documentUrls.cnic_path || submission.documentUrls?.cnic_path });
   }
   if (submission?.cnic_back_path) {
-    realDocs.push({ id: 'cnic_back', name: 'CNIC Back', path: submission.cnic_back_path, url: submission.documentUrls?.cnic_back_path });
+    realDocs.push({ id: 'cnic_back', name: 'CNIC Back', path: submission.cnic_back_path, url: documentUrls.cnic_back_path || submission.documentUrls?.cnic_back_path });
   }
   if (submission?.ev_proof_path) {
-    realDocs.push({ id: 'ev', name: 'EV Ownership Proof', path: submission.ev_proof_path, url: submission.documentUrls?.ev_proof_path });
+    realDocs.push({ id: 'ev', name: 'EV Ownership Proof', path: submission.ev_proof_path, url: documentUrls.ev_proof_path || submission.documentUrls?.ev_proof_path });
   }
   if (submission?.property_proof_path) {
-    realDocs.push({ id: 'property', name: 'Property Proof', path: submission.property_proof_path, url: submission.documentUrls?.property_proof_path });
+    realDocs.push({ id: 'property', name: 'Property Proof', path: submission.property_proof_path, url: documentUrls.property_proof_path || submission.documentUrls?.property_proof_path });
   }
   if (submission?.charger_proof_path) {
-    realDocs.push({ id: 'charger', name: 'Charger Spec Proof', path: submission.charger_proof_path, url: submission.documentUrls?.charger_proof_path });
+    realDocs.push({ id: 'charger', name: 'Charger Spec Proof', path: submission.charger_proof_path, url: documentUrls.charger_proof_path || submission.documentUrls?.charger_proof_path });
   }
 
   const getDocUrl = (doc) => doc?.url || null;
@@ -149,12 +214,16 @@ const ReviewActionModal = ({ isOpen, onClose, user, targetType = 'evType', submi
               
               {submission?.screenshot_path && (
                 <div style={{ borderRadius: '12px', overflow: 'hidden', border: '1px solid var(--border-color)' }}>
-                  {submission.receiptUrl ? (
+                  {receiptUrl || submission.receiptUrl ? (
                     <img 
-                      src={submission.receiptUrl}
+                      src={receiptUrl || submission.receiptUrl}
                       alt="Payment Proof" 
                       style={{ width: '100%', display: 'block' }} 
                     />
+                  ) : previewLoading ? (
+                    <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                      <Loader2 size={22} className="spin" /> Loading receipt...
+                    </div>
                   ) : (
                     <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
                       Payment receipt preview unavailable.
@@ -176,16 +245,23 @@ const ReviewActionModal = ({ isOpen, onClose, user, targetType = 'evType', submi
                    {realDocs.map(doc => (
                        <div key={doc.id} style={{ border: '1px solid var(--border-color)', borderRadius: '12px', overflow: 'hidden', background: 'rgba(0,0,0,0.2)' }}>
                           <div style={{ minHeight: '180px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                              <img 
-                                src={getDocUrl(doc)} 
-                                alt={doc.name} 
-                                style={{ maxWidth: '100%', maxHeight: '400px', objectFit: 'contain' }} 
-                                onError={(e) => {
-                                  e.target.style.display = 'none';
-                                  e.target.nextSibling.style.display = 'flex';
-                                }}
-                              />
-                              <div style={{ display: 'none', height: '120px', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)', flexDirection: 'column', gap: '10px' }}>
+                              {getDocUrl(doc) ? (
+                                <img 
+                                  src={getDocUrl(doc)} 
+                                  alt={doc.name} 
+                                  style={{ maxWidth: '100%', maxHeight: '400px', objectFit: 'contain' }} 
+                                  onError={(e) => {
+                                    e.target.style.display = 'none';
+                                    e.target.nextSibling.style.display = 'flex';
+                                  }}
+                                />
+                              ) : previewLoading ? (
+                                <div style={{ display: 'flex', height: '120px', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)', flexDirection: 'column', gap: '10px' }}>
+                                  <Loader2 size={28} className="spin" />
+                                  <span style={{ fontSize: '0.8rem' }}>Loading preview...</span>
+                                </div>
+                              ) : null}
+                              <div style={{ display: !getDocUrl(doc) && !previewLoading ? 'flex' : 'none', height: '120px', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)', flexDirection: 'column', gap: '10px' }}>
                                 <FileText size={48} opacity={0.3} />
                                 <span style={{ fontSize: '0.8rem' }}>Preview unavailable</span>
                               </div>

@@ -6,8 +6,35 @@ import { authService, verificationService } from '../../data/api';
 import { VerificationStatus } from '../../data/schema';
 import FileUploadDropzone from '../../components/ui/FileUploadDropzone';
 
+const UPLOAD_TYPE_BY_STEP_ID = {
+  identity: 'cnic',
+  identity_back: 'cnic_back',
+  ev: 'ev',
+  property: 'property',
+  charger: 'charger'
+};
+
+const STEP_ID_BY_UPLOAD_TYPE = Object.entries(UPLOAD_TYPE_BY_STEP_ID).reduce((acc, [stepId, uploadType]) => {
+  acc[uploadType] = stepId;
+  return acc;
+}, {});
+
+function getUploadedDocumentPatch(type, path, isHost) {
+  const patchByType = {
+    cnic: { cnicSubmitted: true, cnicPath: path },
+    cnic_back: { cnicBackSubmitted: true, cnicBackPath: path },
+    ev: { evProofSubmitted: true, evProofPath: path },
+    property: { propertyProofUploaded: true, propertyProofPath: path },
+    charger: { chargerProofUploaded: true, chargerProofPath: path }
+  };
+
+  if (isHost && type === 'ev') return {};
+  if (!isHost && ['property', 'charger'].includes(type)) return {};
+  return patchByType[type] || {};
+}
+
 const Verification = () => {
-  const { user, reloadUser } = useAuthStore();
+  const { user, reloadUser, patchUser } = useAuthStore();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -16,6 +43,11 @@ const Verification = () => {
   const [uploadFeedback, setUploadFeedback] = useState({ cnic: null, cnic_back: null, ev: null, property: null, charger: null, email: null });
   const [replacing, setReplacing] = useState({ cnic: false, cnic_back: false, ev: false, property: false, charger: false });
   const [signedUrls, setSignedUrls] = useState({});
+  const cnicPath = user?.cnicPath;
+  const cnicBackPath = user?.cnicBackPath;
+  const evProofPath = user?.evProofPath;
+  const propertyProofPath = user?.propertyProofPath;
+  const chargerProofPath = user?.chargerProofPath;
 
   // Auto-redirect if they are not a real user or not logged in
   useEffect(() => {
@@ -26,11 +58,11 @@ const Verification = () => {
     let isMounted = true;
     const loadSignedUrls = async () => {
       const paths = {
-        identity: user?.cnicPath,
-        identity_back: user?.cnicBackPath,
-        ev: user?.evProofPath,
-        property: user?.propertyProofPath,
-        charger: user?.chargerProofPath
+        identity: cnicPath,
+        identity_back: cnicBackPath,
+        ev: evProofPath,
+        property: propertyProofPath,
+        charger: chargerProofPath
       };
 
       const entries = await Promise.all(Object.entries(paths).map(async ([key, path]) => [
@@ -43,11 +75,15 @@ const Verification = () => {
       }
     };
 
-    if (user) loadSignedUrls();
+    if ([cnicPath, cnicBackPath, evProofPath, propertyProofPath, chargerProofPath].some(Boolean)) {
+      loadSignedUrls();
+    } else {
+      setSignedUrls({});
+    }
     return () => {
       isMounted = false;
     };
-  }, [user]);
+  }, [cnicPath, cnicBackPath, evProofPath, propertyProofPath, chargerProofPath]);
 
   if (!user) return null;
 
@@ -79,13 +115,25 @@ const Verification = () => {
       if (!actualFile) throw new Error("No file object found in dropzone response.");
       
       console.log(`[EV-Net] Calling verificationService.uploadDocument...`);
-      await verificationService.uploadDocument(user.id, profileType, docType, actualFile);
+      const result = await verificationService.uploadDocument(user.id, profileType, docType, actualFile);
       console.log(`[EV-Net] uploadDocument resolved.`);
+
+      const uploadedPath = result?.path;
+      if (uploadedPath) {
+        patchUser(getUploadedDocumentPatch(type, uploadedPath, user?.role === 'HOST'));
+      }
+
+      const stepId = STEP_ID_BY_UPLOAD_TYPE[type];
+      if (stepId && actualFile.type?.startsWith('image/')) {
+        setSignedUrls(prev => ({ ...prev, [stepId]: URL.createObjectURL(actualFile) }));
+      }
       
       setUploadFeedback(prev => ({ ...prev, [type]: 'success' }));
       setReplacing(prev => ({ ...prev, [type]: false }));
-      
-      await reloadUser();
+
+      reloadUser().catch(err => {
+        console.warn('[EV-Net] Background profile refresh after upload failed:', err.message);
+      });
     } catch (err) {
       setUploadFeedback(prev => ({ ...prev, [type]: err.message || 'Upload failed.' }));
     } finally {
@@ -110,6 +158,7 @@ const Verification = () => {
     const missing = [];
     if (user?.role === 'HOST') {
       if (!user.cnicSubmitted) missing.push('CNIC front');
+      if (!user.cnicBackSubmitted) missing.push('CNIC back');
       if (!user.propertyProofUploaded) missing.push('property proof');
       if (!user.chargerProofUploaded) missing.push('charger proof');
     } else {
@@ -210,6 +259,7 @@ const Verification = () => {
         !user.evProofSubmitted && 'EV ownership proof'
       ].filter(Boolean);
   const requiredDocumentsReady = missingRequirements.length === 0;
+  const isAnyDocumentUploading = Object.entries(uploading).some(([key, value]) => key !== 'email' && value);
 
   return (
     <div className="section" style={{ minHeight: 'calc(100vh - 72px)' }}>
@@ -279,6 +329,9 @@ const Verification = () => {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
               {steps.map((step, idx) => {
                 const isCompleted = step.status === 'completed';
+                const uploadType = UPLOAD_TYPE_BY_STEP_ID[step.id];
+                const isStepUploading = uploadType ? uploading[uploadType] : false;
+                const stepFeedback = uploadType ? uploadFeedback[uploadType] : null;
                 
                 return (
                   <div key={step.id} style={{ display: 'flex', gap: '1rem', opacity: (isUnderReview || isApproved) && !isCompleted ? 0.6 : 1 }}>
@@ -357,9 +410,14 @@ const Verification = () => {
                                files={[]}
                                onChange={(files) => handleFileUpload(step.id === 'identity' ? 'cnic' : step.id === 'identity_back' ? 'cnic_back' : step.id, files)}
                                mode="document"
-                               disabled={uploading[step.id === 'identity' ? 'cnic' : step.id === 'identity_back' ? 'cnic_back' : step.id]}
+                               disabled={isStepUploading}
                              />
-                             {uploading[step.id === 'identity' ? 'cnic' : step.id === 'identity_back' ? 'cnic_back' : step.id] && <p style={{ fontSize: '0.8rem', color: 'var(--brand-cyan)', marginTop: '0.5rem' }}>Uploading document...</p>}
+                             {isStepUploading && <p style={{ fontSize: '0.8rem', color: 'var(--brand-cyan)', marginTop: '0.5rem' }}>Uploading document...</p>}
+                             {stepFeedback && !isStepUploading && (
+                               <p style={{ fontSize: '0.8rem', color: stepFeedback === 'success' ? 'var(--brand-green)' : '#fb7185', marginTop: '0.5rem' }}>
+                                 {stepFeedback === 'success' ? 'Document uploaded.' : stepFeedback}
+                               </p>
+                             )}
                            </div>
                         )}
                       </div>
@@ -373,7 +431,7 @@ const Verification = () => {
             {!isUnderReview && !isApproved && !success && (
               <div style={{ marginTop: '2.5rem', paddingTop: '2rem', borderTop: '1px solid var(--border-color)' }}>
                 {error && <div className="auth-error" style={{ marginBottom: '1rem' }}>{error}</div>}
-                {!requiredDocumentsReady && (
+                {!requiredDocumentsReady && !isAnyDocumentUploading && (
                   <div className="auth-error" style={{ marginBottom: '1rem' }}>
                     Missing required document{missingRequirements.length > 1 ? 's' : ''}: {missingRequirements.join(', ')}.
                   </div>
@@ -383,7 +441,7 @@ const Verification = () => {
                   className="btn btn-primary" 
                   style={{ width: '100%', padding: '1.2rem', fontSize: '1.1rem', fontWeight: 600, marginTop: '1rem' }}
                   onClick={handleSubmit}
-                  disabled={loading || isUnderReview || isApproved || success || !requiredDocumentsReady}
+                  disabled={loading || isAnyDocumentUploading || isUnderReview || isApproved || success || !requiredDocumentsReady}
                 >
                   {loading ? 'Submitting...' : 'Submit Verification for Review'}
                 </button>

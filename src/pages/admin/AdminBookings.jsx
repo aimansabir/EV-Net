@@ -7,6 +7,8 @@ const AdminBookings = () => {
   const [filter, setFilter] = useState('all');
   const [verifyingId, setVerifyingId] = useState(null);
   const [payoutId, setPayoutId] = useState(null);
+  const [proofUrls, setProofUrls] = useState({});
+  const [proofLoadingId, setProofLoadingId] = useState(null);
 
   const [showArchived, setShowArchived] = useState(false);
   const [archivingId, setArchivingId] = useState(null);
@@ -77,6 +79,28 @@ const AdminBookings = () => {
       alert(err.message);
     } finally {
       setPayoutId(null);
+    }
+  };
+
+  const handleViewProof = async (booking) => {
+    const cachedUrl = proofUrls[booking.id] || booking.paymentProofUrl;
+    if (cachedUrl) {
+      window.open(cachedUrl, '_blank', 'noopener,noreferrer');
+      return;
+    }
+
+    if (!booking.payment_proof_path || proofLoadingId) return;
+
+    try {
+      setProofLoadingId(booking.id);
+      const url = await adminService.getPaymentProofUrl(booking.payment_proof_path);
+      if (!url) throw new Error('Payment proof is not available.');
+      setProofUrls(prev => ({ ...prev, [booking.id]: url }));
+      window.open(url, '_blank', 'noopener,noreferrer');
+    } catch (err) {
+      alert(err.message || 'Could not open payment proof.');
+    } finally {
+      setProofLoadingId(null);
     }
   };
 
@@ -158,10 +182,17 @@ const AdminBookings = () => {
                         {paymentStatusLabel[b.payment_status] || b.payment_status || 'Unpaid'}
                       </span>
                     </div>
-                    {b.paymentProofUrl ? (
-                      <a href={b.paymentProofUrl} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-block', marginTop: '0.35rem', fontSize: '0.75rem', color: 'var(--brand-cyan)', textDecoration: 'none', borderBottom: '1px solid var(--brand-cyan)' }}>View Proof</a>
+                    {b.paymentProofUrl || proofUrls[b.id] ? (
+                      <a href={b.paymentProofUrl || proofUrls[b.id]} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-block', marginTop: '0.35rem', fontSize: '0.75rem', color: 'var(--brand-cyan)', textDecoration: 'none', borderBottom: '1px solid var(--brand-cyan)' }}>View Proof</a>
                     ) : b.payment_proof_path ? (
-                      <div style={{ marginTop: '0.35rem', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Proof unavailable</div>
+                      <button
+                        type="button"
+                        onClick={() => handleViewProof(b)}
+                        disabled={!!proofLoadingId}
+                        style={{ display: 'inline-block', marginTop: '0.35rem', padding: 0, background: 'transparent', border: 'none', borderBottom: '1px solid var(--brand-cyan)', color: 'var(--brand-cyan)', fontSize: '0.75rem', cursor: proofLoadingId ? 'not-allowed' : 'pointer' }}
+                      >
+                        {proofLoadingId === b.id ? 'Opening...' : 'View Proof'}
+                      </button>
                     ) : null}
                   </td>
                   <td style={{ padding: '0.75rem' }}>
