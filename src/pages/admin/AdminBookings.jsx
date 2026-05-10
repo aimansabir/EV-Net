@@ -8,10 +8,13 @@ const AdminBookings = () => {
   const [verifyingId, setVerifyingId] = useState(null);
   const [payoutId, setPayoutId] = useState(null);
 
+  const [showArchived, setShowArchived] = useState(false);
+  const [archivingId, setArchivingId] = useState(null);
+
   const loadBookings = useCallback(async () => {
-    const data = await adminService.getBookings();
+    const data = await adminService.getBookings({ showArchived });
     setBookings(data);
-  }, []);
+  }, [showArchived]);
 
   useEffect(() => { loadBookings(); }, [loadBookings]);
 
@@ -77,26 +80,59 @@ const AdminBookings = () => {
     }
   };
 
+  const handleArchive = async (bookingId) => {
+    if (archivingId) return;
+    if (!window.confirm("This will hide the booking from dashboards and lists, but keep the audit record. Continue?")) return;
+    
+    try {
+      setArchivingId(bookingId);
+      await adminService.archiveBooking(bookingId);
+      await loadBookings();
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setArchivingId(null);
+    }
+  };
+
   return (
     <div className="section" style={{ minHeight: '100vh' }}>
       <div className="container" style={{ maxWidth: '1100px' }}>
         <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '2rem', marginBottom: '1.5rem' }}>All Bookings</h2>
 
-        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '2rem', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '2rem', flexWrap: 'wrap', alignItems: 'center' }}>
           {['all', 'pending', 'confirmed', 'completed', 'cancelled'].map(f => (
             <button key={f} onClick={() => setFilter(f)}
               style={{ padding: '0.5rem 1rem', borderRadius: '20px', border: filter === f ? '1px solid #fb7185' : '1px solid var(--border-color)', background: filter === f ? 'rgba(225,29,72,0.15)' : 'transparent', color: filter === f ? '#fb7185' : 'var(--text-secondary)', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 500, fontFamily: 'var(--font-body)', textTransform: 'capitalize' }}>
               {f}
             </button>
           ))}
+          <div style={{ marginLeft: 'auto' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-secondary)', fontSize: '0.85rem', cursor: 'pointer' }}>
+              <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
+              Show Archived
+            </label>
+          </div>
         </div>
 
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
-                {['User', 'Listing', 'Date', 'Time', 'User Paid', 'Platform Fee', 'Host Payout', 'Status', 'Payment', 'Payout Status', 'Actions'].map(h => (
-                  <th key={h} style={{ textAlign: 'left', padding: '0.75rem', color: 'var(--text-secondary)', fontWeight: 500 }}>{h}</th>
+                {[
+                  { label: 'User' },
+                  { label: 'Listing' },
+                  { label: 'Date' },
+                  { label: 'Time' },
+                  { label: 'User Total', title: 'Total amount charged to user' },
+                  { label: 'Platform Fee', title: 'User Service Fee + Host Platform Fee' },
+                  { label: 'Host Payout' },
+                  { label: 'Status' },
+                  { label: 'Payment' },
+                  { label: 'Payout Status' },
+                  { label: 'Actions' }
+                ].map(h => (
+                  <th key={h.label} title={h.title} style={{ textAlign: 'left', padding: '0.75rem', color: 'var(--text-secondary)', fontWeight: 500, cursor: h.title ? 'help' : 'default' }}>{h.label}</th>
                 ))}
               </tr>
             </thead>
@@ -151,6 +187,17 @@ const AdminBookings = () => {
                       >
                         {payoutId === b.id ? 'Marking...' : 'Mark Payout Paid'}
                       </button>
+                    )}
+                    {!b.archived_at ? (
+                      <button
+                        disabled={!!archivingId}
+                        onClick={() => handleArchive(b.id)}
+                        style={{ padding: '0.3rem 0.6rem', borderRadius: '4px', border: '1px solid var(--text-secondary)', background: 'transparent', color: 'var(--text-secondary)', cursor: archivingId ? 'not-allowed' : 'pointer', fontSize: '0.75rem', fontWeight: 600, opacity: archivingId && archivingId !== b.id ? 0.55 : 1 }}
+                      >
+                        {archivingId === b.id ? 'Archiving...' : 'Archive Test Booking'}
+                      </button>
+                    ) : (
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontStyle: 'italic' }}>Archived</span>
                     )}
                   </td>
                 </tr>

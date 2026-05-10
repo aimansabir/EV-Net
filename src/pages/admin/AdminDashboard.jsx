@@ -12,11 +12,13 @@ import {
   Flag, 
   AlertTriangle,
   ArrowRight,
-  Receipt
+  Receipt,
+  X
 } from 'lucide-react';
 
 const AdminDashboard = () => {
   const [stats, setStats] = useState(null);
+  const [activePanel, setActivePanel] = useState(null);
 
   useEffect(() => {
     let mounted = true;
@@ -45,7 +47,8 @@ const AdminDashboard = () => {
     { label: 'Total Users', value: stats.totalUsers, color: '#00F0FF', icon: Users, sub: '+4 this week' },
     { label: 'Total Hosts', value: stats.totalHosts, color: '#a78bfa', icon: Home, sub: 'Active partners' },
     { label: 'Active Listings', value: `${stats.activeListings}/${stats.totalListings}`, color: '#fb7185', icon: Zap, sub: 'Online now' },
-    { label: 'Total Bookings', value: stats.totalBookings, color: '#00D26A', icon: CalendarDays, sub: 'Last 30 days' },
+    { label: 'Real Bookings', value: stats.totalBookings, color: '#00D26A', icon: CalendarDays, sub: 'Confirmed sessions' },
+    { label: 'Archived / Test Bookings', value: stats.testArchivedBookings, color: '#94a3b8', icon: Flag, sub: 'Excluded from financials' },
   ];
 
   const moderationCards = [
@@ -55,41 +58,191 @@ const AdminDashboard = () => {
     { label: 'Flagged Listings', value: '0', color: '#f87171', icon: Flag, path: '/admin/listings' },
   ];
 
+  const renderPanelContent = () => {
+    if (!activePanel) return null;
+    
+    let title = '';
+    let rows = [];
+    let columns = [];
+
+    const isRealFinancialBooking = (b) => 
+      !b.archived_at && 
+      !b.exclude_from_financials && 
+      b.status === 'COMPLETED' && 
+      b.payment_status === 'paid';
+    
+    if (activePanel === 'collected') {
+      title = 'Total Collected from Users';
+      rows = (stats.bookingRows || []).filter(isRealFinancialBooking);
+      columns = [
+        { key: 'id', label: 'Booking ID' },
+        { key: 'date', label: 'Date' },
+        { key: 'amount', label: 'Collected Amount', render: r => formatPKR(r.total_user_price ?? r.total_fee ?? 0) }
+      ];
+    } else if (activePanel === 'revenue') {
+      title = 'Platform Revenue (Completed & Paid)';
+      rows = (stats.bookingRows || []).filter(isRealFinancialBooking);
+      columns = [
+        { key: 'id', label: 'Booking ID' },
+        { key: 'date', label: 'Date' },
+        { key: 'amount', label: 'Platform Fee', render: r => formatPKR((r.user_service_fee || 0) + (r.host_platform_fee || 0)) }
+      ];
+    } else if (activePanel === 'payoutsDue') {
+      title = 'Host Payouts Due';
+      rows = (stats.bookingRows || []).filter(b => isRealFinancialBooking(b) && b.payout_status === 'pending');
+      columns = [
+        { key: 'id', label: 'Booking ID' },
+        { key: 'date', label: 'Date' },
+        { key: 'amount', label: 'Payout Due', render: r => formatPKR(r.host_payout || 0) }
+      ];
+    } else if (activePanel === 'payoutsPaid') {
+      title = 'Host Payouts Paid';
+      rows = (stats.bookingRows || []).filter(b => isRealFinancialBooking(b) && b.payout_status === 'paid_to_host');
+      columns = [
+        { key: 'id', label: 'Booking ID' },
+        { key: 'date', label: 'Date' },
+        { key: 'amount', label: 'Payout Paid', render: r => formatPKR(r.host_payout || 0) }
+      ];
+    } else if (activePanel === 'receivables') {
+      title = 'Pending Receivables (Completed & Unpaid)';
+      rows = (stats.bookingRows || []).filter(b => !b.archived_at && !b.exclude_from_financials && b.status === 'COMPLETED' && b.payment_status !== 'paid');
+      columns = [
+        { key: 'id', label: 'Booking ID' },
+        { key: 'date', label: 'Date' },
+        { key: 'amount', label: 'Amount Due', render: r => formatPKR(r.total_user_price ?? r.total_fee ?? 0) },
+        { key: 'payment_status', label: 'Status' }
+      ];
+    } else if (activePanel === 'bookingValue') {
+      title = 'Pending Booking Value (Future/Confirmed)';
+      rows = (stats.bookingRows || []).filter(b => !b.archived_at && !b.exclude_from_financials && ['PENDING', 'CONFIRMED', 'ACCEPTED'].includes(b.status));
+      columns = [
+        { key: 'id', label: 'Booking ID' },
+        { key: 'date', label: 'Date' },
+        { key: 'amount', label: 'Value', render: r => formatPKR(r.total_user_price ?? r.total_fee ?? 0) },
+        { key: 'status', label: 'Status' }
+      ];
+    } else if (activePanel === 'fees') {
+      title = 'Host Registration Fees (Verified)';
+      rows = (stats.onboardingRows || []).filter(o => o.status === 'verified');
+      columns = [
+        { key: 'id', label: 'Payment ID' },
+        { key: 'date', label: 'Date', render: r => new Date(r.created_at).toLocaleDateString() },
+        { key: 'amount', label: 'Fee Collected', render: r => formatPKR(r.amount || 0) }
+      ];
+    }
+
+    return (
+      <div className="glass-card panel-slide-down" style={{ marginTop: '1.5rem', marginBottom: '2.5rem', padding: '1.5rem', border: '1px solid var(--border-color)', position: 'relative' }}>
+        <button onClick={() => setActivePanel(null)} style={{ position: 'absolute', top: '1rem', right: '1rem', background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}>
+          <X size={20} />
+        </button>
+        <h3 style={{ marginBottom: '1rem', fontSize: '1.1rem' }}>{title}</h3>
+        {rows.length === 0 ? (
+          <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>No records found.</div>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
+                  {columns.map(c => <th key={c.key} style={{ textAlign: 'left', padding: '0.75rem', color: 'var(--text-secondary)' }}>{c.label}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r, i) => (
+                  <tr key={i} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                    {columns.map(c => (
+                      <td key={c.key} style={{ padding: '0.75rem' }}>{c.render ? c.render(r) : r[c.key]}</td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <style>{`
+          .panel-slide-down { animation: slideDown 0.3s ease-out forwards; transform-origin: top; }
+          @keyframes slideDown { from { opacity: 0; transform: scaleY(0.95); } to { opacity: 1; transform: scaleY(1); } }
+        `}</style>
+      </div>
+    );
+  };
+
   return (
     <div className="section" style={{ minHeight: '100vh', padding: '2rem' }}>
       <div className="container" style={{ maxWidth: '1200px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '2.5rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '2.5rem', flexWrap: 'wrap', gap: '1.5rem' }}>
           <div>
             <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '2.2rem', marginBottom: '0.5rem', letterSpacing: '-0.5px' }}>Admin Overview</h2>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem' }}>Real-time platform metrics and security posture.</p>
           </div>
           <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-            <div className="glass-card" style={{ padding: '0.75rem 1.25rem', display: 'flex', alignItems: 'center', gap: '12px', border: '1px solid rgba(0, 210, 106, 0.2)', background: 'rgba(0, 210, 106, 0.05)' }}>
+            <div 
+              className="glass-card hover-lift" 
+              onClick={() => setActivePanel(activePanel === 'collected' ? null : 'collected')}
+              style={{ padding: '0.75rem 1.25rem', display: 'flex', alignItems: 'center', gap: '12px', border: activePanel === 'collected' ? '1px solid #3b82f6' : '1px solid rgba(59, 130, 246, 0.2)', background: 'rgba(59, 130, 246, 0.05)', cursor: 'pointer', transition: 'all 0.2s' }}>
+              <div>
+                <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', textTransform: 'uppercase', fontWeight: 600 }}>Total Collected</div>
+                <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#60a5fa' }}>{formatPKR(stats.totalCollected)}</div>
+              </div>
+            </div>
+            <div 
+              className="glass-card hover-lift" 
+              onClick={() => setActivePanel(activePanel === 'revenue' ? null : 'revenue')}
+              style={{ padding: '0.75rem 1.25rem', display: 'flex', alignItems: 'center', gap: '12px', border: activePanel === 'revenue' ? '1px solid #00D26A' : '1px solid rgba(0, 210, 106, 0.2)', background: 'rgba(0, 210, 106, 0.05)', cursor: 'pointer', transition: 'all 0.2s' }}>
               <div>
                 <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', textTransform: 'uppercase', fontWeight: 600 }}>Platform Revenue</div>
                 <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#00D26A' }}>{formatPKR(stats.totalRevenue)}</div>
               </div>
             </div>
-            <div className="glass-card" style={{ padding: '0.75rem 1.25rem', display: 'flex', alignItems: 'center', gap: '12px', border: '1px solid rgba(251, 191, 36, 0.2)', background: 'rgba(251, 191, 36, 0.05)' }}>
-              <div>
-                <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', textTransform: 'uppercase', fontWeight: 600 }}>Host Earnings</div>
-                <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#fbbf24' }}>{formatPKR(stats.hostEarnings)}</div>
-              </div>
-            </div>
-            <div className="glass-card" style={{ padding: '0.75rem 1.25rem', display: 'flex', alignItems: 'center', gap: '12px', border: '1px solid rgba(0, 240, 255, 0.2)', background: 'rgba(0, 240, 255, 0.05)' }}>
+            <div 
+              className="glass-card hover-lift" 
+              onClick={() => setActivePanel(activePanel === 'payoutsDue' ? null : 'payoutsDue')}
+              style={{ padding: '0.75rem 1.25rem', display: 'flex', alignItems: 'center', gap: '12px', border: activePanel === 'payoutsDue' ? '1px solid #00F0FF' : '1px solid rgba(0, 240, 255, 0.2)', background: 'rgba(0, 240, 255, 0.05)', cursor: 'pointer', transition: 'all 0.2s' }}>
               <div>
                 <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', textTransform: 'uppercase', fontWeight: 600 }}>Host Payouts Due</div>
                 <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#00F0FF' }}>{formatPKR(stats.hostPayoutsDue)}</div>
               </div>
             </div>
-            <div className="glass-card" style={{ padding: '0.75rem 1.25rem', display: 'flex', alignItems: 'center', gap: '12px', border: '1px solid rgba(167, 139, 250, 0.2)', background: 'rgba(167, 139, 250, 0.05)' }}>
+            <div 
+              className="glass-card hover-lift" 
+              onClick={() => setActivePanel(activePanel === 'payoutsPaid' ? null : 'payoutsPaid')}
+              style={{ padding: '0.75rem 1.25rem', display: 'flex', alignItems: 'center', gap: '12px', border: activePanel === 'payoutsPaid' ? '1px solid #a78bfa' : '1px solid rgba(167, 139, 250, 0.2)', background: 'rgba(167, 139, 250, 0.05)', cursor: 'pointer', transition: 'all 0.2s' }}>
               <div>
                 <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', textTransform: 'uppercase', fontWeight: 600 }}>Host Payouts Paid</div>
                 <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#a78bfa' }}>{formatPKR(stats.hostPayoutsPaid)}</div>
               </div>
             </div>
+            <div 
+              className="glass-card hover-lift" 
+              onClick={() => setActivePanel(activePanel === 'receivables' ? null : 'receivables')}
+              style={{ padding: '0.75rem 1.25rem', display: 'flex', alignItems: 'center', gap: '12px', border: activePanel === 'receivables' ? '1px solid #f59e0b' : '1px solid rgba(245, 158, 11, 0.2)', background: 'rgba(245, 158, 11, 0.05)', cursor: 'pointer', transition: 'all 0.2s' }}>
+              <div>
+                <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', textTransform: 'uppercase', fontWeight: 600 }}>Pending Receivables</div>
+                <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#f59e0b' }}>{formatPKR(stats.pendingReceivables)}</div>
+              </div>
+            </div>
+            <div 
+              className="glass-card hover-lift" 
+              onClick={() => setActivePanel(activePanel === 'bookingValue' ? null : 'bookingValue')}
+              style={{ padding: '0.75rem 1.25rem', display: 'flex', alignItems: 'center', gap: '12px', border: activePanel === 'bookingValue' ? '1px solid #fbbf24' : '1px solid rgba(251, 191, 36, 0.2)', background: 'rgba(251, 191, 36, 0.05)', cursor: 'pointer', transition: 'all 0.2s' }}>
+              <div>
+                <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', textTransform: 'uppercase', fontWeight: 600 }}>Pending Booking Value</div>
+                <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#fbbf24' }}>{formatPKR(stats.pendingBookingValue)}</div>
+              </div>
+            </div>
+            <div 
+              className="glass-card hover-lift" 
+              onClick={() => setActivePanel(activePanel === 'fees' ? null : 'fees')}
+              style={{ padding: '0.75rem 1.25rem', display: 'flex', alignItems: 'center', gap: '12px', border: activePanel === 'fees' ? '1px solid #fb7185' : '1px solid rgba(225, 29, 72, 0.2)', background: 'rgba(225, 29, 72, 0.05)', cursor: 'pointer', transition: 'all 0.2s' }}>
+              <div>
+                <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', textTransform: 'uppercase', fontWeight: 600 }}>Host Registration Fees</div>
+                <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#fb7185' }}>{formatPKR(stats.hostFeesCollected)}</div>
+              </div>
+            </div>
           </div>
         </div>
+
+        {renderPanelContent()}
 
         {/* Row 1: Business Metrics */}
         <div style={{ marginBottom: '3rem' }}>
@@ -163,6 +316,9 @@ const AdminDashboard = () => {
           </div>
         </div>
       </div>
+      <style>{`
+        .hover-lift:hover { transform: translateY(-3px); box-shadow: 0 10px 20px rgba(0,0,0,0.2); }
+      `}</style>
     </div>
   );
 };

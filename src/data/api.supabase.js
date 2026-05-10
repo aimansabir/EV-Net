@@ -1674,7 +1674,9 @@ export const bookingService = {
         *,
         listing:listings ( id, title, area, city, images:listing_photos ( storage_path ) )
       `)
-      .eq('user_id', userId);
+      .eq('user_id', userId)
+      .is('archived_at', null);
+
 
     if (error) throw error;
     
@@ -1748,7 +1750,9 @@ export const bookingService = {
       .from('bookings')
       .select('*, listing:listings!inner(*), user:profiles!user_id(*)')
       .eq('listing.host_id', hostId)
+      .is('archived_at', null)
       .order('created_at', { ascending: false });
+
     
     if (error) throw error;
     
@@ -2126,14 +2130,16 @@ export const adminService = {
         { data: bookingMoneyRows },
         { count: pendingEvCount },
         { count: pendingHostCount },
-        { count: pendingPayments }
+        { count: pendingOnboardingPayments },
+        { data: onboardingRows },
+        { count: totalRawBookings }
       ] = await Promise.all([
         supabase.from('profiles').select('*', { count: 'exact', head: true }),
         supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('role', 'HOST'),
         supabase.from('listings').select('*', { count: 'exact', head: true }),
         supabase.from('listings').select('*', { count: 'exact', head: true }).eq('is_active', true).eq('is_approved', true),
-        supabase.from('bookings').select('*', { count: 'exact', head: true }),
-        supabase.from('bookings').select('status, payment_status, user_service_fee, host_platform_fee, host_payout, payout_status, total_user_price, total_fee'),
+        supabase.from('bookings').select('*', { count: 'exact', head: true }).is('archived_at', null).is('exclude_from_financials', false),
+        supabase.from('bookings').select('id, status, payment_status, user_service_fee, host_platform_fee, host_payout, payout_status, total_user_price, total_fee, listing_id, user_id, date, created_at, archived_at, exclude_from_financials'),
         supabase
           .from('ev_profiles')
           .select('*', { count: 'exact', head: true })
@@ -2145,16 +2151,57 @@ export const adminService = {
         supabase
           .from('onboarding_payments')
           .select('*', { count: 'exact', head: true })
-          .eq('status', 'pending')
+          .eq('status', 'pending'),
+        supabase
+          .from('onboarding_payments')
+          .select('id, user_id, amount, method, status, created_at, verified_at'),
+        supabase.from('bookings').select('*', { count: 'exact', head: true }) // Total raw bookings
       ]);
 
-      const moneyRows = bookingMoneyRows || [];
-      const completedBookings = moneyRows.filter(b => b.status === 'COMPLETED' && b.payment_status === 'paid');
-      const totalRevenue = completedBookings.reduce((s, b) => s + (b.user_service_fee || 0) + (b.host_platform_fee || 0), 0);
-      const hostEarnings = completedBookings.reduce((s, b) => s + (b.host_payout || 0), 0);
-      const hostPayoutsDue = completedBookings.filter(b => b.payout_status === 'pending').reduce((s, b) => s + (b.host_payout || 0), 0);
-      const hostPayoutsPaid = moneyRows.filter(b => b.payout_status === 'paid_to_host').reduce((s, b) => s + (b.host_payout || 0), 0);
-      const totalCollected = completedBookings.reduce((s, b) => s + (b.total_user_price ?? b.total_fee ?? 0), 0);
+      const moneyRows = (bookingMoneyRows || []);
+
+      const isRealFinancialBooking = (b) => 
+        !b.archived_at && 
+        !b.exclude_from_financials && 
+        b.status === 'COMPLETED' && 
+        b.payment_status === 'paid';
+
+      // Strictly real, completed, paid bookings
+      const completedPaid = moneyRows.filter(isRealFinancialBooking);
+
+      const totalRevenue = completedPaid.reduce((s, b) => s + (b.user_service_fee || 0) + (b.host_platform_fee || 0), 0);
+      const hostEarnings = completedPaid.reduce((s, b) => s + (b.host_payout || 0), 0);
+      const hostPayoutsDue = completedPaid.filter(b => b.payout_status === 'pending').reduce((s, b) => s + (b.host_payout || 0), 0);
+      const hostPayoutsPaid = completedPaid.filter(b => b.payout_status === 'paid_to_host').reduce((s, b) => s + (b.host_payout || 0), 0);
+      const totalCollected = completedPaid.reduce((s, b) => s + (b.total_user_price ?? b.total_fee ?? 0), 0);
+
+      // Pending Receivables (real bookings, COMPLETED but not paid)
+      const pendingReceivablesRows = moneyRows.filter(b => 
+        !b.archived_at && 
+        !b.exclude_from_financials && 
+        b.status === 'COMPLETED' && 
+        b.payment_status !== 'paid'
+      );
+      const pendingReceivables = pendingReceivablesRows.reduce((s, b) => s + (b.total_user_price ?? b.total_fee ?? 0), 0);
+
+      // Pending Booking Value (real bookings, not completed yet)
+      const pendingBookingValueRows = moneyRows.filter(b => 
+        !b.archived_at && 
+        !b.exclude_from_financials && 
+        ['PENDING', 'CONFIRMED', 'ACCEPTED'].includes(b.status)
+      );
+      const pendingBookingValue = pendingBookingValueRows.reduce((s, b) => s + (b.total_user_price ?? b.total_fee ?? 0), 0);
+
+      // Onboarding payments
+      const obRows = onboardingRows || [];
+      const hostFeesCollected = obRows.filter(o => o.status === 'verified').reduce((s, o) => s + (o.amount || 0), 0);
+      const hostFeesPending = obRows.filter(o => o.status === 'pending').reduce((s, o) => s + (o.amount || 0), 0);
+      const hostFeesCount = obRows.length;
+
+      // Bookings count separation
+      const totalBookingsCount = totalRawBookings || 0;
+      const realBookingsCount = totalBookings || 0;
+      const testArchivedBookingsCount = totalBookingsCount - realBookingsCount;
 
       return {
         totalUsers: totalUsers || 0,
@@ -2163,13 +2210,22 @@ export const adminService = {
         activeListings: activeListings || 0,
         pendingEvVerifications: pendingEvCount || 0,
         pendingHostVerifications: pendingHostCount || 0,
-        pendingPayments: pendingPayments || 0,
-        totalBookings: totalBookings || 0,
+        pendingPayments: pendingOnboardingPayments || 0,
+        totalBookings: realBookingsCount,
+        testArchivedBookings: testArchivedBookingsCount,
         totalRevenue,
         hostEarnings,
         hostPayoutsDue,
         hostPayoutsPaid,
-        totalCollected
+        totalCollected,
+        pendingReceivables,
+        pendingBookingValue,
+        hostFeesCollected,
+        hostFeesPending,
+        hostFeesCount,
+        // Detail rows for inline panels
+        bookingRows: moneyRows,
+        onboardingRows: obRows,
       };
     })();
 
@@ -2185,50 +2241,120 @@ export const adminService = {
   async markPayoutPaid(bookingId) {
     const { data, error } = await supabase.rpc('admin_mark_payout_paid', { p_booking_id: bookingId });
     if (error) throw new Error(error.message);
+    _adminDashboardCache = null;
     return data;
   },
 
   async verifyPayment(bookingId) {
     const { data, error } = await supabase.rpc('verify_booking_payment', { p_booking_id: bookingId });
     if (error) throw new Error(error.message);
+    _adminDashboardCache = null;
     return data;
+  },
+
+  async archiveBooking(bookingId, reason = 'Test data cleanup') {
+    const { data, error } = await supabase.rpc('admin_archive_booking', { p_booking_id: bookingId, p_reason: reason });
+    if (error) throw new Error(error.message);
+    _adminDashboardCache = null;
+    return data;
+  },
+
+  async unarchiveBooking(bookingId) {
+    const { data, error } = await supabase.rpc('admin_unarchive_booking', { p_booking_id: bookingId });
+    if (error) throw new Error(error.message);
+    _adminDashboardCache = null;
+    return data;
+  },
+
+  async getOnboardingPayments() {
+    const { data, error } = await supabase
+      .from('onboarding_payments')
+      .select('*, user:profiles!user_id(id, name, email), listing:listings(id, title)')
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return (data || []).map(p => ({
+      ...p,
+      userName: p.user?.name,
+      userEmail: p.user?.email,
+      listingTitle: p.listing?.title,
+    }));
   },
 
   async getListings() {
     const { data, error } = await supabase
       .from('listings')
-      .select('*, host:profiles!host_id(*)')
+      .select('*, host:profiles!host_id(id, name, email), listing_photos(storage_path, display_order)')
       .order('created_at', { ascending: false });
     if (error) throw error;
-    return data.map(l => ({ ...l, hostId: l.host_id, isApproved: l.is_approved, isActive: l.is_active, createdAt: l.created_at }));
+    return (data || []).map(l => ({
+      ...l,
+      hostId: l.host_id,
+      isApproved: l.is_approved,
+      isActive: l.is_active,
+      setupFeePaid: l.setup_fee_paid,
+      chargerType: l.charger_type,
+      priceDay: l.price_day_per_kwh,
+      priceNight: l.price_night_per_kwh,
+      pricePerHour: l.price_per_hour,
+      images: (l.listing_photos || [])
+        .sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
+        .map(p => resolveListingPhotoUrl(p.storage_path)),
+      createdAt: l.created_at,
+    }));
   },
 
   async getUsers() {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*, hostProfile:host_profiles(*), evProfile:ev_profiles(*)')
-      .order('created_at', { ascending: false });
-    if (error) throw error;
-    return data.map(u => {
-      const evProfile = u.evProfile?.[0] || null;
-      const hostProfile = u.hostProfile?.[0] || null;
+    // Fetch profiles, host_profiles, and ev_profiles in parallel to avoid RLS join issues
+    const [profilesRes, hostRes, evRes] = await Promise.all([
+      supabase.from('profiles').select('*').order('created_at', { ascending: false }),
+      supabase.from('host_profiles').select('*'),
+      supabase.from('ev_profiles').select('*'),
+    ]);
+    if (profilesRes.error) throw profilesRes.error;
+
+    const hostMap = new Map();
+    (hostRes.data || []).forEach(hp => hostMap.set(hp.user_id, hp));
+    const evMap = new Map();
+    (evRes.data || []).forEach(ep => evMap.set(ep.user_id, ep));
+
+    return (profilesRes.data || []).map(u => {
+      const hostProfile = hostMap.get(u.id) || null;
+      const evProfile = evMap.get(u.id) || null;
+      // Derive verification status based on role
+      const verificationStatus = u.role === 'HOST'
+        ? (hostProfile?.verification_status || null)
+        : u.role === 'USER'
+          ? (evProfile?.verification_status || null)
+          : null;
       return {
         ...u,
         createdAt: u.created_at,
-        hostProfile,
-        evProfile,
+        hostProfile: hostProfile ? {
+          ...hostProfile,
+          verificationStatus: hostProfile.verification_status,
+        } : null,
+        evProfile: evProfile ? {
+          ...evProfile,
+          verificationStatus: evProfile.verification_status,
+        } : null,
+        verificationStatus,
         avatar: resolveAvatarUrl(evProfile?.avatar_path || hostProfile?.avatar_path) || u.avatar_url
       };
     });
   },
 
-  async getBookings() {
-    const { data, error } = await supabase
+
+  async getBookings({ showArchived = false } = {}) {
+    let query = supabase
       .from('bookings')
       .select('*, listing:listings(*), user:profiles!user_id(*)')
       .order('created_at', { ascending: false });
+    if (!showArchived) {
+      query = query.is('archived_at', null).is('exclude_from_financials', false);
+    }
+    const { data, error } = await query;
     if (error) throw error;
-    return Promise.all(data.map(async b => ({
+    return Promise.all((data || []).map(async b => ({
       ...b,
       createdAt: b.created_at,
       baseFee: b.base_fee,
@@ -2237,6 +2363,7 @@ export const adminService = {
       paymentProofUrl: await createPaymentProofSignedUrl(b.payment_proof_path)
     })));
   },
+
 
   async reviewListing(listingId, decision) {
     const { error } = await supabase.rpc('admin_review_listing', {
@@ -2929,6 +3056,7 @@ export const hostService = {
               user:profiles!user_id(id, name, ev_profiles(ev_model))
             `)
             .in('listing_id', hostListingIds)
+            .is('archived_at', null)
             .order('date', { ascending: false })
             .order('start_time', { ascending: false })
         : Promise.resolve({ data: [], error: null }));
@@ -3006,6 +3134,7 @@ export const hostService = {
           .select('*')
           .in('listing_id', hostListingIds)
           .eq('status', 'COMPLETED')
+          .is('archived_at', null)
       : Promise.resolve({ data: [], error: null }));
 
     if (bError) throw bError;
