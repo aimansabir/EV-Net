@@ -31,6 +31,7 @@ const ErrorMessage = ({ message, centered = false }) => (
 
 const dayNumberByLabel = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
 const dayLabelByNumber = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const HOST_ONBOARDING_STEP_TIMEOUT_MS = 30000;
 
 const makeExistingUpload = (path, url, label) => {
   if (!path) return null;
@@ -296,7 +297,7 @@ const HostOnboarding = () => {
         throw new Error('Your session is not ready. Please refresh and log in again.');
       }
 
-      const runStep = async (label, status, operation, timeoutMs = 15000) => {
+      const runStep = async (label, status, operation, timeoutMs = HOST_ONBOARDING_STEP_TIMEOUT_MS) => {
         let timeoutId;
         setPublishStatus(status);
         console.log(`[EV-Net] ${label}: started`);

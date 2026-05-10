@@ -3248,21 +3248,59 @@ export const hostService = {
   },
 
   async updateProfile(userId, data) {
-    const { error } = await supabase
+    const { data: updatedProfile, error } = await supabase
       .from('host_profiles')
       .update(data)
-      .eq('user_id', userId);
+      .eq('user_id', userId)
+      .select()
+      .maybeSingle();
     if (error) throw error;
+    if (!updatedProfile) {
+      await this.promote(userId);
+      const { data: repairedProfile, error: retryError } = await supabase
+        .from('host_profiles')
+        .update(data)
+        .eq('user_id', userId)
+        .select()
+        .maybeSingle();
+      if (retryError) throw retryError;
+      if (!repairedProfile) {
+        throw new Error('Host profile could not be initialized. Please refresh and try again.');
+      }
+    }
     return this.getProfile(userId);
   },
 
   async promote(userId) {
     if (!userId) throw new Error('User session is required before host promotion.');
+    const [profile, hostProfile] = await Promise.all([
+      getProfile(userId),
+      getHostProfile(userId)
+    ]);
+
+    if (profile?.role === 'HOST') {
+      if (hostProfile) {
+        console.log("[EV-Net] Host profile already initialized", userId);
+        return { success: true, skipped: true };
+      }
+
+      const { error: repairError } = await withOperationTimeout(
+        supabase.rpc('ensure_host_profile', { p_user_id: userId }),
+        15000,
+        'Host profile repair timed out after 15 seconds. Please try again.'
+      );
+      if (repairError) {
+        throw new Error(`Host profile repair failed: ${repairError.message}`);
+      }
+      console.log("[EV-Net] Host profile repaired", userId);
+      return { success: true, repaired: true };
+    }
+
     console.log("[EV-Net] Promoting user to host", userId);
     const response = await withOperationTimeout(
       supabase.rpc('promote_to_host', { target_user_id: userId }),
-      15000,
-      'Host promotion timed out after 15 seconds. Please try again.'
+      30000,
+      'Host promotion timed out after 30 seconds. Please try again.'
     );
     const { data, error } = response;
     console.log("[EV-Net] promote_to_host response:", { data, error });
