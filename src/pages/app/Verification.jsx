@@ -129,7 +129,7 @@ const Verification = () => {
       }
       
       setUploadFeedback(prev => ({ ...prev, [type]: 'success' }));
-      setReplacing(prev => ({ ...prev, [type]: false }));
+      setReplacing(prev => ({ ...prev, [stepId || type]: false }));
 
       reloadUser().catch(err => {
         console.warn('[EV-Net] Background profile refresh after upload failed:', err.message);
