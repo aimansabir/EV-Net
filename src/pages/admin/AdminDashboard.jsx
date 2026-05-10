@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { adminService } from '../../data/api';
 import { formatPKR } from '../../data/feeConfig';
@@ -19,6 +19,12 @@ import {
 const AdminDashboard = () => {
   const [stats, setStats] = useState(null);
   const [activePanel, setActivePanel] = useState(null);
+  const [feeActionId, setFeeActionId] = useState(null);
+
+  const loadDashboard = useCallback(async () => {
+    const data = await adminService.getDashboard();
+    setStats(data);
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -32,6 +38,35 @@ const AdminDashboard = () => {
       mounted = false;
     };
   }, []);
+
+  const handleArchiveOnboardingFee = async (paymentId) => {
+    if (feeActionId) return;
+    if (!window.confirm('Exclude this host registration payment from financial totals as test data?')) return;
+
+    try {
+      setFeeActionId(paymentId);
+      await adminService.archiveOnboardingPayment(paymentId);
+      await loadDashboard();
+    } catch (err) {
+      alert(err.message || 'Could not exclude host registration payment.');
+    } finally {
+      setFeeActionId(null);
+    }
+  };
+
+  const handleRestoreOnboardingFee = async (paymentId) => {
+    if (feeActionId) return;
+
+    try {
+      setFeeActionId(paymentId);
+      await adminService.unarchiveOnboardingPayment(paymentId);
+      await loadDashboard();
+    } catch (err) {
+      alert(err.message || 'Could not restore host registration payment.');
+    } finally {
+      setFeeActionId(null);
+    }
+  };
 
   if (!stats) return (
     <div className="section" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
@@ -70,9 +105,10 @@ const AdminDashboard = () => {
       !b.exclude_from_financials && 
       b.status === 'COMPLETED' && 
       b.payment_status === 'paid';
+    const isIncludedOnboardingPayment = (p) => !p.archived_at && !p.exclude_from_financials;
     
     if (activePanel === 'collected') {
-      title = 'Total Collected from Users';
+      title = 'Booking Cash Collected (Completed & Paid)';
       rows = (stats.bookingRows || []).filter(isRealFinancialBooking);
       columns = [
         { key: 'id', label: 'Booking ID' },
@@ -80,7 +116,7 @@ const AdminDashboard = () => {
         { key: 'amount', label: 'Collected Amount', render: r => formatPKR(r.total_user_price ?? r.total_fee ?? 0) }
       ];
     } else if (activePanel === 'revenue') {
-      title = 'Platform Revenue (Completed & Paid)';
+      title = 'Booking Platform Revenue (Completed & Paid)';
       rows = (stats.bookingRows || []).filter(isRealFinancialBooking);
       columns = [
         { key: 'id', label: 'Booking ID' },
@@ -126,8 +162,39 @@ const AdminDashboard = () => {
       rows = (stats.onboardingRows || []).filter(o => o.status === 'verified');
       columns = [
         { key: 'id', label: 'Payment ID' },
+        { key: 'host', label: 'Host', render: r => r.user?.name || 'Unknown' },
+        { key: 'email', label: 'Email', render: r => r.user?.email || 'Unknown' },
+        { key: 'listing', label: 'Listing', render: r => r.listing?.title || 'Not linked' },
         { key: 'date', label: 'Date', render: r => new Date(r.created_at).toLocaleDateString() },
-        { key: 'amount', label: 'Fee Collected', render: r => formatPKR(r.amount || 0) }
+        { key: 'amount', label: 'Fee', render: r => formatPKR(r.amount || 0) },
+        {
+          key: 'financials',
+          label: 'Financials',
+          render: r => isIncludedOnboardingPayment(r) ? 'Included' : `Excluded${r.archive_reason ? `: ${r.archive_reason}` : ''}`
+        },
+        {
+          key: 'action',
+          label: 'Action',
+          render: r => isIncludedOnboardingPayment(r) ? (
+            <button
+              type="button"
+              disabled={!!feeActionId}
+              onClick={() => handleArchiveOnboardingFee(r.id)}
+              style={{ padding: '0.3rem 0.6rem', borderRadius: '4px', border: '1px solid var(--text-secondary)', background: 'transparent', color: 'var(--text-secondary)', cursor: feeActionId ? 'not-allowed' : 'pointer', fontSize: '0.75rem', fontWeight: 600 }}
+            >
+              {feeActionId === r.id ? 'Excluding...' : 'Exclude Test Fee'}
+            </button>
+          ) : (
+            <button
+              type="button"
+              disabled={!!feeActionId}
+              onClick={() => handleRestoreOnboardingFee(r.id)}
+              style={{ padding: '0.3rem 0.6rem', borderRadius: '4px', border: '1px solid var(--brand-green)', background: 'rgba(0,210,106,0.1)', color: 'var(--brand-green)', cursor: feeActionId ? 'not-allowed' : 'pointer', fontSize: '0.75rem', fontWeight: 600 }}
+            >
+              {feeActionId === r.id ? 'Restoring...' : 'Restore'}
+            </button>
+          )
+        }
       ];
     }
 
@@ -137,6 +204,11 @@ const AdminDashboard = () => {
           <X size={20} />
         </button>
         <h3 style={{ marginBottom: '1rem', fontSize: '1.1rem' }}>{title}</h3>
+        {activePanel === 'fees' && (
+          <p style={{ marginTop: '-0.4rem', marginBottom: '1rem', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
+            Financial totals count only included verified host registration fees. Test/excluded rows stay visible here for audit history.
+          </p>
+        )}
         {rows.length === 0 ? (
           <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>No records found.</div>
         ) : (
@@ -181,8 +253,9 @@ const AdminDashboard = () => {
               onClick={() => setActivePanel(activePanel === 'collected' ? null : 'collected')}
               style={{ padding: '0.75rem 1.25rem', display: 'flex', alignItems: 'center', gap: '12px', border: activePanel === 'collected' ? '1px solid #3b82f6' : '1px solid rgba(59, 130, 246, 0.2)', background: 'rgba(59, 130, 246, 0.05)', cursor: 'pointer', transition: 'all 0.2s' }}>
               <div>
-                <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', textTransform: 'uppercase', fontWeight: 600 }}>Total Collected</div>
+                <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', textTransform: 'uppercase', fontWeight: 600 }}>Booking Cash Collected</div>
                 <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#60a5fa' }}>{formatPKR(stats.totalCollected)}</div>
+                <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>Completed paid bookings only</div>
               </div>
             </div>
             <div 
@@ -190,8 +263,9 @@ const AdminDashboard = () => {
               onClick={() => setActivePanel(activePanel === 'revenue' ? null : 'revenue')}
               style={{ padding: '0.75rem 1.25rem', display: 'flex', alignItems: 'center', gap: '12px', border: activePanel === 'revenue' ? '1px solid #00D26A' : '1px solid rgba(0, 210, 106, 0.2)', background: 'rgba(0, 210, 106, 0.05)', cursor: 'pointer', transition: 'all 0.2s' }}>
               <div>
-                <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', textTransform: 'uppercase', fontWeight: 600 }}>Platform Revenue</div>
+                <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', textTransform: 'uppercase', fontWeight: 600 }}>Booking Platform Revenue</div>
                 <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#00D26A' }}>{formatPKR(stats.totalRevenue)}</div>
+                <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>User fee + host fee</div>
               </div>
             </div>
             <div 
@@ -237,6 +311,9 @@ const AdminDashboard = () => {
               <div>
                 <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', textTransform: 'uppercase', fontWeight: 600 }}>Host Registration Fees</div>
                 <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#fb7185' }}>{formatPKR(stats.hostFeesCollected)}</div>
+                <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
+                  Excludes test fees: {formatPKR(stats.hostFeesExcluded || 0)} ({stats.hostFeesExcludedCount || 0})
+                </div>
               </div>
             </div>
           </div>

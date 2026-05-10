@@ -27,7 +27,7 @@ export function friendlyAuthError(error) {
     return 'If this email already has an account, please log in or reset your password.';
   }
 
-  if (lower.includes('rate limit')) {
+  if (lower.includes('rate limit') || lower.includes('too many')) {
     return 'Too many attempts. Please wait a minute and try again.';
   }
 

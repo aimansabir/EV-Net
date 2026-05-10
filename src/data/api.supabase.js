@@ -20,6 +20,7 @@ const CACHE_TTL = 10000; // 10 seconds
 const VERIFICATION_BUCKET = 'verification_documents';
 const PAYMENT_PROOF_BUCKET = 'payment_proofs';
 const VALID_BOOKING_CHAT_STATUSES = new Set(['confirmed', 'accepted', 'active', 'completed']);
+const EXISTING_ACCOUNT_MESSAGE = 'If this email already has an account, please log in or reset your password.';
 const LISTING_CACHE_TTL = 2 * 60 * 1000;
 const _listingCache = new Map();
 const _listingInflight = new Map();
@@ -102,6 +103,37 @@ async function withOperationTimeout(promise, ms, message) {
 function isMissingColumnError(error, columnName) {
   const message = error?.message || '';
   return (error?.code === '42703' || error?.code === 'PGRST204') && message.includes(columnName);
+}
+
+async function emailAlreadyExists(email) {
+  const normalizedEmail = email?.trim().toLowerCase();
+  if (!normalizedEmail) return false;
+
+  try {
+    const { data, error } = await supabase.rpc('email_exists', { p_email: normalizedEmail });
+    if (!error && typeof data === 'boolean') return data;
+    if (error) console.warn("[EV-Net] email_exists RPC failed; falling back to profiles lookup:", error.message);
+  } catch (err) {
+    console.warn("[EV-Net] email_exists RPC unavailable; falling back to profiles lookup:", err.message);
+  }
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id')
+    .eq('email', normalizedEmail)
+    .maybeSingle();
+
+  if (error) {
+    console.warn("[EV-Net] profiles email lookup failed:", error.message);
+    return false;
+  }
+
+  return !!data;
+}
+
+function isRateLimitError(error) {
+  const lower = (error?.message || String(error || '')).toLowerCase();
+  return lower.includes('rate limit') || lower.includes('too many');
 }
 
 /**
@@ -498,13 +530,11 @@ export const authService = {
     const normalizedName = normalizePersonName(formData.name);
     const normalizedEmail = formData.email.trim().toLowerCase();
 
-    // Requirement 1 & 2: Check whether the email already exists via RPC
-    const { data: exists, error: checkError } = await supabase.rpc('email_exists', { p_email: normalizedEmail });
-    if (checkError) {
-      console.error("[EV-Net] email_exists check failed:", checkError);
-    } else if (exists) {
+    // Requirement 1 & 2: Check whether the email already exists before hitting Auth.
+    const exists = await emailAlreadyExists(normalizedEmail);
+    if (exists) {
       console.log('[EV-Net][Signup] failed — duplicate email');
-      throw new Error("An account with this email already exists. Please log in or reset your password.");
+      throw new Error(EXISTING_ACCOUNT_MESSAGE);
     }
 
     const { data, error } = await supabase.auth.signUp({
@@ -523,6 +553,9 @@ export const authService = {
     });
     if (error) {
       console.error('[EV-Net][Signup] failed — auth error:', error.message);
+      if (isRateLimitError(error) && await emailAlreadyExists(normalizedEmail)) {
+        throw new Error(EXISTING_ACCOUNT_MESSAGE);
+      }
       throw new Error(friendlyAuthError(error));
     }
     console.log('[EV-Net][Signup] auth created');
@@ -574,13 +607,11 @@ export const authService = {
     const normalizedName = normalizePersonName(formData.name);
     const normalizedEmail = formData.email.trim().toLowerCase();
 
-    // Requirement 1 & 2: Check whether the email already exists via RPC
-    const { data: exists, error: checkError } = await supabase.rpc('email_exists', { p_email: normalizedEmail });
-    if (checkError) {
-      console.error("[EV-Net] email_exists check failed:", checkError);
-    } else if (exists) {
+    // Requirement 1 & 2: Check whether the email already exists before hitting Auth.
+    const exists = await emailAlreadyExists(normalizedEmail);
+    if (exists) {
       console.log('[EV-Net][Signup] failed — duplicate email');
-      throw new Error("An account with this email already exists. Please log in or reset your password.");
+      throw new Error(EXISTING_ACCOUNT_MESSAGE);
     }
 
     const { data, error } = await supabase.auth.signUp({
@@ -596,6 +627,9 @@ export const authService = {
     });
     if (error) {
       console.error('[EV-Net][Signup] failed — auth error:', error.message);
+      if (isRateLimitError(error) && await emailAlreadyExists(normalizedEmail)) {
+        throw new Error(EXISTING_ACCOUNT_MESSAGE);
+      }
       throw new Error(friendlyAuthError(error));
     }
     console.log('[EV-Net][Signup] auth created');
@@ -2154,7 +2188,7 @@ export const adminService = {
           .eq('status', 'pending'),
         supabase
           .from('onboarding_payments')
-          .select('id, user_id, amount, method, status, created_at, verified_at'),
+          .select('*, user:profiles!user_id(id, name, email), listing:listings(id, title)'),
         supabase.from('bookings').select('*', { count: 'exact', head: true }) // Total raw bookings
       ]);
 
@@ -2194,8 +2228,13 @@ export const adminService = {
 
       // Onboarding payments
       const obRows = onboardingRows || [];
-      const hostFeesCollected = obRows.filter(o => o.status === 'verified').reduce((s, o) => s + (o.amount || 0), 0);
-      const hostFeesPending = obRows.filter(o => o.status === 'pending').reduce((s, o) => s + (o.amount || 0), 0);
+      const isIncludedOnboardingPayment = (o) => !o.archived_at && !o.exclude_from_financials;
+      const includedHostFeeRows = obRows.filter(isIncludedOnboardingPayment);
+      const excludedHostFeeRows = obRows.filter(o => !isIncludedOnboardingPayment(o));
+      const hostFeesCollected = includedHostFeeRows.filter(o => o.status === 'verified').reduce((s, o) => s + (o.amount || 0), 0);
+      const hostFeesPending = includedHostFeeRows.filter(o => o.status === 'pending').reduce((s, o) => s + (o.amount || 0), 0);
+      const verifiedExcludedHostFeeRows = excludedHostFeeRows.filter(o => o.status === 'verified');
+      const hostFeesExcluded = verifiedExcludedHostFeeRows.reduce((s, o) => s + (o.amount || 0), 0);
       const hostFeesCount = obRows.length;
 
       // Bookings count separation
@@ -2222,6 +2261,8 @@ export const adminService = {
         pendingBookingValue,
         hostFeesCollected,
         hostFeesPending,
+        hostFeesExcluded,
+        hostFeesExcludedCount: verifiedExcludedHostFeeRows.length,
         hostFeesCount,
         // Detail rows for inline panels
         bookingRows: moneyRows,
@@ -2266,18 +2307,21 @@ export const adminService = {
     return data;
   },
 
-  async getOnboardingPayments() {
-    const { data, error } = await supabase
-      .from('onboarding_payments')
-      .select('*, user:profiles!user_id(id, name, email), listing:listings(id, title)')
-      .order('created_at', { ascending: false });
-    if (error) throw error;
-    return (data || []).map(p => ({
-      ...p,
-      userName: p.user?.name,
-      userEmail: p.user?.email,
-      listingTitle: p.listing?.title,
-    }));
+  async archiveOnboardingPayment(paymentId, reason = 'Test host registration cleanup') {
+    const { data, error } = await supabase.rpc('admin_archive_onboarding_payment', {
+      p_payment_id: paymentId,
+      p_reason: reason
+    });
+    if (error) throw new Error(error.message);
+    _adminDashboardCache = null;
+    return data;
+  },
+
+  async unarchiveOnboardingPayment(paymentId) {
+    const { data, error } = await supabase.rpc('admin_unarchive_onboarding_payment', { p_payment_id: paymentId });
+    if (error) throw new Error(error.message);
+    _adminDashboardCache = null;
+    return data;
   },
 
   async getListings() {

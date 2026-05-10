@@ -56,6 +56,8 @@ const SignupHost = () => {
   const pwTouched = formData.password.length > 0;
   const passwordsMatch = formData.password === formData.confirmPassword;
   const confirmTouched = formData.confirmPassword.length > 0;
+  const errorText = localError || error || '';
+  const showAccountRecovery = /already (has an account|exists)|too many attempts/i.test(errorText);
 
   const handleSignup = async (e) => {
     e.preventDefault();
@@ -142,10 +144,10 @@ const SignupHost = () => {
       subtitle="List your charger and start earning with EV-Net"
     >
 
-      {(error || localError) && (
+      {errorText && (
         <div className="auth-error">
-          <div>{localError || error}</div>
-          {(String(error || localError || '')).toLowerCase().includes('already exists') && (
+          <div>{errorText}</div>
+          {showAccountRecovery && (
             <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1rem' }}>
               <Link to="/login" className="btn btn-secondary" style={{ flex: 1, padding: '0.5rem', fontSize: '0.85rem', textDecoration: 'none', textAlign: 'center', background: 'rgba(255,255,255,0.05)', color: '#fff' }}>
                 Go to Login
