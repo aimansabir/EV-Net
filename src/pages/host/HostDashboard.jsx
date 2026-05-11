@@ -11,14 +11,21 @@ const HostDashboard = () => {
   const { user } = useAuthStore();
   const [dashboard, setDashboard] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
 
   const loadDashboard = async ({ silent = false } = {}) => {
+    if (!user?.id) {
+      setLoading(false);
+      return;
+    }
     try {
       if (!silent) setLoading(true);
-      const data = await hostService.getDashboard(user?.id || 'host_ahsan');
+      setLoadError('');
+      const data = await hostService.getDashboard(user.id);
       setDashboard(data);
     } catch (err) {
       console.error("[EV-Net] Failed to load host dashboard:", err);
+      setLoadError(err.message || 'Please check your internet connection and try again.');
       if (!silent) setDashboard(null);
     } finally {
       if (!silent) setLoading(false);
@@ -69,8 +76,8 @@ const HostDashboard = () => {
         <div style={{ textAlign: 'center' }}>
           <AlertCircle size={48} color="#f87171" style={{ marginBottom: '1rem' }} />
           <h3>Failed to load dashboard</h3>
-          <p style={{ color: 'var(--text-secondary)' }}>Please check your internet connection and try again.</p>
-          <button className="btn btn-secondary" style={{ marginTop: '1rem' }} onClick={() => window.location.reload()}>Retry</button>
+          <p style={{ color: 'var(--text-secondary)' }}>{loadError || 'Please check your internet connection and try again.'}</p>
+          <button className="btn btn-secondary" style={{ marginTop: '1rem' }} onClick={() => loadDashboard()}>Retry</button>
         </div>
       </div>
     );

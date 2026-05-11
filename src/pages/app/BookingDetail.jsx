@@ -78,8 +78,10 @@ const BookingDetail = () => {
   const { user } = useAuthStore();
   const [booking, setBooking] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [messaging, setMessaging] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState('');
 
   // Review state
   const [hasReviewed, setHasReviewed] = useState(false);
@@ -103,6 +105,7 @@ const BookingDetail = () => {
         }
       } catch (err) {
         console.error('[EV-Net] Failed to load booking:', err);
+        if (mounted) setLoadError(err.message || 'Could not load booking details.');
       } finally {
         if (mounted) setLoading(false);
       }
@@ -133,13 +136,23 @@ const BookingDetail = () => {
 
     try {
       setUploading(true);
-      await bookingService.uploadPaymentProof(booking.id, file);
-      const updated = await bookingService.getById(booking.id);
-      setBooking(updated);
-      alert('Payment proof submitted successfully!');
+      setUploadError('');
+      const result = await bookingService.uploadPaymentProof(booking.id, file);
+      setBooking(prev => prev ? {
+        ...prev,
+        paymentStatus: result.paymentStatus || 'proof_submitted',
+        payment_status: result.paymentStatus || 'proof_submitted',
+        paymentProofPath: result.proofPath,
+        payment_proof_path: result.proofPath
+      } : prev);
+      bookingService.getById(booking.id).then(updated => {
+        if (updated) setBooking(updated);
+      }).catch(err => {
+        console.warn('[EV-Net] Background booking refresh after proof upload failed:', err.message);
+      });
     } catch (err) {
       console.error(err);
-      alert('Failed to upload proof: ' + err.message);
+      setUploadError('Failed to upload proof: ' + (err.message || 'Please retry.'));
     } finally {
       setUploading(false);
     }
@@ -194,7 +207,8 @@ const BookingDetail = () => {
           </button>
           <div className="glass-card" style={{ padding: '2rem' }}>
             <h2 style={{ marginTop: 0 }}>Booking not found</h2>
-            <p style={{ color: 'var(--text-secondary)' }}>This booking may no longer be available.</p>
+            <p style={{ color: 'var(--text-secondary)' }}>{loadError || 'This booking may no longer be available.'}</p>
+            <button className="btn btn-secondary" onClick={() => window.location.reload()}>Retry</button>
           </div>
         </div>
       </div>
@@ -293,6 +307,11 @@ const BookingDetail = () => {
           </div>
 
           <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+            {uploadError && (
+              <div style={{ width: '100%', color: '#f87171', fontSize: '0.85rem' }}>
+                {uploadError}
+              </div>
+            )}
             {booking.listingId && booking.status !== 'CANCELLED' && (
               <button
                 type="button"
@@ -315,7 +334,7 @@ const BookingDetail = () => {
                 {uploading ? 'Uploading...' : 'Upload Payment Proof'}
                 <input
                   type="file"
-                  accept="image/*"
+                  accept="image/*,application/pdf"
                   style={{ display: 'none' }}
                   disabled={uploading}
                   onChange={(e) => handleUploadProof(e.target.files[0])}

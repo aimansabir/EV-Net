@@ -10,21 +10,23 @@ import useAuthStore from '../store/authStore';
  * @param {React.ReactNode} props.children
  */
 const ProtectedRoute = ({ allowedRoles, children }) => {
-  const { isAuthenticated, role, isAuthHydrating, isInitialized, initAuth } = useAuthStore();
+  const { isAuthenticated, role, isAuthHydrating, isInitialized, initAuth, hydrationError } = useAuthStore();
   const [showRetry, setShowRetry] = useState(false);
 
   useEffect(() => {
     if (isInitialized && !isAuthHydrating) {
-      setShowRetry(false);
       return undefined;
     }
 
+    const resetId = setTimeout(() => setShowRetry(false), 0);
     const timeoutId = setTimeout(() => {
-      console.warn('[EV-Net][Auth] timeout/fallback');
       setShowRetry(true);
-    }, 4500);
+    }, 8000);
 
-    return () => clearTimeout(timeoutId);
+    return () => {
+      clearTimeout(resetId);
+      clearTimeout(timeoutId);
+    };
   }, [isInitialized, isAuthHydrating]);
 
   // If auth is totally uninitialized and we aren't even authenticated, show full blocker.
@@ -39,9 +41,11 @@ const ProtectedRoute = ({ allowedRoles, children }) => {
           <div className="spinner" style={{ width: '24px', height: '24px', border: '2px solid rgba(255,255,255,0.1)', borderTopColor: 'var(--brand-cyan)', borderRadius: '50%', animation: 'spin 1s linear infinite', marginRight: '12px' }}></div>
           Verifying secure access...
         </div>
-        {showRetry && (
+        {(showRetry || hydrationError) && (
           <div>
-            <p style={{ margin: '0 0 0.75rem', fontSize: '0.9rem' }}>Still loading?</p>
+            <p style={{ margin: '0 0 0.75rem', fontSize: '0.9rem' }}>
+              {hydrationError || 'Still checking your session. You can retry without refreshing the page.'}
+            </p>
             <button
               className="btn btn-secondary"
               onClick={() => {
@@ -62,8 +66,6 @@ const ProtectedRoute = ({ allowedRoles, children }) => {
     return <Navigate to="/login" replace />;
   }
 
-  console.log('[EV-Net][Route] protected route check', { path: window.location.pathname, role, allowedRoles, isInitialized, isAuthenticated });
-
   if (allowedRoles && !allowedRoles.includes(role)) {
     if (isAuthHydrating) {
       // Show loader instead of redirecting immediately if we are still hydrating the profile
@@ -71,6 +73,17 @@ const ProtectedRoute = ({ allowedRoles, children }) => {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'var(--bg-main)', color: 'var(--text-secondary)', textAlign: 'center' }}>
           <div className="spinner" style={{ width: '24px', height: '24px', border: '2px solid rgba(255,255,255,0.1)', borderTopColor: 'var(--brand-cyan)', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></div>
           Verifying role...
+          {showRetry && (
+            <button
+              className="btn btn-secondary"
+              onClick={() => {
+                setShowRetry(false);
+                initAuth({ force: true });
+              }}
+            >
+              Retry
+            </button>
+          )}
           <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
         </div>
       );

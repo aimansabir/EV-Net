@@ -483,6 +483,8 @@ export const PakistanEVBrands = [
   { brand: 'Tesla', models: ['Model 3', 'Model Y'] },
   { brand: 'Hyundai', models: ['Ioniq 5', 'Kona Electric'] },
   { brand: 'KIA', models: ['EV6'] },
+  { brand: 'Nissan', models: ['Leaf', 'Sakura', 'Ariya'] },
+  { brand: 'Vlektra', models: ['Velocity 180', 'Velocity 180 SE', 'Bolt', 'Bolt Dark', 'Retro', 'Retro 1969'] },
   { brand: 'Other', models: ['Other'] },
 ];
 

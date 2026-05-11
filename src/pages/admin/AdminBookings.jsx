@@ -9,13 +9,24 @@ const AdminBookings = () => {
   const [payoutId, setPayoutId] = useState(null);
   const [proofUrls, setProofUrls] = useState({});
   const [proofLoadingId, setProofLoadingId] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
 
   const [showArchived, setShowArchived] = useState(false);
   const [archivingId, setArchivingId] = useState(null);
 
   const loadBookings = useCallback(async () => {
-    const data = await adminService.getBookings({ showArchived });
-    setBookings(data);
+    try {
+      setLoading(true);
+      setLoadError('');
+      const data = await adminService.getBookings({ showArchived });
+      setBookings(data);
+    } catch (err) {
+      console.error('[EV-Net] Failed to load admin bookings:', err);
+      setLoadError(err.message || 'Could not load bookings.');
+    } finally {
+      setLoading(false);
+    }
   }, [showArchived]);
 
   useEffect(() => { loadBookings(); }, [loadBookings]);
@@ -123,6 +134,12 @@ const AdminBookings = () => {
     <div className="section" style={{ minHeight: '100vh' }}>
       <div className="container" style={{ maxWidth: '1100px' }}>
         <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '2rem', marginBottom: '1.5rem' }}>All Bookings</h2>
+        {loadError && (
+          <div className="auth-error" style={{ marginBottom: '1rem' }}>
+            {loadError}
+            <button className="btn btn-secondary" onClick={loadBookings} style={{ marginLeft: '1rem', padding: '0.35rem 0.7rem' }}>Retry</button>
+          </div>
+        )}
 
         <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '2rem', flexWrap: 'wrap', alignItems: 'center' }}>
           {['all', 'pending', 'confirmed', 'completed', 'cancelled'].map(f => (
@@ -139,6 +156,9 @@ const AdminBookings = () => {
           </div>
         </div>
 
+        {loading ? (
+          <div className="glass-card" style={{ padding: '2rem', color: 'var(--text-secondary)' }}>Loading bookings...</div>
+        ) : (
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
             <thead>
@@ -236,6 +256,7 @@ const AdminBookings = () => {
             </tbody>
           </table>
         </div>
+        )}
       </div>
     </div>
   );

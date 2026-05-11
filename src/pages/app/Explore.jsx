@@ -114,13 +114,11 @@ const Explore = () => {
   const [selectedId, setSelectedId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
-  const isMounted = true;
   const { favorites, loadFavorites, toggleFavorite } = useAppStore();
 
 
   useEffect(() => {
     let cancelled = false;
-    let retryId;
 
     const load = async () => {
       setLoading(true);
@@ -131,8 +129,7 @@ const Explore = () => {
       } catch (err) {
         console.error('[EV-Net] Failed to load explore listings:', err);
         if (!cancelled) {
-          setLoadError('Chargers are taking longer than expected to load.');
-          retryId = setTimeout(load, 1500);
+          setLoadError(err.message || 'Chargers are taking longer than expected to load.');
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -147,9 +144,22 @@ const Explore = () => {
 
     return () => {
       cancelled = true;
-      if (retryId) clearTimeout(retryId);
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const retryLoadListings = async () => {
+    setLoading(true);
+    setLoadError('');
+    try {
+      const data = await listingService.getAll({ isActive: true, isApproved: true, force: true });
+      setChargers(data);
+    } catch (err) {
+      console.error('[EV-Net] Explore retry failed:', err);
+      setLoadError(err.message || 'Could not load chargers. Please retry.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     const handleVisibilityChange = () => {
@@ -244,8 +254,9 @@ const Explore = () => {
           </div>
 
           {loadError && chargers.length === 0 && (
-            <div style={{ padding: '0.75rem 1rem', color: '#fbbf24', fontSize: '0.85rem' }}>
-              {loadError}
+            <div style={{ padding: '0.75rem 1rem', color: '#fbbf24', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <span>{loadError}</span>
+              <button className="btn btn-secondary" onClick={retryLoadListings} style={{ padding: '0.35rem 0.7rem', fontSize: '0.75rem' }}>Retry</button>
             </div>
           )}
 
@@ -315,27 +326,26 @@ const Explore = () => {
 
       {/* Map */}
       <div className="explore-map">
-        {isMounted ? (
-          <MapContainer
-            center={DEFAULT_CENTER}
-            zoom={DEFAULT_ZOOM}
-            style={{ height: '100%', width: '100%', background: '#0b0f19' }}
-          >
-            <TileLayer
-              url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>'
-            />
-            <MapBoundsUpdater positions={mapPositions} />
-            {mapChargers.map(({ charger, position }) => {
-              return (
-                <React.Fragment key={charger.id}>
-                  <CircleMarker
-                    center={position}
-                    radius={selectedId === charger.id ? 28 : 22}
-                    pathOptions={MARKER_HALO_OPTIONS}
-                    interactive={false}
-                  />
-                  <CircleMarker
+        <MapContainer
+          center={DEFAULT_CENTER}
+          zoom={DEFAULT_ZOOM}
+          style={{ height: '100%', width: '100%', background: '#0b0f19' }}
+        >
+          <TileLayer
+            url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>'
+          />
+          <MapBoundsUpdater positions={mapPositions} />
+          {mapChargers.map(({ charger, position }) => {
+            return (
+              <React.Fragment key={charger.id}>
+                <CircleMarker
+                  center={position}
+                  radius={selectedId === charger.id ? 28 : 22}
+                  pathOptions={MARKER_HALO_OPTIONS}
+                  interactive={false}
+                />
+                <CircleMarker
                   center={position}
                   radius={selectedId === charger.id ? 14 : 11}
                   pathOptions={selectedId === charger.id ? SELECTED_MARKER_OPTIONS : MARKER_OPTIONS}
@@ -353,16 +363,11 @@ const Explore = () => {
                       View Details
                     </button>
                   </Popup>
-                  </CircleMarker>
-                </React.Fragment>
-              );
-            })}
-          </MapContainer>
-        ) : (
-          <div className="map-placeholder">
-            <div className="spinner-glow"></div>
-          </div>
-        )}
+                </CircleMarker>
+              </React.Fragment>
+            );
+          })}
+        </MapContainer>
       </div>
 
     </div>

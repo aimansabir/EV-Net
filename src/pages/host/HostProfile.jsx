@@ -7,7 +7,7 @@ import Avatar from '../../components/ui/Avatar';
 
 const HostProfile = () => {
   const navigate = useNavigate();
-  const { user, logout } = useAuthStore();
+  const { user, logout, patchUser } = useAuthStore();
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const fileInputRef = useRef(null);
@@ -36,12 +36,16 @@ const HostProfile = () => {
     setIsUploading(true);
     setUploadError('');
     try {
-      await profileService.uploadAvatar(user.id, file, 'HOST');
-      const { reloadUser } = useAuthStore.getState();
-      await reloadUser();
+      const result = await profileService.uploadAvatar(user.id, file, 'HOST');
+      if (result?.avatarUrl) {
+        patchUser({ avatar: result.avatarUrl, avatarPath: result.avatarPath });
+      }
+      useAuthStore.getState().reloadUser().catch(err => {
+        console.warn('[EV-Net] Background host profile refresh after avatar upload failed:', err.message);
+      });
     } catch (err) {
       console.error("Host avatar upload failed:", err);
-      setUploadError('Failed to upload image.');
+      setUploadError(err.message || 'Failed to upload image.');
     } finally {
       setIsUploading(false);
     }

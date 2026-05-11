@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useAuthStore from '../../store/authStore';
 import { listingService } from '../../data/api';
@@ -14,23 +14,30 @@ const HostListings = () => {
   const [selectedListing, setSelectedListing] = useState(null);
   const [showPhotoModal, setShowPhotoModal] = useState(false);
   const [isUpdatingPhotos, setIsUpdatingPhotos] = useState(false);
+  const [loadError, setLoadError] = useState('');
 
-  const loadListings = async () => {
+  const loadListings = useCallback(async () => {
+    if (!user?.id) {
+      setLoading(false);
+      return;
+    }
     try {
       setLoading(true);
-      const data = await listingService.getByHost(user?.id || 'host_ahsan');
+      setLoadError('');
+      const data = await listingService.getByHost(user.id);
       setListings(data);
     } catch (err) {
       console.error("Failed to load listings:", err);
+      setLoadError(err.message || 'Could not load listings.');
       setListings([]);
     } finally {
       setLoading(false);
     }
-  };
+  }, [user?.id]);
 
   useEffect(() => {
     loadListings();
-  }, [user?.id]);
+  }, [loadListings]);
 
   useEffect(() => {
     const handleVisibilityChange = () => {
@@ -40,7 +47,7 @@ const HostListings = () => {
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, [user?.id]);
+  }, [user?.id, loadListings]);
 
   const statusBadge = (listing) => {
     const setupFeePaid = listing.setupFeePaid ?? listing.setup_fee_paid;
@@ -69,6 +76,12 @@ const HostListings = () => {
           <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '2rem', margin: 0 }}>My Listings</h2>
           <button className="btn btn-primary" style={{ fontSize: '0.9rem' }} onClick={() => navigate('/host/listings/new')}>+ New Listing</button>
         </div>
+        {loadError && (
+          <div className="auth-error" style={{ marginBottom: '1rem' }}>
+            {loadError}
+            <button className="btn btn-secondary" onClick={loadListings} style={{ marginLeft: '1rem', padding: '0.35rem 0.7rem' }}>Retry</button>
+          </div>
+        )}
 
         {listings.length === 0 ? (
           <div className="glass-card" style={{ padding: '4rem 2rem', textAlign: 'center' }}>
@@ -177,8 +190,30 @@ const HostListings = () => {
                        if (files.length > 0) {
                          setIsUpdatingPhotos(true);
                          try {
-                           await listingService.uploadListingPhotos(selectedListing.id, user.id, files);
-                           await handleUpdatePhotos(selectedListing.id);
+                           const uploaded = await listingService.uploadListingPhotos(selectedListing.id, user.id, files);
+                           const uploadedWithUrls = uploaded.map(photo => ({
+                             ...photo,
+                             storage_path: photo.storage_path,
+                           }));
+                           setSelectedListing(prev => prev ? {
+                             ...prev,
+                             listing_photos: [...(prev.listing_photos || []), ...uploadedWithUrls],
+                             images: [
+                               ...(prev.images || []),
+                               ...uploadedWithUrls.map(photo => listingService.resolveListingPhotoUrl(photo.storage_path))
+                             ]
+                           } : prev);
+                           setListings(prev => prev.map(listing => listing.id === selectedListing.id ? {
+                             ...listing,
+                             listing_photos: [...(listing.listing_photos || []), ...uploadedWithUrls],
+                             images: [
+                               ...(listing.images || []),
+                               ...uploadedWithUrls.map(photo => listingService.resolveListingPhotoUrl(photo.storage_path))
+                             ]
+                           } : listing));
+                           handleUpdatePhotos(selectedListing.id).catch(err => {
+                             console.warn('[EV-Net] Background listing photo refresh failed:', err.message);
+                           });
                          } finally {
                            setIsUpdatingPhotos(false);
                          }

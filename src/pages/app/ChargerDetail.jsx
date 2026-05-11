@@ -45,6 +45,7 @@ const ChargerDetail = () => {
   const navigate = useNavigate();
   const [listing, setListing] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [selectedImage, setSelectedImage] = useState(0);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [slots, setSlots] = useState([]);
@@ -59,23 +60,55 @@ const ChargerDetail = () => {
   const [inquiryError, setInquiryError] = useState('');
   const { user } = useAuthStore();
   const [noSlotsReason, setNoSlotsReason] = useState(''); // 'past', 'none', or ''
+  const [slotsLoading, setSlotsLoading] = useState(false);
 
   useEffect(() => {
+    let mounted = true;
     const load = async () => {
-      const data = await listingService.getById(id);
-      setListing(data);
-
-      if (user) {
-        try {
-          const bookings = await bookingService.getByUser(user.id);
-          setUserBookings(bookings || []);
-        } catch (err) {
-          console.error("Failed to fetch bookings:", err);
-        }
+      try {
+        setLoading(true);
+        setLoadError('');
+        const data = await listingService.getById(id);
+        if (mounted) setListing(data);
+      } catch (err) {
+        console.error("Failed to load listing:", err);
+        if (mounted) setLoadError(err.message || 'Could not load charger details.');
+      } finally {
+        if (mounted) setLoading(false);
       }
+    };
+    load();
+    return () => {
+      mounted = false;
+    };
+  }, [id]);
 
-      setLoading(false);
-      if (data) {
+  useEffect(() => {
+    let mounted = true;
+    const loadBookings = async () => {
+      if (!user?.id) {
+        setUserBookings([]);
+        return;
+      }
+      try {
+        const bookings = await bookingService.getByUser(user.id);
+        if (mounted) setUserBookings(bookings || []);
+      } catch (err) {
+        console.error("Failed to fetch bookings:", err);
+      }
+    };
+    loadBookings();
+    return () => {
+      mounted = false;
+    };
+  }, [user?.id]);
+
+  useEffect(() => {
+    let mounted = true;
+    const loadSlots = async () => {
+      if (!listing?.id) return;
+      try {
+        setSlotsLoading(true);
         const dateStr = selectedDate instanceof Date ? selectedDate.toISOString().split('T')[0] : selectedDate;
         const daySlots = await availabilityService.generateSlots(id, dateStr);
         
@@ -89,6 +122,7 @@ const ChargerDetail = () => {
           ? daySlots.filter(s => parseInt(s.startTime.split(':')[0]) > currentHour)
           : daySlots;
 
+        if (!mounted) return;
         setSlots(validSlots);
         
         // Debug info for message
@@ -107,10 +141,21 @@ const ChargerDetail = () => {
         } else {
           setSelectedStart('');
         }
+      } catch (err) {
+        console.error("Failed to load availability:", err);
+        if (mounted) {
+          setSlots([]);
+          setNoSlotsReason('none');
+        }
+      } finally {
+        if (mounted) setSlotsLoading(false);
       }
     };
-    load();
-  }, [id, selectedDate, user]);
+    loadSlots();
+    return () => {
+      mounted = false;
+    };
+  }, [id, listing?.id, selectedDate]);
 
   useEffect(() => {
     const handleClickOutside = (e) => {
@@ -125,7 +170,7 @@ const ChargerDetail = () => {
   }, []);
 
   if (loading) return <div className="section" style={{ minHeight: 'calc(100vh - 72px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><div style={{ color: 'var(--text-secondary)' }}>Loading...</div></div>;
-  if (!listing) return <div className="section" style={{ minHeight: 'calc(100vh - 72px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><div>Listing not found</div></div>;
+  if (!listing) return <div className="section" style={{ minHeight: 'calc(100vh - 72px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><div className="glass-card" style={{ padding: '2rem', textAlign: 'center' }}><div>{loadError || 'Listing not found'}</div><button className="btn btn-secondary" onClick={() => window.location.reload()} style={{ marginTop: '1rem' }}>Retry</button></div></div>;
 
   // Pricing Logic
   const currentBand = getPricingBand(selectedStart);
@@ -616,7 +661,11 @@ const ChargerDetail = () => {
                             minHeight: '40px'
                           }}>
                             <div style={{ maxHeight: '240px', overflowY: 'auto', padding: '6px' }}>
-                              {slots.length === 0 ? (
+                              {slotsLoading ? (
+                                <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+                                  Loading hours...
+                                </div>
+                              ) : slots.length === 0 ? (
                                 <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
                                   No hours available
                                 </div>
@@ -854,6 +903,10 @@ const ChargerDetail = () => {
                         For host safety, booking is available only to verified EV users.
                       </div>
                     </>
+                  ) : slotsLoading ? (
+                    <div style={{ padding: '1.5rem', background: 'rgba(0, 240, 255, 0.05)', border: '1px solid rgba(0, 240, 255, 0.2)', borderRadius: '12px', textAlign: 'center', color: 'var(--brand-cyan)', fontWeight: 600 }}>
+                      Loading availability...
+                    </div>
                   ) : slots.length === 0 ? (
                     <div style={{ padding: '1.5rem', background: 'rgba(239, 68, 68, 0.05)', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: '12px', textAlign: 'center' }}>
                       <p style={{ color: '#ef4444', fontWeight: 600, margin: 0 }}>

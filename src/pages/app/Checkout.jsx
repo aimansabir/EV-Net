@@ -33,6 +33,26 @@ const Checkout = () => {
   const [paymentMethod] = useState('BANK_TRANSFER'); // Hardcoded to 'BANK_TRANSFER'
   const [proofFile, setProofFile] = useState(null);
 
+  const handleProofFileChange = (file) => {
+    if (!file) {
+      setProofFile(null);
+      return;
+    }
+    const isAllowed = file.type?.startsWith('image/') || file.type === 'application/pdf' || file.name?.toLowerCase().endsWith('.pdf');
+    if (!isAllowed) {
+      setError('Payment proof must be an image or PDF.');
+      setProofFile(null);
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      setError('Payment proof is too large. Maximum size is 8MB.');
+      setProofFile(null);
+      return;
+    }
+    setError('');
+    setProofFile(file);
+  };
+
   // Extract params
   const date = searchParams.get('date');
   const startTime = searchParams.get('start');
@@ -348,8 +368,8 @@ const Checkout = () => {
                             <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, marginBottom: '8px', color: 'var(--brand-green)' }}>UPLOAD PROOF</label>
                             <input
                               type="file"
-                              accept="image/*"
-                              onChange={e => setProofFile(e.target.files[0])}
+                              accept="image/*,application/pdf"
+                              onChange={e => handleProofFileChange(e.target.files[0])}
                               style={{ width: '100%', fontSize: '0.8rem', color: 'var(--text-secondary)' }}
                             />
                             {proofFile && <div style={{ marginTop: '5px', fontSize: '0.75rem', color: 'var(--brand-green)' }}>Attached: {proofFile.name}</div>}

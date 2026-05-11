@@ -22,6 +22,7 @@ const Bookings = () => {
   const [bookings, setBookings] = useState([]);
   const [filter, setFilter] = useState('all');
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [messagingId, setMessagingId] = useState(null);
 
   useEffect(() => {
@@ -29,8 +30,13 @@ const Bookings = () => {
       try {
         const data = await bookingService.getByUser(user?.id || 'user_ali');
         setBookings(data);
-      } catch (err) { console.error(err); }
-      setLoading(false);
+        setLoadError('');
+      } catch (err) {
+        console.error(err);
+        setLoadError(err.message || 'Could not load your bookings.');
+      } finally {
+        setLoading(false);
+      }
     };
     load();
   }, [user?.id]);
@@ -38,6 +44,7 @@ const Bookings = () => {
   const filtered = filter === 'all' ? bookings : bookings.filter(b => b.status === filter.toUpperCase());
 
   const [uploadingId, setUploadingId] = useState(null);
+  const [uploadError, setUploadError] = useState('');
 
   const openBooking = (booking) => {
     if (booking?.id) {
@@ -65,14 +72,25 @@ const Bookings = () => {
     if (!file) return;
     try {
       setUploadingId(bookingId);
-      await bookingService.uploadPaymentProof(bookingId, file);
-      // Refresh list
-      const data = await bookingService.getByUser(user?.id);
-      setBookings(data);
-      alert("Payment proof submitted successfully!");
+      setUploadError('');
+      const result = await bookingService.uploadPaymentProof(bookingId, file);
+      setBookings(prev => prev.map(booking => (
+        booking.id === bookingId
+          ? {
+              ...booking,
+              paymentStatus: result.paymentStatus || 'proof_submitted',
+              payment_status: result.paymentStatus || 'proof_submitted',
+              paymentProofPath: result.proofPath,
+              payment_proof_path: result.proofPath
+            }
+          : booking
+      )));
+      bookingService.getByUser(user?.id).then(setBookings).catch(err => {
+        console.warn('[EV-Net] Background bookings refresh after proof upload failed:', err.message);
+      });
     } catch (err) {
       console.error(err);
-      alert("Failed to upload proof: " + err.message);
+      setUploadError("Failed to upload proof: " + (err.message || 'Please retry.'));
     } finally {
       setUploadingId(null);
     }
@@ -116,6 +134,11 @@ const Bookings = () => {
     <div className="section" style={{ minHeight: 'calc(100vh - 72px)' }}>
       <div className="container" style={{ maxWidth: '900px' }}>
         <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '2rem', marginBottom: '1.5rem' }}>My Bookings</h2>
+        {(loadError || uploadError) && (
+          <div className="auth-error" style={{ marginBottom: '1rem' }}>
+            {loadError || uploadError}
+          </div>
+        )}
         
         {/* Filter Tabs */}
         <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '2rem', flexWrap: 'wrap' }}>
@@ -233,7 +256,7 @@ const Bookings = () => {
                             fontSize: '0.75rem', fontWeight: 700, cursor: isUploading ? 'not-allowed' : 'pointer', transition: 'all 0.2s' 
                           }}>
                             {isUploading ? 'Uploading...' : 'Upload Payment Proof'}
-                            <input type="file" accept="image/*" style={{ display: 'none' }} disabled={isUploading} onChange={(e) => handleUploadProof(booking.id, e.target.files[0])} />
+                            <input type="file" accept="image/*,application/pdf" style={{ display: 'none' }} disabled={isUploading} onChange={(e) => handleUploadProof(booking.id, e.target.files[0])} />
                           </label>
                         )}
                         {booking.status === 'COMPLETED' && (

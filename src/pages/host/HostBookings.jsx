@@ -54,6 +54,8 @@ const HostBookings = () => {
   const [updatingId, setUpdatingId] = useState(null);
   const [error, setError] = useState(null);
   const [fetchLoading, setFetchLoading] = useState(true);
+  const [proofUrls, setProofUrls] = useState({});
+  const [proofLoadingId, setProofLoadingId] = useState(null);
 
   const loadBookings = useCallback(async () => {
     try {
@@ -143,6 +145,28 @@ const HostBookings = () => {
     return data?.publicUrl || null;
   };
 
+  const handleViewProof = async (booking) => {
+    const cachedUrl = proofUrls[booking.id] || booking.paymentProofUrl;
+    if (cachedUrl) {
+      window.open(cachedUrl, '_blank', 'noopener,noreferrer');
+      return;
+    }
+
+    if (!booking.paymentProofPath || proofLoadingId) return;
+
+    try {
+      setProofLoadingId(booking.id);
+      const url = await bookingService.getPaymentProofUrl(booking.paymentProofPath);
+      if (!url) throw new Error('Payment proof is not available yet.');
+      setProofUrls(prev => ({ ...prev, [booking.id]: url }));
+      window.open(url, '_blank', 'noopener,noreferrer');
+    } catch (err) {
+      alert(err.message || 'Could not open payment proof.');
+    } finally {
+      setProofLoadingId(null);
+    }
+  };
+
   if (fetchLoading) return <div className="section" style={{ minHeight: 'calc(100vh - 72px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><div style={{ color: 'var(--text-secondary)' }}>Loading...</div></div>;
   if (error) return (
     <div className="section" style={{ minHeight: 'calc(100vh - 72px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -180,7 +204,7 @@ const HostBookings = () => {
               const statusConfig = getBookingStatusConfig(booking.status);
               const payStatus = paymentStatusMap[booking.paymentStatus] || { label: booking.paymentStatus || 'Not recorded', color: 'var(--text-secondary)' };
               const isUpdating = updatingId === booking.id;
-              const proofUrl = getProofUrl(booking);
+              const proofUrl = proofUrls[booking.id] || getProofUrl(booking);
               const paymentVerified = booking.paymentStatus === 'paid';
               
               return (
@@ -215,7 +239,14 @@ const HostBookings = () => {
                           proofUrl ? (
                             <a href={proofUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: '0.75rem', color: 'var(--brand-cyan)', textDecoration: 'none', borderBottom: '1px solid var(--brand-cyan)' }}>View Proof</a>
                           ) : (
-                            <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontStyle: 'italic' }}>Payment proof unavailable</span>
+                            <button
+                              type="button"
+                              onClick={() => handleViewProof(booking)}
+                              disabled={!!proofLoadingId}
+                              style={{ padding: 0, background: 'transparent', border: 'none', borderBottom: '1px solid var(--brand-cyan)', color: 'var(--brand-cyan)', fontSize: '0.75rem', cursor: proofLoadingId ? 'not-allowed' : 'pointer' }}
+                            >
+                              {proofLoadingId === booking.id ? 'Opening...' : 'View Proof'}
+                            </button>
                           )
                         )}
                       </div>

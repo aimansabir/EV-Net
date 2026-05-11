@@ -18,22 +18,40 @@ import {
 
 const AdminDashboard = () => {
   const [stats, setStats] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [activePanel, setActivePanel] = useState(null);
   const [feeActionId, setFeeActionId] = useState(null);
 
   const loadDashboard = useCallback(async () => {
-    const data = await adminService.getDashboard();
-    setStats(data);
+    try {
+      setLoading(true);
+      setLoadError('');
+      const data = await adminService.getDashboard();
+      setStats(data);
+    } catch (err) {
+      console.error('[EV-Net] Failed to load admin dashboard:', err);
+      setLoadError(err.message || 'Could not load admin dashboard.');
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => {
     let mounted = true;
+    setLoading(true);
     adminService
       .getDashboard()
       .then(data => {
         if (mounted) setStats(data);
       })
-      .catch(err => console.error('[EV-Net] Failed to load admin dashboard:', err));
+      .catch(err => {
+        console.error('[EV-Net] Failed to load admin dashboard:', err);
+        if (mounted) setLoadError(err.message || 'Could not load admin dashboard.');
+      })
+      .finally(() => {
+        if (mounted) setLoading(false);
+      });
     return () => {
       mounted = false;
     };
@@ -68,13 +86,24 @@ const AdminDashboard = () => {
     }
   };
 
-  if (!stats) return (
+  if (!stats && loading) return (
     <div className="section" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
       <div style={{ color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
         <div className="spinner" style={{ width: '20px', height: '20px', border: '2px solid rgba(225, 29, 72, 0.2)', borderTopColor: '#fb7185', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></div>
         Loading Intelligence...
       </div>
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    </div>
+  );
+
+  if (!stats && loadError) return (
+    <div className="section" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
+      <div className="glass-card" style={{ padding: '2rem', textAlign: 'center', maxWidth: '420px' }}>
+        <AlertTriangle size={36} color="#fb7185" style={{ marginBottom: '1rem' }} />
+        <h3 style={{ marginTop: 0 }}>Dashboard could not load</h3>
+        <p style={{ color: 'var(--text-secondary)' }}>{loadError}</p>
+        <button className="btn btn-secondary" onClick={loadDashboard}>Retry</button>
+      </div>
     </div>
   );
 

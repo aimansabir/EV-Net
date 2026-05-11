@@ -31,7 +31,7 @@ const ErrorMessage = ({ message, centered = false }) => (
 
 const dayNumberByLabel = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
 const dayLabelByNumber = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const HOST_ONBOARDING_STEP_TIMEOUT_MS = 30000;
+const HOST_ONBOARDING_STEP_TIMEOUT_MS = 45000;
 
 const makeExistingUpload = (path, url, label) => {
   if (!path) return null;
@@ -297,15 +297,22 @@ const HostOnboarding = () => {
         throw new Error('Your session is not ready. Please refresh and log in again.');
       }
 
-      const runStep = async (label, status, operation, timeoutMs = HOST_ONBOARDING_STEP_TIMEOUT_MS) => {
+      const runStep = async (label, status, operation, timeoutMs = null) => {
         let timeoutId;
         setPublishStatus(status);
         console.log(`[EV-Net] ${label}: started`);
         try {
-          const timeout = new Promise((_, reject) => {
-            timeoutId = setTimeout(() => reject(new Error(`${label} timed out. Please check your connection and try again.`)), timeoutMs);
-          });
-          const result = await Promise.race([operation(), timeout]);
+          const task = operation();
+          const result = timeoutMs
+            ? await Promise.race([
+                task,
+                new Promise((_, reject) => {
+                  timeoutId = setTimeout(() => {
+                    reject(new Error(`${label} did not receive a server response in time. Please retry. If this keeps happening, check Supabase logs for this step.`));
+                  }, timeoutMs);
+                })
+              ])
+            : await task;
           console.log(`[EV-Net] ${label}: success`);
           return result;
         } catch (err) {
@@ -416,7 +423,7 @@ const HostOnboarding = () => {
       await runStep('Uploading listing photos', 'Uploading listing photos...', () => listingService.ensureOnboardingPhotos(listingId, user.id, [
         ...chargerPhotos,
         ...additionalPhotos
-      ]), 30000
+      ]), HOST_ONBOARDING_STEP_TIMEOUT_MS
       );
 
       // 3. Handle payment submission before finalizing host profile.
@@ -428,9 +435,14 @@ const HostOnboarding = () => {
           amount: feeBreakdown.total,
           screenshot: payment.screenshot,
           listingId
-        }), 30000
+        }), 60000
         );
         console.log("[EV-Net] Payment record created", paymentResult?.payment?.id || paymentResult);
+        setExistingOnboarding(prev => ({
+          ...prev,
+          paymentStatus: paymentResult?.payment?.status || 'pending',
+          setupFeePaid: paymentResult?.payment?.status === 'verified'
+        }));
       } else {
         console.log("[EV-Net] Reusing existing onboarding payment", existingOnboarding.paymentStatus);
       }
@@ -455,23 +467,34 @@ const HostOnboarding = () => {
       const newPropertyProof = getNewUploads(propertyProofs)[0];
       const newChargerProof = getNewUploads(chargerPhotos)[0];
 
+      const documentUploads = [];
       if (newPropertyProof?.file) {
-        console.log("[EV-Net] Uploading property proof...");
-        await runStep('Uploading property proof', 'Uploading verification documents...', () => verificationService.uploadDocument(user.id, 'HOST', 'PROPERTY_PROOF', newPropertyProof.file, {
-          updateProfileFlags: false
-        }), 30000
+        console.log("[EV-Net] Queueing property proof upload...");
+        documentUploads.push(
+          runStep('Uploading property proof', 'Uploading verification documents...', () => verificationService.uploadDocument(user.id, 'HOST', 'PROPERTY_PROOF', newPropertyProof.file, {
+            updateProfileFlags: false
+          }), 60000).then(result => ({ type: 'property', result }))
         );
       } else if (!existingOnboarding.propertyProofUploaded && !propertyProofs.some(file => file?.existing)) {
         throw new Error('Property ownership proof is required.');
       }
       if (newChargerProof?.file) {
-        console.log("[EV-Net] Uploading charger setup photo...");
-        await runStep('Uploading charger proof', 'Uploading verification documents...', () => verificationService.uploadDocument(user.id, 'HOST', 'CHARGER_PROOF', newChargerProof.file, {
-          updateProfileFlags: false
-        }), 30000
+        console.log("[EV-Net] Queueing charger setup photo upload...");
+        documentUploads.push(
+          runStep('Uploading charger proof', 'Uploading verification documents...', () => verificationService.uploadDocument(user.id, 'HOST', 'CHARGER_PROOF', newChargerProof.file, {
+            updateProfileFlags: false
+          }), 60000).then(result => ({ type: 'charger', result }))
         );
       } else if (!existingOnboarding.chargerProofUploaded && !chargerPhotos.some(file => file?.existing)) {
         throw new Error('Charger setup proof is required.');
+      }
+      const uploadedDocuments = await Promise.all(documentUploads);
+      if (uploadedDocuments.length > 0) {
+        setExistingOnboarding(prev => ({
+          ...prev,
+          propertyProofUploaded: prev.propertyProofUploaded || uploadedDocuments.some(item => item.type === 'property'),
+          chargerProofUploaded: prev.chargerProofUploaded || uploadedDocuments.some(item => item.type === 'charger')
+        }));
       }
       console.log("[EV-Net] Documents uploaded");
 
@@ -554,14 +577,6 @@ const HostOnboarding = () => {
     }
   };
 
-  if (serverDraftLoading && !isApproved && !isPendingVerification) {
-    return (
-      <div className="auth-page" style={{ background: 'var(--bg-main)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{ color: 'var(--text-secondary)' }}>Loading your onboarding details...</div>
-      </div>
-    );
-  }
-
   if (isApproved || (isPendingVerification && step !== 9)) {
     return (
       <div className="auth-page" style={{ background: 'var(--bg-main)' }}>
@@ -601,6 +616,19 @@ const HostOnboarding = () => {
   return (
     <div className="auth-page" style={{ background: 'var(--bg-main)' }}>
       <div style={{ margin: 'auto', maxWidth: '600px', width: '100%', padding: '2rem 1.5rem' }}>
+        {serverDraftLoading && (
+          <div style={{
+            marginBottom: '1rem',
+            padding: '0.8rem 1rem',
+            borderRadius: '10px',
+            border: '1px solid rgba(0,240,255,0.18)',
+            background: 'rgba(0,240,255,0.06)',
+            color: 'var(--brand-cyan)',
+            fontSize: '0.85rem'
+          }}>
+            Syncing saved onboarding details...
+          </div>
+        )}
         {isRejected && (
           <div style={{
             marginBottom: '1.5rem',

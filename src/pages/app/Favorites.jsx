@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Heart } from 'lucide-react';
 import useAppStore from '../../store/appStore';
@@ -13,36 +13,27 @@ const Favorites = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
     setError(null);
-    
-    // Add a timeout to prevent infinite hanging
-    const timeoutPromise = new Promise((_, reject) => 
-      setTimeout(() => reject(new Error('Request timed out')), 10000)
-    );
 
     try {
-      await Promise.race([
-        Promise.all([
-          loadFavorites(),
-          listingService.getAll()
-        ]),
-        timeoutPromise
-      ]).then(async ([, allListings]) => {
-         setListings(allListings || []);
-      });
+      const [, allListings] = await Promise.all([
+        loadFavorites(),
+        listingService.getAll()
+      ]);
+      setListings(allListings || []);
     } catch (err) {
       console.error("Failed to load favorites", err);
-      setError(err.message || 'Failed to load chargers');
+      setError(err.message || 'Failed to load saved chargers');
     } finally {
       setLoading(false);
     }
-  };
+  }, [loadFavorites]);
 
   useEffect(() => {
     load();
-  }, []);
+  }, [load]);
 
   const favoriteListings = listings.filter(l => favorites.has(l.id));
 

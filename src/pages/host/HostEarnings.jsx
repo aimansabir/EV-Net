@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import useAuthStore from '../../store/authStore';
 import { hostService } from '../../data/api';
 import { formatPKR } from '../../data/feeConfig';
@@ -8,23 +8,36 @@ const HostEarnings = () => {
   const { user } = useAuthStore();
   const [earnings, setEarnings] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+
+  const load = useCallback(async () => {
+    if (!user?.id) {
+      setLoading(false);
+      return;
+    }
+    try {
+      setLoading(true);
+      setLoadError('');
+      const data = await hostService.getEarnings(user.id);
+      setEarnings(data);
+    } catch (err) {
+      console.error('[EV-Net] Failed to load earnings:', err);
+      setLoadError(err.message || 'Could not load earnings.');
+    } finally {
+      setLoading(false);
+    }
+  }, [user?.id]);
 
   useEffect(() => {
-    const load = async () => {
-      try {
-        const data = await hostService.getEarnings(user?.id);
-        setEarnings(data);
-      } catch (err) {
-        console.error('[EV-Net] Failed to load earnings:', err);
-      }
-      setLoading(false);
-    };
-    if (user?.id) load();
-  }, [user?.id]);
+    load();
+  }, [load]);
 
   if (loading || !earnings) return (
     <div className="section" style={{ minHeight: 'calc(100vh - 72px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ color: 'var(--text-secondary)' }}>Loading...</div>
+      <div className="glass-card" style={{ padding: '2rem', textAlign: 'center' }}>
+        <div style={{ color: 'var(--text-secondary)' }}>{loading ? 'Loading earnings...' : (loadError || 'No earnings data available.')}</div>
+        {loadError && <button className="btn btn-secondary" onClick={load} style={{ marginTop: '1rem' }}>Retry</button>}
+      </div>
     </div>
   );
 

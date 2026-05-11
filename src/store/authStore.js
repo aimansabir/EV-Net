@@ -12,6 +12,12 @@ const STORAGE_KEY = 'EV-Net_auth';
 const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true';
 const AUTH_TIMEOUT_MS = 12000;
 
+function authDebug(...args) {
+  if (import.meta.env.DEV || import.meta.env.VITE_DEBUG_AUTH === 'true') {
+    console.debug(...args);
+  }
+}
+
 function withAuthTimeout(promise, label, timeoutMs = AUTH_TIMEOUT_MS) {
   let timeoutId;
   const timeout = new Promise((_, reject) => {
@@ -56,6 +62,7 @@ const useAuthStore = create((set, get) => ({
   isLoading: false,           // Global auth action loading (login/signup)
   isAuthHydrating: false,     // Background profile fetching
   error: null,
+  hydrationError: null,
   _authSubscription: null,
   _initPromise: null,
 
@@ -80,13 +87,13 @@ const useAuthStore = create((set, get) => ({
       }
 
       try {
-      console.log('[EV-Net][Auth] checking session');
+      authDebug('[EV-Net][Auth] checking session');
       // 1. Try Supabase session hydration (returns null in mock mode)
       const session = await withAuthTimeout(
         authService.getSession(),
         'Auth session check timed out.'
       );
-      console.log('[EV-Net][Auth] session loaded', { hasSession: !!session?.user });
+      authDebug('[EV-Net][Auth] session loaded', { hasSession: !!session?.user });
 
       if (session?.user) {
         // 1a. INSTANT HINT: Use session metadata to unlock UI immediately
@@ -95,7 +102,7 @@ const useAuthStore = create((set, get) => ({
         
         // Prefer persisted role (from last successful profile load), fallback to metadata role, fallback to 'user'
         const initialRole = (persistedRole && persistedRole !== 'guest') ? persistedRole : (metadataRole || 'user');
-        console.log('[EV-Net][Auth] resolved role', initialRole, { persistedRole, metadataRole });
+        authDebug('[EV-Net][Auth] resolved role', initialRole, { persistedRole, metadataRole });
         
         set({ 
           role: initialRole, 
@@ -106,7 +113,7 @@ const useAuthStore = create((set, get) => ({
         // 1b. BACKGROUND: Hydrate full profile (No await here, let it run in bg)
         set({ isAuthHydrating: true });
         withAuthTimeout(
-          authService.getMe(session.user.id),
+          authService.getMe(session.user.id, { throwOnError: true }),
           'Auth profile load timed out.'
         ).then(user => {
           if (user) {
@@ -115,19 +122,18 @@ const useAuthStore = create((set, get) => ({
               role: user.role.toLowerCase(),
               isAuthenticated: true,
             };
-            console.log('[EV-Net][Auth] profile loaded');
-            console.log('[EV-Net][Auth] role loaded', state.role);
-            set({ ...state, isAuthHydrating: false });
+            authDebug('[EV-Net][Auth] profile loaded');
+            authDebug('[EV-Net][Auth] role loaded', state.role);
+            set({ ...state, isAuthHydrating: false, hydrationError: null });
             persistAuth(state);
           } else {
             // Profile truly missing - only then clear
             get()._clearAuth();
-            set({ isAuthHydrating: false });
+            set({ isAuthHydrating: false, hydrationError: 'Your profile could not be loaded. Please retry.' });
           }
         }).catch(err => {
           console.error('[EV-Net][Auth] Background hydration failed:', err);
-          console.warn('[EV-Net][Auth] timeout/fallback');
-          set({ isAuthHydrating: false });
+          set({ isAuthHydrating: false, hydrationError: err.message || 'Profile loading failed. Please retry.' });
         });
       } else {
         // 2. No Supabase session - fall back to localStorage only in explicit mock mode
@@ -142,7 +148,7 @@ const useAuthStore = create((set, get) => ({
           
           set({ isAuthHydrating: true });
           withAuthTimeout(
-            authService.getMe(persisted.user.id),
+            authService.getMe(persisted.user.id, { throwOnError: true }),
             'Persisted profile load timed out.'
           ).then(updatedUser => {
             if (updatedUser) {
@@ -150,15 +156,16 @@ const useAuthStore = create((set, get) => ({
                 user: updatedUser, 
                 role: updatedUser.role.toLowerCase(), 
                 isAuthenticated: true,
-                isAuthHydrating: false
+                isAuthHydrating: false,
+                hydrationError: null
               });
             } else {
               get()._clearAuth();
-              set({ isAuthHydrating: false });
+              set({ isAuthHydrating: false, hydrationError: 'Your saved profile could not be loaded. Please retry.' });
             }
           }).catch((err) => {
-            console.warn('[EV-Net][Auth] timeout/fallback', err.message);
-            set({ isAuthHydrating: false });
+            console.warn('[EV-Net][Auth] profile hydration failed', err.message);
+            set({ isAuthHydrating: false, hydrationError: err.message || 'Profile loading failed. Please retry.' });
           });
         }
       }
@@ -193,9 +200,9 @@ const useAuthStore = create((set, get) => ({
         }
       }
     } catch (err) {
-      console.warn('[EV-Net][Auth] timeout/fallback', err.message);
+      console.warn('[EV-Net][Auth] session hydration failed', err.message);
       if (persisted.user) {
-        set({ ...persisted, isInitialized: true, isAuthHydrating: false, error: null });
+        set({ ...persisted, isInitialized: true, isAuthHydrating: false, error: null, hydrationError: err.message || null });
       } else if (!USE_MOCK) {
         get()._clearAuth();
       }
@@ -212,7 +219,7 @@ const useAuthStore = create((set, get) => ({
    * Login with email and password
    */
   login: async (email, password) => {
-    set({ isLoading: true, error: null });
+    set({ isLoading: true, error: null, hydrationError: null });
     try {
       const { user } = await authService.login(email, password);
       const role = user.role.toLowerCase();
@@ -234,7 +241,7 @@ const useAuthStore = create((set, get) => ({
    * Session hydration happens in initAuth after the redirect.
    */
   loginWithGoogle: async () => {
-    set({ isLoading: true, error: null });
+    set({ isLoading: true, error: null, hydrationError: null });
     try {
       await authService.loginWithGoogle();
     } catch (err) {
@@ -248,7 +255,7 @@ const useAuthStore = create((set, get) => ({
   },
 
   resetPassword: async (email) => {
-    set({ isLoading: true, error: null });
+    set({ isLoading: true, error: null, hydrationError: null });
     try {
       return await authService.resetPassword(email);
     } catch (err) {
@@ -265,7 +272,7 @@ const useAuthStore = create((set, get) => ({
    * Signup as EV User
    */
   signupUser: async (data) => {
-    set({ isLoading: true, error: null });
+    set({ isLoading: true, error: null, hydrationError: null });
     try {
       const result = await authService.signupUser(data);
       
@@ -291,7 +298,7 @@ const useAuthStore = create((set, get) => ({
    * Signup as Host
    */
   signupHost: async (data) => {
-    set({ isLoading: true, error: null });
+    set({ isLoading: true, error: null, hydrationError: null });
     try {
       const result = await authService.signupHost(data);
 
@@ -317,7 +324,7 @@ const useAuthStore = create((set, get) => ({
    * Logout — clears state immediately, then signs out from Supabase (best-effort).
    */
   logout: async () => {
-    const state = { user: null, role: 'guest', isAuthenticated: false, isLoading: false, error: null };
+    const state = { user: null, role: 'guest', isAuthenticated: false, isLoading: false, error: null, hydrationError: null };
     set(state);
     persistAuth(state);
     try {
@@ -340,7 +347,7 @@ const useAuthStore = create((set, get) => ({
     const { user } = get();
     if (!user) return;
     try {
-      const updatedUser = await authService.getMe(user.id);
+      const updatedUser = await authService.getMe(user.id, { force: true });
       if (updatedUser) {
         const state = { user: updatedUser, role: updatedUser.role.toLowerCase() };
         set(state);
@@ -370,7 +377,7 @@ const useAuthStore = create((set, get) => ({
    * Internal: clear auth state (used during init failures).
    */
   _clearAuth: () => {
-    const state = { user: null, role: 'guest', isAuthenticated: false, isLoading: false, error: null };
+    const state = { user: null, role: 'guest', isAuthenticated: false, isLoading: false, error: null, hydrationError: null };
     set(state);
     persistAuth(state);
   },
