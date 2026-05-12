@@ -1228,6 +1228,10 @@ export const listingService = {
     
     if (error) {
       console.error("[EV-Net] Error inserting listing row:", error);
+      const message = String(error.message || '').toLowerCase();
+      if (message.includes('row-level security') || message.includes('violates row-level security')) {
+        throw new Error('We could not create your host listing because Supabase still blocked this account from inserting listings. Please apply migration 091_fix_host_onboarding_listing_insert_policy.sql and retry onboarding.');
+      }
       throw error;
     }
     debugLog("[EV-Net] listingService.create: Listing row created ID:", listing.id);
