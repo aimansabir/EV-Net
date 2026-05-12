@@ -1,35 +1,32 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import { adminService } from '../../data/api';
 import { formatPKR } from '../../data/feeConfig';
+import { RefreshCw } from 'lucide-react';
+import { invalidatePageCaches, makePageCacheKey, PAGE_CACHE_TTL, useCachedPageData } from '../../store/pageCacheStore';
 
 const AdminBookings = () => {
-  const [bookings, setBookings] = useState([]);
   const [filter, setFilter] = useState('all');
   const [verifyingId, setVerifyingId] = useState(null);
   const [payoutId, setPayoutId] = useState(null);
   const [proofUrls, setProofUrls] = useState({});
   const [proofLoadingId, setProofLoadingId] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState('');
-
   const [showArchived, setShowArchived] = useState(false);
   const [archivingId, setArchivingId] = useState(null);
 
-  const loadBookings = useCallback(async () => {
-    try {
-      setLoading(true);
-      setLoadError('');
-      const data = await adminService.getBookings({ showArchived });
-      setBookings(data);
-    } catch (err) {
-      console.error('[EV-Net] Failed to load admin bookings:', err);
-      setLoadError(err.message || 'Could not load bookings.');
-    } finally {
-      setLoading(false);
-    }
-  }, [showArchived]);
+  const bookingsCacheKey = makePageCacheKey('admin-bookings', showArchived ? 'archived' : 'active');
+  const fetchBookings = useCallback(() => adminService.getBookings({ showArchived }), [showArchived]);
+  const {
+    data: cachedBookings,
+    isLoading: loading,
+    isRefreshing,
+    error: loadError,
+    refresh: refreshBookings,
+  } = useCachedPageData(bookingsCacheKey, fetchBookings, {
+    ttl: PAGE_CACHE_TTL.SHORT,
+  });
+  const bookings = cachedBookings || [];
 
-  useEffect(() => { loadBookings(); }, [loadBookings]);
+  const loadBookings = useCallback(() => refreshBookings({ force: true }), [refreshBookings]);
 
   const filtered = filter === 'all' ? bookings : bookings.filter(b => b.status === filter.toUpperCase());
 
@@ -66,6 +63,14 @@ const AdminBookings = () => {
     try {
       setVerifyingId(booking.id);
       await adminService.verifyPayment(booking.id);
+      invalidatePageCaches([
+        'admin-dashboard',
+        'host-bookings',
+        'host-dashboard',
+        'host-earnings',
+        'user-bookings',
+        'booking-detail',
+      ]);
       await loadBookings();
     } catch (err) {
       const message = err.message || '';
@@ -85,6 +90,14 @@ const AdminBookings = () => {
     try {
       setPayoutId(bookingId);
       await adminService.markPayoutPaid(bookingId);
+      invalidatePageCaches([
+        'admin-dashboard',
+        'host-bookings',
+        'host-dashboard',
+        'host-earnings',
+        'user-bookings',
+        'booking-detail',
+      ]);
       await loadBookings();
     } catch (err) {
       alert(err.message);
@@ -122,6 +135,14 @@ const AdminBookings = () => {
     try {
       setArchivingId(bookingId);
       await adminService.archiveBooking(bookingId);
+      invalidatePageCaches([
+        'admin-dashboard',
+        'host-bookings',
+        'host-dashboard',
+        'host-earnings',
+        'user-bookings',
+        'booking-detail',
+      ]);
       await loadBookings();
     } catch (err) {
       alert(err.message);
@@ -133,10 +154,27 @@ const AdminBookings = () => {
   return (
     <div className="section" style={{ minHeight: '100vh' }}>
       <div className="container" style={{ maxWidth: '1100px' }}>
-        <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '2rem', marginBottom: '1.5rem' }}>All Bookings</h2>
-        {loadError && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
+          <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '2rem', margin: 0 }}>All Bookings</h2>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={loadBookings}
+            disabled={isRefreshing}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '0.5rem 0.9rem', fontSize: '0.85rem' }}
+          >
+            <RefreshCw size={15} className={isRefreshing ? 'animate-spin' : ''} />
+            {isRefreshing ? 'Refreshing' : 'Refresh'}
+          </button>
+        </div>
+        {(isRefreshing || loadError) && bookings.length > 0 && (
+          <div style={{ color: loadError ? '#fbbf24' : 'var(--brand-cyan)', fontSize: '0.85rem', marginTop: '-0.75rem', marginBottom: '1rem' }}>
+            {loadError ? 'Could not refresh. Showing cached bookings.' : 'Refreshing bookings...'}
+          </div>
+        )}
+        {loadError && bookings.length === 0 && (
           <div className="auth-error" style={{ marginBottom: '1rem' }}>
-            {loadError}
+            {bookings.length > 0 ? 'Could not refresh. Showing cached bookings.' : (loadError.message || 'Could not load bookings.')}
             <button className="btn btn-secondary" onClick={loadBookings} style={{ marginLeft: '1rem', padding: '0.35rem 0.7rem' }}>Retry</button>
           </div>
         )}
@@ -156,7 +194,7 @@ const AdminBookings = () => {
           </div>
         </div>
 
-        {loading ? (
+        {loading && bookings.length === 0 ? (
           <div className="glass-card" style={{ padding: '2rem', color: 'var(--text-secondary)' }}>Loading bookings...</div>
         ) : (
         <div style={{ overflowX: 'auto' }}>

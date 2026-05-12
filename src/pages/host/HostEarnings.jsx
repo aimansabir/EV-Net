@@ -1,41 +1,32 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useCallback } from 'react';
 import useAuthStore from '../../store/authStore';
 import { hostService } from '../../data/api';
 import { formatPKR } from '../../data/feeConfig';
-import { Clock, CheckCircle, AlertTriangle, TrendingUp } from 'lucide-react';
+import { Clock, CheckCircle, AlertTriangle, TrendingUp, RefreshCw } from 'lucide-react';
+import { makePageCacheKey, PAGE_CACHE_TTL, useCachedPageData } from '../../store/pageCacheStore';
 
 const HostEarnings = () => {
   const { user } = useAuthStore();
-  const [earnings, setEarnings] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState('');
+  const userId = user?.id;
+  const earningsCacheKey = makePageCacheKey('host-earnings', userId);
+  const fetchEarnings = useCallback(() => hostService.getEarnings(userId), [userId]);
+  const {
+    data: earnings,
+    isLoading: loading,
+    isRefreshing,
+    error: loadError,
+    refresh: refreshEarnings,
+  } = useCachedPageData(earningsCacheKey, fetchEarnings, {
+    enabled: !!userId,
+    ttl: PAGE_CACHE_TTL.MEDIUM,
+  });
 
-  const load = useCallback(async () => {
-    if (!user?.id) {
-      setLoading(false);
-      return;
-    }
-    try {
-      setLoading(true);
-      setLoadError('');
-      const data = await hostService.getEarnings(user.id);
-      setEarnings(data);
-    } catch (err) {
-      console.error('[EV-Net] Failed to load earnings:', err);
-      setLoadError(err.message || 'Could not load earnings.');
-    } finally {
-      setLoading(false);
-    }
-  }, [user?.id]);
-
-  useEffect(() => {
-    load();
-  }, [load]);
+  const load = useCallback(() => refreshEarnings({ force: true }), [refreshEarnings]);
 
   if (loading || !earnings) return (
     <div className="section" style={{ minHeight: 'calc(100vh - 72px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div className="glass-card" style={{ padding: '2rem', textAlign: 'center' }}>
-        <div style={{ color: 'var(--text-secondary)' }}>{loading ? 'Loading earnings...' : (loadError || 'No earnings data available.')}</div>
+        <div style={{ color: 'var(--text-secondary)' }}>{loading ? 'Loading earnings...' : (loadError?.message || 'No earnings data available.')}</div>
         {loadError && <button className="btn btn-secondary" onClick={load} style={{ marginTop: '1rem' }}>Retry</button>}
       </div>
     </div>
@@ -47,7 +38,24 @@ const HostEarnings = () => {
   return (
     <div className="section" style={{ minHeight: 'calc(100vh - 72px)' }}>
       <div className="container" style={{ maxWidth: '900px' }}>
-        <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '2rem', marginBottom: '2rem' }}>Earnings & Payouts</h2>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', marginBottom: '2rem', flexWrap: 'wrap' }}>
+          <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '2rem', margin: 0 }}>Earnings & Payouts</h2>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={load}
+            disabled={isRefreshing}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '0.5rem 0.9rem', fontSize: '0.85rem' }}
+          >
+            <RefreshCw size={15} className={isRefreshing ? 'animate-spin' : ''} />
+            {isRefreshing ? 'Refreshing' : 'Refresh'}
+          </button>
+        </div>
+        {(isRefreshing || loadError) && (
+          <div style={{ color: loadError ? '#fbbf24' : 'var(--brand-cyan)', fontSize: '0.85rem', marginTop: '-1rem', marginBottom: '1rem' }}>
+            {loadError ? 'Could not refresh. Showing cached earnings.' : 'Refreshing earnings...'}
+          </div>
+        )}
 
         {/* Summary Cards */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>

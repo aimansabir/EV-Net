@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { MapContainer, TileLayer, Marker } from 'react-leaflet';
 import L from 'leaflet';
 import { listingService, availabilityService, bookingService } from '../../data/api';
+import { makePageCacheKey, PAGE_CACHE_TTL, useCachedPageData } from '../../store/pageCacheStore';
 import {
   calculateEnergyBookingFees,
   getPricingBand,
@@ -17,7 +18,7 @@ import {
   Calendar, MapPin, ArrowLeft, Lock, Unlock, ExternalLink, ShieldCheck,
   ChevronDown, Clock, Timer, MessageSquare, Wifi, Video, ParkingCircle,
   Droplets, User, Shield, Utensils, Trees, Moon, Zap, ShoppingBag,
-  Lightbulb, Waves, Coffee, Milestone, Smartphone, CheckCircle
+  Lightbulb, Waves, Coffee, Milestone, Smartphone, CheckCircle, RefreshCw
 } from 'lucide-react';
 import Avatar from '../../components/ui/Avatar';
 import useAuthStore from '../../store/authStore';
@@ -43,9 +44,6 @@ const formatTime12h = (time24) => {
 const ChargerDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const [listing, setListing] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState('');
   const [selectedImage, setSelectedImage] = useState(0);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [slots, setSlots] = useState([]);
@@ -53,55 +51,48 @@ const ChargerDetail = () => {
   const [duration, setDuration] = useState(2);
   const [isDurationOpen, setIsDurationOpen] = useState(false);
   const [vehicleSize, setVehicleSize] = useState(VEHICLE_SIZES.SMALL);
-  const [userBookings, setUserBookings] = useState([]);
   const [isStartOpen, setIsStartOpen] = useState(false);
   const [isVehicleOpen, setIsVehicleOpen] = useState(false);
   const [isCreatingInquiry, setIsCreatingInquiry] = useState(false);
   const [inquiryError, setInquiryError] = useState('');
   const { user } = useAuthStore();
+  const userId = user?.id;
   const [noSlotsReason, setNoSlotsReason] = useState(''); // 'past', 'none', or ''
   const [slotsLoading, setSlotsLoading] = useState(false);
 
+  const listingCacheKey = makePageCacheKey('charger-detail', id);
+  const fetchListing = useCallback(() => listingService.getById(id), [id]);
+  const {
+    data: listing,
+    isLoading: loading,
+    isRefreshing: listingRefreshing,
+    error: listingLoadError,
+    refresh: refreshListing,
+  } = useCachedPageData(listingCacheKey, fetchListing, {
+    enabled: !!id,
+    ttl: PAGE_CACHE_TTL.LONG,
+  });
+
+  const userBookingsCacheKey = makePageCacheKey('user-bookings', userId);
+  const fetchUserBookings = useCallback(() => bookingService.getByUser(userId), [userId]);
+  const {
+    data: cachedUserBookings,
+    error: bookingsLoadError,
+  } = useCachedPageData(userBookingsCacheKey, fetchUserBookings, {
+    enabled: !!userId,
+    ttl: PAGE_CACHE_TTL.SHORT,
+  });
+  const userBookings = cachedUserBookings || [];
+
   useEffect(() => {
-    let mounted = true;
-    const load = async () => {
-      try {
-        setLoading(true);
-        setLoadError('');
-        const data = await listingService.getById(id);
-        if (mounted) setListing(data);
-      } catch (err) {
-        console.error("Failed to load listing:", err);
-        if (mounted) setLoadError(err.message || 'Could not load charger details.');
-      } finally {
-        if (mounted) setLoading(false);
-      }
-    };
-    load();
-    return () => {
-      mounted = false;
-    };
+    setSelectedImage(0);
   }, [id]);
 
   useEffect(() => {
-    let mounted = true;
-    const loadBookings = async () => {
-      if (!user?.id) {
-        setUserBookings([]);
-        return;
-      }
-      try {
-        const bookings = await bookingService.getByUser(user.id);
-        if (mounted) setUserBookings(bookings || []);
-      } catch (err) {
-        console.error("Failed to fetch bookings:", err);
-      }
-    };
-    loadBookings();
-    return () => {
-      mounted = false;
-    };
-  }, [user?.id]);
+    if (listing?.images?.length && selectedImage >= listing.images.length) {
+      setSelectedImage(0);
+    }
+  }, [listing?.images?.length, selectedImage]);
 
   useEffect(() => {
     let mounted = true;
@@ -169,8 +160,10 @@ const ChargerDetail = () => {
     return () => window.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  const loadErrorMessage = listingLoadError?.message || 'Could not load charger details.';
+
   if (loading) return <div className="section" style={{ minHeight: 'calc(100vh - 72px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><div style={{ color: 'var(--text-secondary)' }}>Loading...</div></div>;
-  if (!listing) return <div className="section" style={{ minHeight: 'calc(100vh - 72px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><div className="glass-card" style={{ padding: '2rem', textAlign: 'center' }}><div>{loadError || 'Listing not found'}</div><button className="btn btn-secondary" onClick={() => window.location.reload()} style={{ marginTop: '1rem' }}>Retry</button></div></div>;
+  if (!listing) return <div className="section" style={{ minHeight: 'calc(100vh - 72px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><div className="glass-card" style={{ padding: '2rem', textAlign: 'center' }}><div>{loadErrorMessage || 'Listing not found'}</div><button className="btn btn-secondary" onClick={() => refreshListing({ force: true, silent: false })} style={{ marginTop: '1rem' }}>Retry</button></div></div>;
 
   // Pricing Logic
   const currentBand = getPricingBand(selectedStart);
@@ -279,6 +272,21 @@ const ChargerDetail = () => {
           <ArrowLeft size={16} /> Back to Explore
         </button>
 
+        <button
+          type="button"
+          onClick={() => refreshListing({ force: true })}
+          disabled={listingRefreshing}
+          style={{
+            position: 'absolute', top: '1.5rem', right: '1.5rem', zIndex: 10,
+            padding: '0.6rem 1rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)',
+            background: 'rgba(11,15,25,0.7)', color: '#fff', cursor: listingRefreshing ? 'wait' : 'pointer', backdropFilter: 'blur(8px)',
+            fontSize: '0.85rem', fontFamily: 'var(--font-body)', display: 'flex', alignItems: 'center', gap: '0.5rem',
+          }}
+        >
+          <RefreshCw size={15} className={listingRefreshing ? 'animate-spin' : ''} />
+          {listingRefreshing ? 'Refreshing' : 'Refresh'}
+        </button>
+
         {/* Overlay Chips */}
         <div style={{ position: 'absolute', top: '5rem', left: '1.5rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap', zIndex: 10 }}>
           {listing.chargerSpeed === '50kW' && (
@@ -310,6 +318,11 @@ const ChargerDetail = () => {
       {/* Content */}
       <div className="section" style={{ paddingTop: '2rem' }}>
         <div className="container" style={{ maxWidth: '1100px' }}>
+          {(listingRefreshing || listingLoadError || bookingsLoadError) && (
+            <div style={{ marginBottom: '1rem', color: listingLoadError || bookingsLoadError ? '#fbbf24' : 'var(--brand-cyan)', fontSize: '0.85rem' }}>
+              {listingLoadError || bookingsLoadError ? 'Could not refresh everything. Showing cached details where available.' : 'Refreshing charger details...'}
+            </div>
+          )}
           <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 1fr)', gap: '2.5rem' }}>
 
             {/* Left Column */}

@@ -1,39 +1,42 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Heart } from 'lucide-react';
+import { Heart, RefreshCw } from 'lucide-react';
 import useAppStore from '../../store/appStore';
 import { listingService } from '../../data/api';
 import { formatPKR } from '../../data/feeConfig';
 import { CardSkeleton } from '../../components/ui/Skeleton';
+import { PAGE_CACHE_TTL, useCachedPageData } from '../../store/pageCacheStore';
 
 const Favorites = () => {
   const navigate = useNavigate();
   const { favorites, loadFavorites, toggleFavorite } = useAppStore();
-  const [listings, setListings] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-
-    try {
-      const [, allListings] = await Promise.all([
-        loadFavorites(),
-        listingService.getAll()
-      ]);
-      setListings(allListings || []);
-    } catch (err) {
-      console.error("Failed to load favorites", err);
-      setError(err.message || 'Failed to load saved chargers');
-    } finally {
-      setLoading(false);
-    }
-  }, [loadFavorites]);
+  const fetchListings = useCallback(() => (
+    listingService.getAll({ isActive: true, isApproved: true, force: true })
+  ), []);
+  const {
+    data: cachedListings,
+    isLoading: loading,
+    isRefreshing,
+    error,
+    refresh: refreshListings,
+  } = useCachedPageData('listings:active-approved', fetchListings, {
+    ttl: PAGE_CACHE_TTL.MEDIUM,
+  });
+  const listings = cachedListings || [];
 
   useEffect(() => {
-    load();
-  }, [load]);
+    loadFavorites().catch(err => {
+      console.warn('[EV-Net] Favorites load skipped:', err.message);
+    });
+  }, [loadFavorites]);
+
+  const refreshSavedChargers = useCallback(async () => {
+    await Promise.all([
+      loadFavorites({ force: true }),
+      refreshListings({ force: true }),
+    ]);
+  }, [loadFavorites, refreshListings]);
 
   const favoriteListings = listings.filter(l => favorites.has(l.id));
 
@@ -55,12 +58,12 @@ const Favorites = () => {
     );
   }
 
-  if (error) {
+  if (error && listings.length === 0) {
     return (
       <div className="section" style={{ minHeight: 'calc(100vh - 72px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <div style={{ textAlign: 'center' }}>
-          <div style={{ color: '#ef4444', marginBottom: '1rem' }}>⚠ {error}</div>
-           <button className="btn btn-primary" onClick={load}>
+          <div style={{ color: '#ef4444', marginBottom: '1rem' }}>⚠ {error.message || 'Failed to load saved chargers'}</div>
+          <button className="btn btn-primary" onClick={refreshSavedChargers}>
             Try Again
           </button>
         </div>
@@ -71,7 +74,24 @@ const Favorites = () => {
   return (
     <div className="section" style={{ minHeight: 'calc(100vh - 72px)' }}>
       <div className="container" style={{ maxWidth: '1000px' }}>
-        <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '2rem', marginBottom: '1.5rem' }}>Saved Chargers</h2>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
+          <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '2rem', margin: 0 }}>Saved Chargers</h2>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={refreshSavedChargers}
+            disabled={isRefreshing}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '0.5rem 0.9rem', fontSize: '0.85rem' }}
+          >
+            <RefreshCw size={15} className={isRefreshing ? 'animate-spin' : ''} />
+            {isRefreshing ? 'Refreshing' : 'Refresh'}
+          </button>
+        </div>
+        {(isRefreshing || error) && favoriteListings.length > 0 && (
+          <div style={{ color: error ? '#fbbf24' : 'var(--brand-cyan)', fontSize: '0.85rem', marginBottom: '0.75rem' }}>
+            {error ? 'Could not refresh. Showing cached saved chargers.' : 'Refreshing saved chargers...'}
+          </div>
+        )}
 
         {favoriteListings.length === 0 ? (
           <div className="glass-card" style={{ padding: '4rem 2rem', textAlign: 'center' }}>

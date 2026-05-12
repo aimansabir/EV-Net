@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import { ShieldCheck, Search, Home, Clock, AlertCircle, CheckCircle2, ChevronRight, Loader2 } from 'lucide-react';
+import React, { useCallback, useState } from 'react';
+import { ShieldCheck, Search, Home, Clock, AlertCircle, CheckCircle2, ChevronRight, Loader2, RefreshCw } from 'lucide-react';
 import ReviewActionModal from '../../components/ui/ReviewActionModal';
 import StatusBadge from '../../components/ui/StatusBadge';
 import { adminService } from '../../data/api';
+import { invalidatePageCaches, PAGE_CACHE_TTL, useCachedPageData } from '../../store/pageCacheStore';
 const isPendingStatus = (status) => ['pending', 'under_review'].includes((status || '').toLowerCase());
 const isApprovedStatus = (status) => ['approved', 'verified'].includes((status || '').toLowerCase());
 const isRejectedStatus = (status) => (status || '').toLowerCase() === 'rejected';
@@ -12,52 +13,63 @@ const AdminVerification = () => {
   const [activeTab, setActiveTab] = useState('Pending');
   const [modalOpen, setModalOpen] = useState(false);
   const [selectedSubmission, setSelectedSubmission] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [warning, setWarning] = useState(null);
+  const [actionLoading, setActionLoading] = useState(false);
+  const [actionError, setActionError] = useState(null);
   const [successMessage, setSuccessMessage] = useState(null);
-  const [submissions, setSubmissions] = useState([]);
-  const [payments, setPayments] = useState([]);
 
   const tabs = ['All', 'EV Users', 'Hosts', 'Payments', 'Pending', 'Rejected'];
 
-  useEffect(() => {
-    loadSubmissions();
+  const fetchQueue = useCallback(async () => {
+    const [subResult, payResult] = await Promise.allSettled([
+      adminService.getVerificationSubmissions(),
+      adminService.getOnboardingPayments()
+    ]);
+
+    const nextQueue = {
+      submissions: [],
+      payments: [],
+      error: null,
+      warning: null,
+    };
+
+    if (subResult.status === 'fulfilled') {
+      nextQueue.submissions = subResult.value;
+    } else {
+      console.error('[EV-Net] Verification queue load failed:', subResult.reason);
+      nextQueue.error = `Verification queue error: ${subResult.reason?.message || subResult.reason}`;
+    }
+
+    if (payResult.status === 'fulfilled') {
+      nextQueue.payments = payResult.value;
+    } else {
+      console.warn('[EV-Net] Payment queue load failed:', payResult.reason);
+      nextQueue.warning = `Payment queue error: ${payResult.reason?.message || payResult.reason}`;
+    }
+
+    return nextQueue;
   }, []);
 
-  const loadSubmissions = async () => {
-    setLoading(true);
-    setError(null);
-    setWarning(null);
+  const {
+    data: queue,
+    isLoading: loading,
+    isRefreshing,
+    error: loadError,
+    refresh: refreshQueue,
+    setData: setQueue,
+  } = useCachedPageData('admin-verification', fetchQueue, {
+    ttl: PAGE_CACHE_TTL.SHORT,
+  });
+
+  const submissions = queue?.submissions || [];
+  const payments = queue?.payments || [];
+  const error = actionError || queue?.error || (loadError ? `Could not load verification queue: ${loadError.message || loadError}` : null);
+  const warning = queue?.warning;
+
+  const loadSubmissions = useCallback(async () => {
+    setActionError(null);
     setSuccessMessage(null);
-    try {
-      const [subResult, payResult] = await Promise.allSettled([
-        adminService.getVerificationSubmissions(),
-        adminService.getOnboardingPayments()
-      ]);
-
-      if (subResult.status === 'fulfilled') {
-        setSubmissions(subResult.value);
-      } else {
-        console.error('[EV-Net] Verification queue load failed:', subResult.reason);
-        setSubmissions([]);
-        setError(`Verification queue error: ${subResult.reason?.message || subResult.reason}`);
-      }
-
-      if (payResult.status === 'fulfilled') {
-        setPayments(payResult.value);
-      } else {
-        console.warn('[EV-Net] Payment queue load failed:', payResult.reason);
-        setPayments([]);
-        setWarning(`Payment queue error: ${payResult.reason?.message || payResult.reason}`);
-      }
-    } catch (err) {
-      console.error('[EV-Net] Failed to load queue:', err);
-      setError(`Could not load verification queue: ${err.message || err}`);
-    } finally {
-      setLoading(false);
-    }
-  };
+    await refreshQueue({ force: true });
+  }, [refreshQueue]);
 
   const stats = [
     { label: 'Pending Total', value: submissions.filter(s => isPendingStatus(s.status)).length + payments.filter(p => isPendingStatus(p.status)).length, icon: Clock, color: '#fbbf24' },
@@ -89,8 +101,8 @@ const AdminVerification = () => {
       console.warn('[Admin] No selected submission on submit');
       return { success: false, error: 'No submission selected' };
     }
-    setLoading(true);
-    setError(null);
+    setActionLoading(true);
+    setActionError(null);
     setSuccessMessage(null);
     console.log('[EV-Net] Admin approve/reject started', { id: selectedSubmission.id, action, notes });
     try {
@@ -104,7 +116,34 @@ const AdminVerification = () => {
         await adminService.verifyUser(userId, decision);
       }
 
-      await loadSubmissions(); // Refresh list
+      invalidatePageCaches([
+        'admin-verification',
+        'admin-dashboard',
+        'admin-users',
+        'admin-listings',
+        'host-dashboard',
+        'host-listings',
+        'listings:active-approved',
+      ]);
+      await refreshQueue({ force: true, silent: true });
+      const reviewedStatus = decision.approved ? 'approved' : 'rejected';
+      setQueue(prev => {
+        const current = prev || { submissions: [], payments: [] };
+        if (activeTab === 'Payments' || selectedSubmission.method) {
+          return {
+            ...current,
+            payments: (current.payments || []).map(payment =>
+              payment.id === selectedSubmission.id ? { ...payment, status: reviewedStatus } : payment
+            ),
+          };
+        }
+        return {
+          ...current,
+          submissions: (current.submissions || []).map(submission =>
+            submission.id === selectedSubmission.id ? { ...submission, status: reviewedStatus } : submission
+          ),
+        };
+      });
       setModalOpen(false);
       setSelectedSubmission(null);
       setSuccessMessage(`Review ${decision.approved ? 'approved' : 'rejected'} successfully.`);
@@ -112,10 +151,10 @@ const AdminVerification = () => {
       return { success: true };
     } catch (err) {
       console.error('[EV-Net] Review failed:', err);
-      setError('Failed to process review: ' + (err.message || err));
+      setActionError('Failed to process review: ' + (err.message || err));
       return { success: false, error: err?.message || String(err) };
     } finally {
-      setLoading(false);
+      setActionLoading(false);
     }
   };
 
@@ -123,11 +162,30 @@ const AdminVerification = () => {
     <div className="section" style={{ minHeight: '100vh', padding: '2rem' }}>
       <div className="container" style={{ maxWidth: '1200px' }}>
         <div style={{ marginBottom: '2rem' }}>
-          <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '2rem', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <ShieldCheck size={32} className="text-secondary" />
-            Verification Queue
-          </h2>
-          <p style={{ color: 'var(--text-secondary)' }}>Review and approve identity documents for EV drivers and charging hosts.</p>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem', flexWrap: 'wrap' }}>
+            <div>
+              <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '2rem', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <ShieldCheck size={32} className="text-secondary" />
+                Verification Queue
+              </h2>
+              <p style={{ color: 'var(--text-secondary)' }}>Review and approve identity documents for EV drivers and charging hosts.</p>
+            </div>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={loadSubmissions}
+              disabled={isRefreshing || actionLoading}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '0.5rem 0.9rem', fontSize: '0.85rem' }}
+            >
+              <RefreshCw size={15} className={isRefreshing ? 'animate-spin' : ''} />
+              {isRefreshing ? 'Refreshing' : 'Refresh'}
+            </button>
+          </div>
+          {(isRefreshing || loadError) && (submissions.length > 0 || payments.length > 0) && (
+            <div style={{ color: loadError ? '#fbbf24' : 'var(--brand-cyan)', fontSize: '0.85rem', marginTop: '0.5rem' }}>
+              {loadError ? 'Could not refresh. Showing cached queue data.' : 'Refreshing queue...'}
+            </div>
+          )}
         </div>
 
         {/* Stats Row */}
@@ -203,7 +261,7 @@ const AdminVerification = () => {
           </div>
 
           <div style={{ minHeight: '300px', position: 'relative' }}>
-            {loading && !modalOpen ? (
+            {loading && !queue && !modalOpen ? (
                <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(10, 11, 14, 0.5)', zIndex: 5 }}>
                   <Loader2 size={32} className="animate-spin" style={{ color: 'var(--brand-cyan)' }} />
                </div>

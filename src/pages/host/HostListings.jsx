@@ -3,51 +3,46 @@ import { useNavigate } from 'react-router-dom';
 import useAuthStore from '../../store/authStore';
 import { listingService } from '../../data/api';
 import { formatPKR } from '../../data/feeConfig';
-import { Plug, Star, Image as ImageIcon, X, Plus, Loader2 } from 'lucide-react';
+import { Plug, Star, Image as ImageIcon, X, Loader2, RefreshCw } from 'lucide-react';
 import FileUploadDropzone from '../../components/ui/FileUploadDropzone';
+import { invalidatePageCaches, isPageCacheStale, makePageCacheKey, PAGE_CACHE_TTL, useCachedPageData } from '../../store/pageCacheStore';
 
 const HostListings = () => {
   const navigate = useNavigate();
   const { user } = useAuthStore();
-  const [listings, setListings] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const userId = user?.id;
   const [selectedListing, setSelectedListing] = useState(null);
   const [showPhotoModal, setShowPhotoModal] = useState(false);
   const [isUpdatingPhotos, setIsUpdatingPhotos] = useState(false);
-  const [loadError, setLoadError] = useState('');
 
-  const loadListings = useCallback(async () => {
-    if (!user?.id) {
-      setLoading(false);
-      return;
-    }
-    try {
-      setLoading(true);
-      setLoadError('');
-      const data = await listingService.getByHost(user.id);
-      setListings(data);
-    } catch (err) {
-      console.error("Failed to load listings:", err);
-      setLoadError(err.message || 'Could not load listings.');
-      setListings([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [user?.id]);
+  const listingsCacheKey = makePageCacheKey('host-listings', userId);
+  const fetchListings = useCallback(() => listingService.getByHost(userId), [userId]);
+  const {
+    data: cachedListings,
+    isLoading: loading,
+    isRefreshing,
+    error: loadError,
+    refresh: refreshListings,
+    setData: setListings,
+  } = useCachedPageData(listingsCacheKey, fetchListings, {
+    enabled: !!userId,
+    ttl: PAGE_CACHE_TTL.SHORT,
+  });
+  const listings = cachedListings || [];
 
-  useEffect(() => {
-    loadListings();
-  }, [loadListings]);
+  const loadListings = useCallback(() => (
+    refreshListings({ force: true })
+  ), [refreshListings]);
 
   useEffect(() => {
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible' && user?.id) {
-        loadListings();
+      if (document.visibilityState === 'visible' && userId && isPageCacheStale(listingsCacheKey, PAGE_CACHE_TTL.SHORT)) {
+        refreshListings({ force: true, silent: true });
       }
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, [user?.id, loadListings]);
+  }, [listingsCacheKey, refreshListings, userId]);
 
   const statusBadge = (listing) => {
     const setupFeePaid = listing.setupFeePaid ?? listing.setup_fee_paid;
@@ -61,24 +56,41 @@ const HostListings = () => {
   };
 
   const handleUpdatePhotos = async (listingId) => {
-    const data = await listingService.getByHost(user?.id);
-    setListings(data);
+    const data = await refreshListings({ force: true, silent: true });
+    if (!data) return;
     const updated = data.find(l => l.id === listingId);
     if (updated) setSelectedListing(updated);
   };
 
-  if (loading) return <div className="section" style={{ minHeight: 'calc(100vh - 72px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><div style={{ color: 'var(--text-secondary)' }}>Loading...</div></div>;
+  if (loading && listings.length === 0) return <div className="section" style={{ minHeight: 'calc(100vh - 72px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><div style={{ color: 'var(--text-secondary)' }}>Loading...</div></div>;
 
   return (
     <div className="section" style={{ minHeight: 'calc(100vh - 72px)' }}>
       <div className="container" style={{ maxWidth: '1000px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
           <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '2rem', margin: 0 }}>My Listings</h2>
-          <button className="btn btn-primary" style={{ fontSize: '0.9rem' }} onClick={() => navigate('/host/listings/new')}>+ New Listing</button>
+          <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={loadListings}
+              disabled={isRefreshing}
+              style={{ fontSize: '0.85rem', display: 'inline-flex', alignItems: 'center', gap: '8px' }}
+            >
+              <RefreshCw size={15} className={isRefreshing ? 'animate-spin' : ''} />
+              {isRefreshing ? 'Refreshing' : 'Refresh'}
+            </button>
+            <button className="btn btn-primary" style={{ fontSize: '0.9rem' }} onClick={() => navigate('/host/listings/new')}>+ New Listing</button>
+          </div>
         </div>
-        {loadError && (
+        {(isRefreshing || loadError) && listings.length > 0 && (
+          <div style={{ color: loadError ? '#fbbf24' : 'var(--brand-cyan)', fontSize: '0.85rem', marginTop: '-1rem', marginBottom: '1rem' }}>
+            {loadError ? 'Could not refresh. Showing cached listings.' : 'Refreshing listings...'}
+          </div>
+        )}
+        {loadError && listings.length === 0 && (
           <div className="auth-error" style={{ marginBottom: '1rem' }}>
-            {loadError}
+            {listings.length > 0 ? 'Could not refresh. Showing cached listings.' : (loadError.message || 'Could not load listings.')}
             <button className="btn btn-secondary" onClick={loadListings} style={{ marginLeft: '1rem', padding: '0.35rem 0.7rem' }}>Retry</button>
           </div>
         )}
@@ -165,6 +177,12 @@ const HostListings = () => {
                           setIsUpdatingPhotos(true);
                           try {
                             await listingService.deleteListingPhoto(photo.id);
+                            invalidatePageCaches([
+                              makePageCacheKey('host-dashboard', userId),
+                              'listings:active-approved',
+                              'admin-listings',
+                              'charger-detail',
+                            ]);
                             await handleUpdatePhotos(selectedListing.id);
                           } finally {
                             setIsUpdatingPhotos(false);
@@ -203,7 +221,7 @@ const HostListings = () => {
                                ...uploadedWithUrls.map(photo => listingService.resolveListingPhotoUrl(photo.storage_path))
                              ]
                            } : prev);
-                           setListings(prev => prev.map(listing => listing.id === selectedListing.id ? {
+                           setListings(prev => (prev || []).map(listing => listing.id === selectedListing.id ? {
                              ...listing,
                              listing_photos: [...(listing.listing_photos || []), ...uploadedWithUrls],
                              images: [
@@ -211,6 +229,12 @@ const HostListings = () => {
                                ...uploadedWithUrls.map(photo => listingService.resolveListingPhotoUrl(photo.storage_path))
                              ]
                            } : listing));
+                           invalidatePageCaches([
+                             makePageCacheKey('host-dashboard', userId),
+                             'listings:active-approved',
+                             'admin-listings',
+                             'charger-detail',
+                           ]);
                            handleUpdatePhotos(selectedListing.id).catch(err => {
                              console.warn('[EV-Net] Background listing photo refresh failed:', err.message);
                            });

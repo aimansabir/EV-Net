@@ -1,53 +1,44 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import useAuthStore from '../../store/authStore';
 import { hostService } from '../../data/api';
 import { formatPKR } from '../../data/feeConfig';
-import { Clock, AlertCircle, FileText, CheckCircle, Star, Zap, CalendarDays } from 'lucide-react';
+import { Clock, AlertCircle, FileText, CheckCircle, Star, Zap, CalendarDays, RefreshCw } from 'lucide-react';
 import Skeleton, { ListSkeleton } from '../../components/ui/Skeleton';
+import { isPageCacheStale, makePageCacheKey, PAGE_CACHE_TTL, useCachedPageData } from '../../store/pageCacheStore';
 
 const HostDashboard = () => {
   const navigate = useNavigate();
   const { user } = useAuthStore();
-  const [dashboard, setDashboard] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState('');
+  const userId = user?.id;
+  const dashboardCacheKey = makePageCacheKey('host-dashboard', userId);
+  const fetchDashboard = useCallback(() => hostService.getDashboard(userId), [userId]);
+  const {
+    data: dashboard,
+    isLoading: loading,
+    isRefreshing,
+    error: loadError,
+    refresh: refreshDashboard,
+  } = useCachedPageData(dashboardCacheKey, fetchDashboard, {
+    enabled: !!userId,
+    ttl: PAGE_CACHE_TTL.SHORT,
+  });
 
-  const loadDashboard = async ({ silent = false } = {}) => {
-    if (!user?.id) {
-      setLoading(false);
-      return;
-    }
-    try {
-      if (!silent) setLoading(true);
-      setLoadError('');
-      const data = await hostService.getDashboard(user.id);
-      setDashboard(data);
-    } catch (err) {
-      console.error("[EV-Net] Failed to load host dashboard:", err);
-      setLoadError(err.message || 'Please check your internet connection and try again.');
-      if (!silent) setDashboard(null);
-    } finally {
-      if (!silent) setLoading(false);
-    }
-  };
+  const loadDashboard = useCallback(({ silent = false } = {}) => (
+    refreshDashboard({ force: true, silent })
+  ), [refreshDashboard]);
 
-  useEffect(() => {
-    loadDashboard();
-  }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Refetch when tab regains focus (stale data fix)
   useEffect(() => {
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible' && user?.id) {
-        loadDashboard({ silent: true });
+      if (document.visibilityState === 'visible' && userId && isPageCacheStale(dashboardCacheKey, PAGE_CACHE_TTL.SHORT)) {
+        refreshDashboard({ force: true, silent: true });
       }
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [dashboardCacheKey, refreshDashboard, userId]);
 
-  if (loading) {
+  if (loading && !dashboard) {
     return (
       <div className="section" style={{ minHeight: 'calc(100vh - 72px)' }}>
         <div className="container" style={{ maxWidth: '1200px' }}>
@@ -76,7 +67,7 @@ const HostDashboard = () => {
         <div style={{ textAlign: 'center' }}>
           <AlertCircle size={48} color="#f87171" style={{ marginBottom: '1rem' }} />
           <h3>Failed to load dashboard</h3>
-          <p style={{ color: 'var(--text-secondary)' }}>{loadError || 'Please check your internet connection and try again.'}</p>
+          <p style={{ color: 'var(--text-secondary)' }}>{loadError?.message || 'Please check your internet connection and try again.'}</p>
           <button className="btn btn-secondary" style={{ marginTop: '1rem' }} onClick={() => loadDashboard()}>Retry</button>
         </div>
       </div>
@@ -130,8 +121,25 @@ const HostDashboard = () => {
             </h2>
             <p style={{ color: 'var(--text-secondary)', margin: '0.3rem 0 0', fontSize: '0.9rem' }}>Welcome back, {user?.name || 'Host'}</p>
           </div>
-          <Link to="/host/listings/new" className="btn btn-primary" style={{ fontSize: '0.9rem' }}>+ New Listing</Link>
+          <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => loadDashboard()}
+              disabled={isRefreshing}
+              style={{ fontSize: '0.85rem', display: 'inline-flex', alignItems: 'center', gap: '8px' }}
+            >
+              <RefreshCw size={15} className={isRefreshing ? 'animate-spin' : ''} />
+              {isRefreshing ? 'Refreshing' : 'Refresh'}
+            </button>
+            <Link to="/host/listings/new" className="btn btn-primary" style={{ fontSize: '0.9rem' }}>+ New Listing</Link>
+          </div>
         </div>
+        {(isRefreshing || loadError) && (
+          <div style={{ color: loadError ? '#fbbf24' : 'var(--brand-cyan)', fontSize: '0.85rem', marginTop: '-1rem', marginBottom: '1.25rem' }}>
+            {loadError ? 'Could not refresh. Showing cached dashboard data.' : 'Refreshing dashboard...'}
+          </div>
+        )}
 
         {/* Stats */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', marginBottom: '2.5rem' }}>
