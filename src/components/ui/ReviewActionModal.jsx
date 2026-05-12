@@ -152,7 +152,7 @@ const ReviewActionModal = ({ isOpen, onClose, user, targetType = 'evType', submi
       console.log('[Admin] ReviewActionModal calling parent onSubmit...');
       let timeoutId;
       const timeout = new Promise((_, reject) => {
-        timeoutId = setTimeout(() => reject(new Error('Review submit timed out. Please retry.')), 15000);
+        timeoutId = setTimeout(() => reject(new Error('Review submit timed out. Please retry.')), 60000);
       });
       const result = await Promise.race([
         onSubmit({

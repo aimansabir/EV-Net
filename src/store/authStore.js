@@ -10,7 +10,7 @@ import { authService } from '../data/api.js';
 
 const STORAGE_KEY = 'EV-Net_auth';
 const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true';
-const AUTH_TIMEOUT_MS = 12000;
+const AUTH_TIMEOUT_MS = 20000;
 
 function authDebug(...args) {
   if (import.meta.env.DEV || import.meta.env.VITE_DEBUG_AUTH === 'true') {

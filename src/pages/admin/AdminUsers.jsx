@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { adminService } from '../../data/api';
+import { FlaskConical } from 'lucide-react';
 
 const AdminUsers = () => {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
+  const [togglingTest, setTogglingTest] = useState(null); // userId being toggled
 
   useEffect(() => {
     adminService.getUsers().then(data => {
@@ -29,6 +31,25 @@ const AdminUsers = () => {
       setUsers(updated);
     } catch (err) {
       alert('Action failed: ' + err.message);
+    }
+  };
+
+  const handleToggleTest = async (userId, currentlyTest) => {
+    const newState = !currentlyTest;
+    const action = newState ? 'mark as test account' : 'remove test account flag from';
+    const userName = users.find(u => u.id === userId)?.name || 'this user';
+    if (!confirm(`Are you sure you want to ${action} "${userName}"?\n\n${newState ? 'Their bookings and payments will be excluded from financials.' : 'Their bookings and payments will be included in financials again.'}`)) {
+      return;
+    }
+    setTogglingTest(userId);
+    try {
+      await adminService.toggleTestAccount(userId, newState);
+      const updated = await adminService.getUsers();
+      setUsers(updated);
+    } catch (err) {
+      alert('Failed to toggle test account: ' + err.message);
+    } finally {
+      setTogglingTest(null);
     }
   };
 
@@ -89,28 +110,63 @@ const AdminUsers = () => {
               </thead>
               <tbody>
                 {filtered.map(u => (
-                  <tr key={u.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                  <tr key={u.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)', background: u.isTestAccount ? 'rgba(251,191,36,0.04)' : 'transparent' }}>
                     <td style={{ padding: '0.75rem' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                         <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: u.avatar ? `url(${u.avatar}) center/cover` : '#333', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem', fontWeight: 600, color: '#fff' }}>
                           {!u.avatar && (u.name || 'U')[0].toUpperCase()}
                         </div>
-                        <span>{u.name}</span>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                          <span>{u.name}</span>
+                          {u.isTestAccount && (
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', padding: '1px 6px', borderRadius: '4px', fontSize: '0.6rem', fontWeight: 700, background: 'rgba(251,191,36,0.15)', color: '#fbbf24', letterSpacing: '0.03em', width: 'fit-content' }}>
+                              <FlaskConical size={9} /> TEST
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </td>
                     <td style={{ padding: '0.75rem', color: 'var(--text-secondary)' }}>{u.email}</td>
                     <td style={{ padding: '0.75rem' }}>{roleBadge(u.role)}</td>
                     <td style={{ padding: '0.75rem' }}>{verificationBadge(u.verificationStatus, u.role)}</td>
                     <td style={{ padding: '0.75rem' }}>
-                      {canShowActions(u) && (
-                        <div style={{ display: 'flex', gap: '0.5rem' }}>
-                          <button onClick={() => handleAction(u.id, u.role, true)} style={{ padding: '0.3rem 0.6rem', borderRadius: '4px', border: '1px solid var(--brand-green)', background: 'rgba(0,210,106,0.1)', color: 'var(--brand-green)', cursor: 'pointer', fontSize: '0.75rem', fontFamily: 'var(--font-body)' }}>Approve</button>
-                          <button onClick={() => handleAction(u.id, u.role, false)} style={{ padding: '0.3rem 0.6rem', borderRadius: '4px', border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.1)', color: '#f87171', cursor: 'pointer', fontSize: '0.75rem', fontFamily: 'var(--font-body)' }}>Reject</button>
-                        </div>
-                      )}
-                      {u.is_suspended && (
-                        <span style={{ padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 600, background: 'rgba(239,68,68,0.15)', color: '#ef4444' }}>Suspended</span>
-                      )}
+                      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                        {canShowActions(u) && (
+                          <>
+                            <button onClick={() => handleAction(u.id, u.role, true)} style={{ padding: '0.3rem 0.6rem', borderRadius: '4px', border: '1px solid var(--brand-green)', background: 'rgba(0,210,106,0.1)', color: 'var(--brand-green)', cursor: 'pointer', fontSize: '0.75rem', fontFamily: 'var(--font-body)' }}>Approve</button>
+                            <button onClick={() => handleAction(u.id, u.role, false)} style={{ padding: '0.3rem 0.6rem', borderRadius: '4px', border: '1px solid rgba(239,68,68,0.3)', background: 'rgba(239,68,68,0.1)', color: '#f87171', cursor: 'pointer', fontSize: '0.75rem', fontFamily: 'var(--font-body)' }}>Reject</button>
+                          </>
+                        )}
+                        {u.is_suspended && (
+                          <span style={{ padding: '0.2rem 0.5rem', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 600, background: 'rgba(239,68,68,0.15)', color: '#ef4444' }}>Suspended</span>
+                        )}
+                        {u.role !== 'ADMIN' && (
+                          <button
+                            onClick={() => handleToggleTest(u.id, u.isTestAccount)}
+                            disabled={togglingTest === u.id}
+                            title={u.isTestAccount ? 'Remove test flag — include in financials' : 'Mark as test — exclude from financials'}
+                            style={{
+                              padding: '0.3rem 0.6rem',
+                              borderRadius: '4px',
+                              border: u.isTestAccount ? '1px solid rgba(251,191,36,0.4)' : '1px solid var(--border-color)',
+                              background: u.isTestAccount ? 'rgba(251,191,36,0.15)' : 'rgba(255,255,255,0.03)',
+                              color: u.isTestAccount ? '#fbbf24' : 'var(--text-secondary)',
+                              cursor: togglingTest === u.id ? 'wait' : 'pointer',
+                              fontSize: '0.72rem',
+                              fontFamily: 'var(--font-body)',
+                              fontWeight: 500,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              opacity: togglingTest === u.id ? 0.5 : 1,
+                              transition: 'all 0.2s'
+                            }}
+                          >
+                            <FlaskConical size={12} />
+                            {togglingTest === u.id ? '...' : u.isTestAccount ? 'Test ✓' : 'Test'}
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}

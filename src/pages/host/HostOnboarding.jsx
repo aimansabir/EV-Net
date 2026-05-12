@@ -99,6 +99,8 @@ const HostOnboarding = () => {
   const [chargerPhotos, setChargerPhotos] = useState([]);
   const [additionalPhotos, setAdditionalPhotos] = useState([]);
   const [propertyProofs, setPropertyProofs] = useState([]);
+  const [isPreparingPayment, setIsPreparingPayment] = useState(false);
+  const [preparedForPayment, setPreparedForPayment] = useState(false);
   const [onboardingListingId, setOnboardingListingId] = useState('');
   const [serverDraftLoading, setServerDraftLoading] = useState(true);
   const [existingOnboarding, setExistingOnboarding] = useState({
@@ -124,7 +126,8 @@ const HostOnboarding = () => {
       pricing,
       timeState,
       schedule,
-      step
+      step,
+      preparedForPayment
     };
     localStorage.setItem(`host_onboarding_draft_${user?.id}`, JSON.stringify(draft));
     navigate('/host/dashboard');
@@ -158,6 +161,9 @@ const HostOnboarding = () => {
           if (data.timeState) setTimeState(data.timeState);
           if (data.schedule) setSchedule(data.schedule);
           if (data.step && !isPendingVerification && !isApproved) setStep(data.step);
+          if (data.preparedForPayment || (data.step >= 8 && data.charger?.listingId)) {
+            setPreparedForPayment(true);
+          }
         } catch (e) {
           console.error("Failed to restore draft:", e);
         }
@@ -197,6 +203,9 @@ const HostOnboarding = () => {
         if (listing?.id) {
           setOnboardingListingId(listing.id);
           localStorage.setItem('currentHostOnboardingListingId', listing.id);
+          if (docs.propertyProofPath && (docs.chargerProofPath || listing.listing_photos?.length > 0)) {
+            setPreparedForPayment(true);
+          }
         }
 
         if (listing && shouldHydrateFromDB) {
@@ -268,6 +277,267 @@ const HostOnboarding = () => {
     };
   }, [user?.id, user?.phone, isApproved, isPendingVerification, isRejected]);
 
+  const runOnboardingStep = async (label, status, operation, timeoutMs = null) => {
+    let timeoutId;
+    setPublishStatus(status);
+    console.log(`[EV-Net] ${label}: started`);
+    try {
+      const task = operation();
+      const result = timeoutMs
+        ? await Promise.race([
+            task,
+            new Promise((_, reject) => {
+              timeoutId = setTimeout(() => {
+                reject(new Error(`${label} did not receive a server response in time. Please retry. If this keeps happening, check Supabase logs for this step.`));
+              }, timeoutMs);
+            })
+          ])
+        : await task;
+      console.log(`[EV-Net] ${label}: success`);
+      return result;
+    } catch (err) {
+      console.error(`[EV-Net] ${label}: failed`, err);
+      throw err;
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  };
+
+  const buildListingPayload = () => {
+    const fullAddress = charger.houseNo
+      ? `${charger.houseNo}, ${charger.address}`
+      : charger.address;
+    const title = `${charger.chargerType} in ${charger.area}`;
+
+    return {
+      hostId: user.id,
+      title,
+      description: charger.description,
+      city: profile.city,
+      area: charger.area,
+      chargerType: charger.chargerType,
+      priceDay: pricing.priceDay,
+      priceNight: pricing.priceNight,
+      amenities: charger.amenities,
+      houseRules: charger.houseRules.split('\n').filter(r => r.trim()),
+      address: fullAddress,
+      lat: charger.lat,
+      lng: charger.lng
+    };
+  };
+
+  const saveLocalDraft = (nextStep = step, listingId = onboardingListingId || charger.listingId) => {
+    if (!user?.id) return;
+    const draft = {
+      profile,
+      charger: { ...charger, listingId },
+      pricing,
+      timeState,
+      schedule,
+      step: nextStep,
+      preparedForPayment: preparedForPayment || nextStep >= 8
+    };
+    localStorage.setItem(`host_onboarding_draft_${user.id}`, JSON.stringify(draft));
+  };
+
+  const applyUploadedListingPhotos = (photos = []) => {
+    const existingPhotos = (photos || [])
+      .sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
+      .map((photo, index) => makeExistingUpload(
+        photo.storage_path,
+        listingService.resolveListingPhotoUrl(photo.storage_path),
+        `listing-photo-${index}`
+      ))
+      .filter(Boolean);
+
+    if (existingPhotos.length > 0) {
+      setChargerPhotos(existingPhotos.slice(0, 1));
+      setAdditionalPhotos(existingPhotos.slice(1));
+    }
+  };
+
+  const createOrUpdateDraftListing = async () => {
+    if (!user?.id) {
+      throw new Error('Your session is not ready. Please refresh and log in again.');
+    }
+
+    const listingPayload = buildListingPayload();
+    let listingId = onboardingListingId || charger.listingId || localStorage.getItem('currentHostOnboardingListingId');
+
+    if (listingId) {
+      const storedListing = await runOnboardingStep(
+        'Checking local onboarding listing',
+        'Checking for existing listing...',
+        () => listingService.getOwnedById(listingId, user.id)
+      );
+      if (storedListing && !storedListing.isApproved) {
+        listingId = storedListing.id;
+      } else {
+        localStorage.removeItem('currentHostOnboardingListingId');
+        listingId = null;
+      }
+    }
+
+    if (!listingId) {
+      const existingListing = await runOnboardingStep(
+        'Checking matching onboarding listing',
+        'Checking for existing listing...',
+        () => listingService.findExistingOnboardingListing({
+          hostId: user.id,
+          title: listingPayload.title,
+          city: profile.city,
+          area: charger.area,
+          chargerType: charger.chargerType
+        })
+      );
+      if (existingListing) listingId = existingListing.id;
+    }
+
+    if (listingId) {
+      await runOnboardingStep('Saving listing draft', 'Saving listing...', () => listingService.update(listingId, listingPayload));
+    } else {
+      const newListing = await runOnboardingStep('Creating listing draft', 'Creating listing...', () => listingService.create({
+        ...listingPayload,
+        images: []
+      }));
+      listingId = newListing.id;
+    }
+
+    setOnboardingListingId(listingId);
+    setCharger(prev => ({ ...prev, listingId }));
+    localStorage.setItem('currentHostOnboardingListingId', listingId);
+    saveLocalDraft(step, listingId);
+
+    await runOnboardingStep('Checking duplicate listings', 'Checking for duplicate listings...', () => listingService.demoteDuplicateOnboardingListings({
+      hostId: user.id,
+      keepId: listingId,
+      title: listingPayload.title,
+      city: profile.city,
+      area: charger.area,
+      chargerType: charger.chargerType
+    }));
+
+    return listingId;
+  };
+
+  const prepareOnboardingForPayment = async () => {
+    if (!user?.id) {
+      throw new Error('Your session is not ready. Please refresh and log in again.');
+    }
+
+    const originalChargerPhotos = [...chargerPhotos];
+    const originalAdditionalPhotos = [...additionalPhotos];
+    const originalPropertyProofs = [...propertyProofs];
+
+    // Run promote + updateProfile in parallel — they are independent
+    setPublishStatus('Preparing host profile...');
+    await Promise.all([
+      runOnboardingStep('Initializing host profile', 'Preparing host profile...', () => hostService.promote(user.id)),
+      runOnboardingStep('Saving host profile', 'Saving host profile...', () => hostService.updateProfile(user.id, {
+        phone: profile.phone,
+        cnic_number: profile.identityDoc,
+        identity_verified: true
+      }))
+    ]);
+
+    const listingId = await createOrUpdateDraftListing();
+
+    // Run photo upload, availability, and document uploads in parallel
+    const newPropertyProof = getNewUploads(originalPropertyProofs)[0];
+    const newChargerProof = getNewUploads(originalChargerPhotos)[0];
+
+    const parallelTasks = [];
+
+    // Photo upload task
+    parallelTasks.push(
+      runOnboardingStep(
+        'Uploading listing photos',
+        'Uploading charger photos...',
+        () => listingService.ensureOnboardingPhotos(listingId, user.id, [
+          ...originalChargerPhotos,
+          ...originalAdditionalPhotos
+        ]),
+        HOST_ONBOARDING_STEP_TIMEOUT_MS
+      ).then(uploadedPhotos => {
+        applyUploadedListingPhotos(uploadedPhotos);
+        return { type: 'photos' };
+      })
+    );
+
+    // Availability task
+    parallelTasks.push(
+      runOnboardingStep('Saving availability', 'Saving availability...', () => availabilityService.set(
+        listingId,
+        Object.entries(schedule.days)
+          .filter(([, active]) => active)
+          .map(([day]) => ({
+            dayOfWeek: dayNumberByLabel[day],
+            startTime: timeState.start,
+            endTime: timeState.end
+          }))
+      )).then(() => ({ type: 'availability' }))
+    );
+
+    // Document upload tasks
+    if (newPropertyProof?.file) {
+      parallelTasks.push(
+        runOnboardingStep('Uploading property proof', 'Uploading verification documents...', () => verificationService.uploadDocument(user.id, 'HOST', 'PROPERTY_PROOF', newPropertyProof.file, {
+          updateProfileFlags: false
+        }), 60000).then(async result => {
+          const url = await verificationService.getSignedUrl(result.path);
+          setPropertyProofs([makeExistingUpload(result.path, url, 'property-proof')]);
+          return { type: 'property' };
+        })
+      );
+    }
+
+    if (newChargerProof?.file) {
+      parallelTasks.push(
+        runOnboardingStep('Uploading charger proof', 'Uploading verification documents...', () => verificationService.uploadDocument(user.id, 'HOST', 'CHARGER_PROOF', newChargerProof.file, {
+          updateProfileFlags: false
+        }), 60000).then(() => ({ type: 'charger' }))
+      );
+    }
+
+    setPublishStatus('Uploading photos & documents...');
+    const results = await Promise.all(parallelTasks);
+
+    const uploadedDocuments = results.filter(r => r.type === 'property' || r.type === 'charger');
+    if (uploadedDocuments.length > 0) {
+      setExistingOnboarding(prev => ({
+        ...prev,
+        propertyProofUploaded: prev.propertyProofUploaded || uploadedDocuments.some(item => item.type === 'property'),
+        chargerProofUploaded: prev.chargerProofUploaded || uploadedDocuments.some(item => item.type === 'charger')
+      }));
+    }
+
+    setPreparedForPayment(true);
+    setPublishStatus('Listing and documents are saved. You can submit payment now.');
+    return listingId;
+  };
+
+  const handleProceedToPayment = async () => {
+    if (!validateStep(7)) {
+      setShowErrors(true);
+      return;
+    }
+
+    setIsPreparingPayment(true);
+    setSubmissionError('');
+    setShowErrors(false);
+    try {
+      const listingId = await prepareOnboardingForPayment();
+      saveLocalDraft(8, listingId);
+      setStep(8);
+      window.scrollTo(0, 0);
+    } catch (err) {
+      console.error('[EV-Net] Preparing payment step failed:', err);
+      setSubmissionError(err.message || 'Could not prepare your listing for payment. Please retry.');
+    } finally {
+      setIsPreparingPayment(false);
+    }
+  };
+
   const handlePublish = async () => {
     if (isSubmitting) return;
 
@@ -289,7 +559,7 @@ const HostOnboarding = () => {
 
     setIsSubmitting(true);
     setSubmissionError('');
-    setPublishStatus('Initializing...');
+    setPublishStatus('Submitting payment...');
     console.log("[EV-Net] Starting submission flow");
 
     try {
@@ -297,140 +567,41 @@ const HostOnboarding = () => {
         throw new Error('Your session is not ready. Please refresh and log in again.');
       }
 
-      const runStep = async (label, status, operation, timeoutMs = null) => {
-        let timeoutId;
-        setPublishStatus(status);
-        console.log(`[EV-Net] ${label}: started`);
-        try {
-          const task = operation();
-          const result = timeoutMs
-            ? await Promise.race([
-                task,
-                new Promise((_, reject) => {
-                  timeoutId = setTimeout(() => {
-                    reject(new Error(`${label} did not receive a server response in time. Please retry. If this keeps happening, check Supabase logs for this step.`));
-                  }, timeoutMs);
-                })
-              ])
-            : await task;
-          console.log(`[EV-Net] ${label}: success`);
-          return result;
-        } catch (err) {
-          console.error(`[EV-Net] ${label}: failed`, err);
-          throw err;
-        } finally {
-          clearTimeout(timeoutId);
-        }
+      const finishSuccessfulSubmission = async () => {
+        await reloadUser();
+        console.log("[EV-Net] Submission complete");
+        localStorage.removeItem(`host_onboarding_draft_${user.id}`);
+        setPublishStatus('Your host application has been submitted and is under admin review.');
+        setStep(9);
       };
 
-      console.log("[EV-Net] User loaded", user.id);
-      await runStep('Initializing host profile', 'Initializing host profile...', () => hostService.promote(user.id));
-      await runStep('Saving host profile', 'Saving host profile...', () => hostService.updateProfile(user.id, {
-        phone: profile.phone,
-        cnic_number: profile.identityDoc,
-        identity_verified: true
-      }));
-
-      // Build full address: prepend house/unit number if provided
-      const fullAddress = charger.houseNo
-        ? `${charger.houseNo}, ${charger.address}`
-        : charger.address;
-      const listingTitle = `${charger.chargerType} in ${charger.area}`;
-      const listingPayload = {
-        hostId: user.id,
-        title: listingTitle,
-        description: charger.description,
-        city: profile.city,
-        area: charger.area,
-        chargerType: charger.chargerType,
-        priceDay: pricing.priceDay,
-        priceNight: pricing.priceNight,
-        amenities: charger.amenities,
-        houseRules: charger.houseRules.split('\n').filter(r => r.trim()),
-        address: fullAddress,
-        lat: charger.lat,
-        lng: charger.lng
-      };
-
-      // 1. Create or Reuse the listing
-      console.log("[EV-Net] Checking for existing onboarding listing");
-      setPublishStatus('Checking for existing listing...');
       let listingId = onboardingListingId || charger.listingId || localStorage.getItem('currentHostOnboardingListingId');
 
-      if (listingId) {
-        const storedListing = await runStep(
-          'Checking local onboarding listing',
-          'Checking for existing listing...',
-          () => listingService.getOwnedById(listingId, user.id)
+      // Only run the heavy preparation if we truly don't have a prepared listing
+      // If preparedForPayment is true, we already did all the uploads in step 7→8
+      if (!listingId || !preparedForPayment) {
+        const hasServerBackedProofs = (
+          (existingOnboarding.propertyProofUploaded || propertyProofs.some(file => file?.existing)) &&
+          (existingOnboarding.chargerProofUploaded || chargerPhotos.some(file => file?.existing))
         );
-        if (storedListing && !storedListing.isApproved) {
-          console.log(`[EV-Net] Reusing existing listing: ${storedListing.id}`);
-          listingId = storedListing.id;
+        if (!listingId || !hasServerBackedProofs) {
+          setPublishStatus('Saving listing and documents...');
+          console.log("[EV-Net] Running prepareOnboardingForPayment from handlePublish");
+          listingId = await prepareOnboardingForPayment();
         } else {
-          if (storedListing?.isApproved) {
-            console.warn("[EV-Net] Stored onboarding listing is already approved; ignoring for new submission.", listingId);
-          }
-          localStorage.removeItem('currentHostOnboardingListingId');
-          listingId = null;
+          setPreparedForPayment(true);
+          console.log("[EV-Net] Server-backed proofs exist, skipping preparation", listingId);
         }
-      }
-
-      if (!listingId) {
-        const existingListing = await runStep(
-          'Checking matching onboarding listing',
-          'Checking for existing listing...',
-          () => listingService.findExistingOnboardingListing({
-            hostId: user.id,
-            title: listingTitle,
-            city: profile.city,
-            area: charger.area,
-            chargerType: charger.chargerType
-          })
-        );
-        if (existingListing) {
-          listingId = existingListing.id;
-          console.log(`[EV-Net] Reusing existing listing: ${listingId}`);
-        }
-      }
-
-      if (listingId) {
-        await runStep('Reusing listing', 'Updating listing...', () => listingService.update(listingId, listingPayload));
       } else {
-        console.log("[EV-Net] Creating listing");
-        const newListing = await runStep('Creating listing', 'Creating listing...', () => listingService.create({
-          ...listingPayload,
-          images: []
-        }));
-        listingId = newListing.id;
-        console.log(`[EV-Net] Created listing: ${listingId}`);
+        console.log("[EV-Net] Using already-prepared onboarding listing", listingId);
       }
 
-      // Persist listingId in local state
-      setOnboardingListingId(listingId);
-      setCharger(prev => ({ ...prev, listingId }));
-      localStorage.setItem('currentHostOnboardingListingId', listingId);
-      await runStep('Checking duplicate listings', 'Checking for duplicate listings...', () => listingService.demoteDuplicateOnboardingListings({
-        hostId: user.id,
-        keepId: listingId,
-        title: listingTitle,
-        city: profile.city,
-        area: charger.area,
-        chargerType: charger.chargerType
-      })
-      );
-
-      // 2. Upload listing photos without duplicating existing rows on retry
-      await runStep('Uploading listing photos', 'Uploading listing photos...', () => listingService.ensureOnboardingPhotos(listingId, user.id, [
-        ...chargerPhotos,
-        ...additionalPhotos
-      ]), HOST_ONBOARDING_STEP_TIMEOUT_MS
-      );
-
-      // 3. Handle payment submission before finalizing host profile.
+      // Step 1: Submit payment proof (if needed)
       const hasExistingPayment = ['pending', 'verified'].includes(existingOnboarding.paymentStatus) || existingOnboarding.setupFeePaid;
       const hasNewPaymentProof = !!payment.screenshot && !payment.screenshot.existing;
       if (!hasExistingPayment || hasNewPaymentProof) {
-        const paymentResult = await runStep('Recording payment proof', 'Recording payment proof...', () => hostService.submitOnboardingPayment(user.id, {
+        setPublishStatus('Recording payment proof...');
+        const paymentResult = await runOnboardingStep('Recording payment proof', 'Recording payment proof...', () => hostService.submitOnboardingPayment(user.id, {
           method: 'BANK_TRANSFER',
           amount: feeBreakdown.total,
           screenshot: payment.screenshot,
@@ -447,67 +618,16 @@ const HostOnboarding = () => {
         console.log("[EV-Net] Reusing existing onboarding payment", existingOnboarding.paymentStatus);
       }
 
-      await runStep('Marking listing pending review', 'Marking listing pending review...', () => listingService.markOnboardingSubmitted(listingId, user.id, {
-        setupFeePaid: existingOnboarding.setupFeePaid && !hasNewPaymentProof
-      }));
-      await runStep('Saving availability', 'Saving availability...', () => availabilityService.set(
-        listingId,
-        Object.entries(schedule.days)
-          .filter(([, active]) => active)
-          .map(([day]) => ({
-            dayOfWeek: dayNumberByLabel[day],
-            startTime: timeState.start,
-            endTime: timeState.end
-          }))
-      ));
+      // Step 2: Mark listing + finalize in parallel (they don't depend on each other's result)
+      setPublishStatus('Finalizing your application...');
+      await Promise.all([
+        runOnboardingStep('Marking listing pending review', 'Marking listing pending review...', () => listingService.markOnboardingSubmitted(listingId, user.id, {
+          setupFeePaid: existingOnboarding.setupFeePaid && !hasNewPaymentProof
+        })),
+        runOnboardingStep('Finalizing onboarding', 'Finalizing onboarding...', () => hostService.finalizeOnboarding())
+      ]);
 
-      // 4. Upload verification proofs. The RPC below owns host profile finalization.
-      console.log("[EV-Net] Uploading verification documents");
-      setPublishStatus('Uploading verification documents...');
-      const newPropertyProof = getNewUploads(propertyProofs)[0];
-      const newChargerProof = getNewUploads(chargerPhotos)[0];
-
-      const documentUploads = [];
-      if (newPropertyProof?.file) {
-        console.log("[EV-Net] Queueing property proof upload...");
-        documentUploads.push(
-          runStep('Uploading property proof', 'Uploading verification documents...', () => verificationService.uploadDocument(user.id, 'HOST', 'PROPERTY_PROOF', newPropertyProof.file, {
-            updateProfileFlags: false
-          }), 60000).then(result => ({ type: 'property', result }))
-        );
-      } else if (!existingOnboarding.propertyProofUploaded && !propertyProofs.some(file => file?.existing)) {
-        throw new Error('Property ownership proof is required.');
-      }
-      if (newChargerProof?.file) {
-        console.log("[EV-Net] Queueing charger setup photo upload...");
-        documentUploads.push(
-          runStep('Uploading charger proof', 'Uploading verification documents...', () => verificationService.uploadDocument(user.id, 'HOST', 'CHARGER_PROOF', newChargerProof.file, {
-            updateProfileFlags: false
-          }), 60000).then(result => ({ type: 'charger', result }))
-        );
-      } else if (!existingOnboarding.chargerProofUploaded && !chargerPhotos.some(file => file?.existing)) {
-        throw new Error('Charger setup proof is required.');
-      }
-      const uploadedDocuments = await Promise.all(documentUploads);
-      if (uploadedDocuments.length > 0) {
-        setExistingOnboarding(prev => ({
-          ...prev,
-          propertyProofUploaded: prev.propertyProofUploaded || uploadedDocuments.some(item => item.type === 'property'),
-          chargerProofUploaded: prev.chargerProofUploaded || uploadedDocuments.some(item => item.type === 'charger')
-        }));
-      }
-      console.log("[EV-Net] Documents uploaded");
-
-      await runStep('Finalizing onboarding', 'Finalizing onboarding...', () => hostService.finalizeOnboarding());
-      await reloadUser();
-      console.log("[EV-Net] Submission complete");
-
-      // Clear draft on successful submit
-      console.log("[EV-Net] Clearing draft and showing success step.");
-      localStorage.removeItem(`host_onboarding_draft_${user.id}`);
-      setPublishStatus('Your host application has been submitted and is under admin review.');
-
-      setStep(9); // Show success screen
+      await finishSuccessfulSubmission();
     } catch (e) {
       console.error("[EV-Net] handlePublish failed at some step:", e);
       setSubmissionError(e.message || "Failed to save listing details. Please check your connection and try again.");
@@ -1026,8 +1146,20 @@ const HostOnboarding = () => {
               </div>
               <div style={{ display: 'flex', gap: '1rem' }}>
                 <button className="btn btn-secondary" onClick={() => setStep(6)} style={{ flex: 1 }}>Back</button>
-                <button className="btn btn-primary" onClick={() => handleContinue(8)} style={{ flex: 2 }}>Proceed to Payment</button>
+                <button
+                  className="btn btn-primary"
+                  onClick={handleProceedToPayment}
+                  disabled={isPreparingPayment}
+                  style={{ flex: 2 }}
+                >
+                  {isPreparingPayment ? (publishStatus || 'Saving...') : 'Proceed to Payment'}
+                </button>
               </div>
+              {isPreparingPayment && (
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', margin: '-0.5rem 0 0 0', textAlign: 'center' }}>
+                  Saving your listing and uploads now, so Pay & Submit is quick.
+                </p>
+              )}
             </div>
           )}
 
@@ -1093,8 +1225,21 @@ const HostOnboarding = () => {
                 </p>
               </div>
 
+              {submissionError && (
+                <div style={{ marginBottom: '1rem' }}>
+                  <ErrorMessage message={submissionError} centered />
+                  <button
+                    className="btn btn-primary"
+                    onClick={() => { setSubmissionError(''); handlePublish(); }}
+                    style={{ width: '100%', marginTop: '0.5rem', background: 'rgba(251,113,133,0.15)', border: '1px solid rgba(251,113,133,0.3)', color: '#fb7185' }}
+                  >
+                    Retry Submission
+                  </button>
+                </div>
+              )}
+
               <div style={{ display: 'flex', gap: '1rem' }}>
-                <button className="btn btn-secondary" onClick={() => setStep(7)} style={{ flex: 1 }}>Back</button>
+                <button className="btn btn-secondary" onClick={() => { saveLocalDraft(7); setStep(7); }} disabled={isSubmitting} style={{ flex: 1 }}>Back</button>
                 <button
                   className="btn btn-primary"
                   onClick={handlePublish}
@@ -1131,7 +1276,7 @@ const HostOnboarding = () => {
             <ErrorMessage message="Please complete all required fields correctly before proceeding." centered />
           )}
 
-          {submissionError && (
+          {submissionError && step !== 8 && (
             <ErrorMessage message={submissionError} centered />
           )}
         </div>

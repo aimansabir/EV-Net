@@ -96,20 +96,12 @@ const AdminVerification = () => {
     try {
       const decision = { approved: action === 'APPROVED', notes };
       const userId = selectedSubmission.user_id;
-      const withReviewTimeout = (promise) => {
-        let timeoutId;
-        const timeout = new Promise((_, reject) => {
-          timeoutId = setTimeout(() => reject(new Error('Review submit timed out. Please retry; no page reload should be needed.')), 15000);
-        });
-        return Promise.race([promise, timeout]).finally(() => clearTimeout(timeoutId));
-      };
-
       if (activeTab === 'Payments' || selectedSubmission.method) {
-        await withReviewTimeout(adminService.verifyOnboardingPayment(selectedSubmission.id, decision.approved, notes));
+        await adminService.verifyOnboardingPayment(selectedSubmission.id, decision.approved, notes);
       } else if ((selectedSubmission.type || selectedSubmission.profile_type) === 'HOST') {
-        await withReviewTimeout(adminService.verifyHost(userId, decision));
+        await adminService.verifyHost(userId, decision);
       } else {
-        await withReviewTimeout(adminService.verifyUser(userId, decision));
+        await adminService.verifyUser(userId, decision);
       }
 
       await loadSubmissions(); // Refresh list

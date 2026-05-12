@@ -141,7 +141,7 @@ async function getHostProfile(userId) {
   return data;
 }
 
-async function withTimeout(promise, ms = 15000, message = 'Operation timed out. Profile setup is taking longer than expected. Please retry.') {
+async function withTimeout(promise, ms = 30000, message = 'Operation timed out. Profile setup is taking longer than expected. Please retry.') {
   let timeoutId;
   const timeoutPromise = new Promise((_, reject) => {
     timeoutId = setTimeout(() => {
@@ -760,7 +760,7 @@ export const authService = {
         success: true, 
         user: mergeUserShape(profile, evProfile, null, data.user, verificationDocs)
       };
-    })(), 15000, 'Account was created, but profile setup took too long. Please try logging in; if it continues, check the auth trigger/profile creation logs.');
+    })(), 30000, 'Account was created, but profile setup took too long. Please try logging in; if it continues, check the auth trigger/profile creation logs.');
   },
 
   async signupHost(formData) {
@@ -825,7 +825,7 @@ export const authService = {
         success: true, 
         user: mergeUserShape(profile, null, hostProfile, data.user, verificationDocs)
       };
-    })(), 15000, 'Host account was created, but host profile setup took too long. Please try logging in; if it continues, check the auth trigger/host profile creation logs.');
+    })(), 30000, 'Host account was created, but host profile setup took too long. Please try logging in; if it continues, check the auth trigger/host profile creation logs.');
   },
 
   async getMe(userId, options = {}) {
@@ -1207,33 +1207,62 @@ export const listingService = {
 
   async create(data) {
     debugLog("[EV-Net] listingService.create: Inserting listing row...", data.title);
-    const { data: listing, error } = await supabase
-      .from('listings')
-      .insert({
-        host_id: data.hostId,
-        title: data.title,
-        description: data.description,
-        city: data.city,
-        area: data.area,
-        charger_type: data.chargerType,
-        charger_speed: data.chargerSpeed,
-        price_per_hour: data.pricePerHour || 1, // Satisfy check (price_per_hour > 0)
-        price_day_per_kwh: data.priceDay,
-        price_night_per_kwh: data.priceNight,
-        amenities: data.amenities || [],
-        house_rules: data.houseRules || [],
-      })
-      .select()
-      .single();
-    
-    if (error) {
-      console.error("[EV-Net] Error inserting listing row:", error);
-      const message = String(error.message || '').toLowerCase();
-      if (message.includes('row-level security') || message.includes('violates row-level security')) {
-        throw new Error('We could not create your host listing because Supabase still blocked this account from inserting listings. Please apply migration 091_fix_host_onboarding_listing_insert_policy.sql and retry onboarding.');
+    const listingPayload = {
+      host_id: data.hostId,
+      title: data.title,
+      description: data.description,
+      city: data.city,
+      area: data.area,
+      charger_type: data.chargerType,
+      charger_speed: data.chargerSpeed,
+      price_per_hour: data.pricePerHour || 1, // Satisfy check (price_per_hour > 0)
+      price_day_per_kwh: data.priceDay,
+      price_night_per_kwh: data.priceNight,
+      amenities: data.amenities || [],
+      house_rules: data.houseRules || [],
+    };
+
+    const { data: rpcListing, error: rpcError } = await supabase.rpc('create_host_onboarding_listing', {
+      p_host_id: listingPayload.host_id,
+      p_title: listingPayload.title,
+      p_description: listingPayload.description,
+      p_city: listingPayload.city,
+      p_area: listingPayload.area,
+      p_charger_type: listingPayload.charger_type,
+      p_charger_speed: listingPayload.charger_speed,
+      p_price_per_hour: listingPayload.price_per_hour,
+      p_price_day_per_kwh: listingPayload.price_day_per_kwh,
+      p_price_night_per_kwh: listingPayload.price_night_per_kwh,
+      p_amenities: listingPayload.amenities,
+      p_house_rules: listingPayload.house_rules,
+    });
+
+    let listing = rpcListing;
+    if (rpcError) {
+      const rpcMessage = String(rpcError.message || '').toLowerCase();
+      const rpcMissing = rpcError.code === 'PGRST202' || rpcMessage.includes('could not find the function');
+      if (!rpcMissing) {
+        console.error("[EV-Net] create_host_onboarding_listing failed:", rpcError);
+        throw new Error(`Could not create your host listing: ${rpcError.message}`);
       }
-      throw error;
+
+      const { data: directListing, error } = await supabase
+        .from('listings')
+        .insert(listingPayload)
+        .select()
+        .single();
+      listing = directListing;
+    
+      if (error) {
+        console.error("[EV-Net] Error inserting listing row:", error);
+        const message = String(error.message || '').toLowerCase();
+        if (message.includes('row-level security') || message.includes('violates row-level security')) {
+          throw new Error('We could not create your host listing because Supabase still blocked this account from inserting listings. Please apply migrations 091 and 092, then retry onboarding.');
+        }
+        throw error;
+      }
     }
+
     debugLog("[EV-Net] listingService.create: Listing row created ID:", listing.id);
 
     // 2. Insert location separately
@@ -1610,7 +1639,9 @@ export const listingService = {
       throw new Error('At least one charger setup photo is required.');
     }
 
-    return this.uploadListingPhotos(listingId, hostId, uploadableFiles);
+    const uploadedPhotos = await this.uploadListingPhotos(listingId, hostId, uploadableFiles);
+    return [...(existingPhotos || []), ...(uploadedPhotos || [])]
+      .sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
   },
 
   async markOnboardingSubmitted(listingId, hostId, options = {}) {
@@ -2699,11 +2730,18 @@ export const adminService = {
 
   async getUsers() {
     // Fetch profiles, host_profiles, and ev_profiles in parallel to avoid RLS join issues
-    const [profilesRes, hostRes, evRes] = await Promise.all([
-      supabase.from('profiles').select('id, name, email, role, avatar_url, is_suspended, created_at').order('created_at', { ascending: false }),
+    let profilesRes;
+    const [hostRes, evRes] = await Promise.all([
       supabase.from('host_profiles').select('user_id, verification_status, avatar_path'),
       supabase.from('ev_profiles').select('user_id, verification_status, avatar_path'),
     ]);
+
+    // Try with is_test_account; fall back if column doesn't exist yet (migration not run)
+    profilesRes = await supabase.from('profiles').select('id, name, email, role, avatar_url, is_suspended, is_test_account, created_at').order('created_at', { ascending: false });
+    if (profilesRes.error && isMissingColumnError(profilesRes.error, 'is_test_account')) {
+      console.warn('[EV-Net] is_test_account column missing; run migration 093. Falling back.');
+      profilesRes = await supabase.from('profiles').select('id, name, email, role, avatar_url, is_suspended, created_at').order('created_at', { ascending: false });
+    }
     if (profilesRes.error) throw profilesRes.error;
 
     const hostMap = new Map();
@@ -2723,6 +2761,7 @@ export const adminService = {
       return {
         ...u,
         createdAt: u.created_at,
+        isTestAccount: u.is_test_account || false,
         hostProfile: hostProfile ? {
           ...hostProfile,
           verificationStatus: hostProfile.verification_status,
@@ -2735,6 +2774,15 @@ export const adminService = {
         avatar: resolveAvatarUrl(evProfile?.avatar_path || hostProfile?.avatar_path) || u.avatar_url
       };
     });
+  },
+
+  async toggleTestAccount(userId, isTest) {
+    const { data, error } = await supabase.rpc('admin_toggle_test_account', {
+      p_user_id: userId,
+      p_is_test: isTest
+    });
+    if (error) throw new Error(error.message);
+    return data;
   },
 
 
@@ -2799,7 +2847,7 @@ export const adminService = {
         p_notes: decision.notes || '',
         p_user_id: userId
       }),
-      15000,
+      45000,
       'Admin host review timed out. Please retry from the queue.'
     );
     console.log("[EV-Net] admin_verify_host_v2 response:", { data, error });
@@ -2827,7 +2875,7 @@ export const adminService = {
         p_notes: decision.notes || '',
         p_user_id: userId
       }),
-      15000,
+      45000,
       'Admin user review timed out. Please retry from the queue.'
     );
     console.log("[EV-Net] admin_verify_user_v2 response:", { data, error });
