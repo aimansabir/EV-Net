@@ -1,17 +1,20 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import { useNavigate } from 'react-router-dom';
 import { listingService } from '../../data/api';
 import useAppStore from '../../store/appStore';
+import { PAGE_CACHE_TTL, useCachedPageData } from '../../store/pageCacheStore';
 import { formatPKR } from '../../data/feeConfig';
 import { getFuzzyCoordinates } from '../../data/cityCoordinates';
-import { Search, MapPin, Settings2 } from 'lucide-react';
+import { Search, MapPin, Settings2, RefreshCw } from 'lucide-react';
 import 'leaflet/dist/leaflet.css';
 import './Explore.css';
 
 const DEFAULT_CENTER = [24.8607, 67.0011]; // default Karachi
 const DEFAULT_ZOOM = 12;
+const ACTIVE_LISTINGS_CACHE_KEY = 'listings:active-approved';
+const EMPTY_CHARGERS = [];
 const MARKER_OPTIONS = {
   color: '#00F0A8',
   fillColor: '#00D26A',
@@ -109,73 +112,36 @@ const Explore = () => {
   const navigate = useNavigate();
   const [activeFilter, setActiveFilter] = useState('All');
   const [showFilters, setShowFilters] = useState(false);
-  const [chargers, setChargers] = useState([]);
   const [search, setSearch] = useState('');
   const [selectedId, setSelectedId] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState('');
   const { favorites, loadFavorites, toggleFavorite } = useAppStore();
 
+  const fetchChargers = useCallback(() => (
+    listingService.getAll({ isActive: true, isApproved: true, force: true })
+  ), []);
+
+  const {
+    data: cachedChargers,
+    isLoading: loading,
+    isRefreshing,
+    error: loadError,
+    refresh: refreshListings,
+  } = useCachedPageData(ACTIVE_LISTINGS_CACHE_KEY, fetchChargers, {
+    ttl: PAGE_CACHE_TTL.MEDIUM,
+  });
+
+  const chargers = cachedChargers || EMPTY_CHARGERS;
+  const loadErrorMessage = loadError?.message || 'Chargers are taking longer than expected to load.';
 
   useEffect(() => {
-    let cancelled = false;
-
-    const load = async () => {
-      setLoading(true);
-      setLoadError('');
-      try {
-        const data = await listingService.getAll({ isActive: true, isApproved: true });
-        if (!cancelled) setChargers(data);
-      } catch (err) {
-        console.error('[EV-Net] Failed to load explore listings:', err);
-        if (!cancelled) {
-          setLoadError(err.message || 'Chargers are taking longer than expected to load.');
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    };
-
-    load();
-
     loadFavorites().catch(err => {
       console.warn('[EV-Net] Favorites load skipped on Explore:', err.message);
     });
-
-    return () => {
-      cancelled = true;
-    };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [loadFavorites]);
 
   const retryLoadListings = async () => {
-    setLoading(true);
-    setLoadError('');
-    try {
-      const data = await listingService.getAll({ isActive: true, isApproved: true, force: true });
-      setChargers(data);
-    } catch (err) {
-      console.error('[EV-Net] Explore retry failed:', err);
-      setLoadError(err.message || 'Could not load chargers. Please retry.');
-    } finally {
-      setLoading(false);
-    }
+    await refreshListings({ force: true });
   };
-
-  useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible' && chargers.length === 0 && !loading) {
-        listingService.getAll({ isActive: true, isApproved: true })
-          .then(data => {
-            setChargers(data);
-            setLoadError('');
-          })
-          .catch(err => console.warn('[EV-Net] Explore visibility reload failed:', err.message));
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, [chargers.length, loading]);
 
   const filters = [
     { key: 'All', label: 'All Chargers' },
@@ -249,13 +215,35 @@ const Explore = () => {
         </div>
 
         <div className="explore-list">
-          <div className="explore-list-count">
-            {loading && chargers.length === 0 ? 'Loading chargers...' : `${filtered.length} chargers found`}
+          <div className="explore-list-count" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem' }}>
+            <span>{loading && chargers.length === 0 ? 'Loading chargers...' : `${filtered.length} chargers found`}</span>
+            <button
+              type="button"
+              onClick={retryLoadListings}
+              disabled={loading || isRefreshing}
+              title="Refresh chargers"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '0.25rem 0.55rem', borderRadius: '8px', border: '1px solid var(--border-color)', background: 'rgba(255,255,255,0.03)', color: 'var(--text-secondary)', cursor: loading || isRefreshing ? 'wait' : 'pointer', fontSize: '0.72rem' }}
+            >
+              <RefreshCw size={13} className={isRefreshing ? 'animate-spin' : ''} />
+              {isRefreshing ? 'Refreshing' : 'Refresh'}
+            </button>
           </div>
+
+          {isRefreshing && chargers.length > 0 && (
+            <div style={{ padding: '0.35rem 1rem', color: 'var(--brand-cyan)', fontSize: '0.78rem' }}>
+              Refreshing chargers...
+            </div>
+          )}
+
+          {loadError && chargers.length > 0 && (
+            <div style={{ padding: '0.35rem 1rem', color: '#fbbf24', fontSize: '0.78rem' }}>
+              Could not refresh. Showing cached chargers.
+            </div>
+          )}
 
           {loadError && chargers.length === 0 && (
             <div style={{ padding: '0.75rem 1rem', color: '#fbbf24', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-              <span>{loadError}</span>
+              <span>{loadErrorMessage}</span>
               <button className="btn btn-secondary" onClick={retryLoadListings} style={{ padding: '0.35rem 0.7rem', fontSize: '0.75rem' }}>Retry</button>
             </div>
           )}

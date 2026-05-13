@@ -1,22 +1,26 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useState } from 'react';
 import { adminService } from '../../data/api';
-import { FlaskConical } from 'lucide-react';
+import { FlaskConical, RefreshCw } from 'lucide-react';
+import { invalidatePageCaches, PAGE_CACHE_TTL, useCachedPageData } from '../../store/pageCacheStore';
 
 const AdminUsers = () => {
-  const [users, setUsers] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
   const [togglingTest, setTogglingTest] = useState(null); // userId being toggled
 
-  useEffect(() => {
-    adminService.getUsers().then(data => {
-      setUsers(data);
-      setLoading(false);
-    }).catch(err => {
-      console.error('[EV-Net] Failed to load users:', err);
-      setLoading(false);
-    });
-  }, []);
+  const fetchUsers = useCallback(() => adminService.getUsers(), []);
+  const {
+    data: cachedUsers,
+    isLoading: loading,
+    isRefreshing,
+    error: loadError,
+    refresh: refreshUsers,
+    setData: setUsers,
+  } = useCachedPageData('admin-users', fetchUsers, {
+    ttl: PAGE_CACHE_TTL.SHORT,
+  });
+  const users = cachedUsers || [];
+
+  const loadUsers = useCallback(() => refreshUsers({ force: true }), [refreshUsers]);
 
   const filtered = filter === 'all' ? users : users.filter(u => u.role === filter.toUpperCase());
 
@@ -27,8 +31,13 @@ const AdminUsers = () => {
       } else {
         await adminService.verifyUser(userId, { approved, notes: approved ? 'Approved by admin.' : 'Rejected — documentation incomplete.' });
       }
-      const updated = await adminService.getUsers();
-      setUsers(updated);
+      const nextStatus = approved ? 'approved' : 'rejected';
+      const applyReviewedUser = () => setUsers(prev => (prev || []).map(user =>
+        user.id === userId ? { ...user, verificationStatus: nextStatus } : user
+      ));
+      applyReviewedUser();
+      invalidatePageCaches(['admin-users', 'admin-verification', 'admin-dashboard', 'host-dashboard']);
+      refreshUsers({ force: true, silent: true }).finally(applyReviewedUser);
     } catch (err) {
       alert('Action failed: ' + err.message);
     }
@@ -44,8 +53,21 @@ const AdminUsers = () => {
     setTogglingTest(userId);
     try {
       await adminService.toggleTestAccount(userId, newState);
-      const updated = await adminService.getUsers();
-      setUsers(updated);
+      const applyTestFlag = () => setUsers(prev => (prev || []).map(user =>
+        user.id === userId ? { ...user, isTestAccount: newState } : user
+      ));
+      applyTestFlag();
+      invalidatePageCaches([
+        'admin-users',
+        'admin-dashboard',
+        'admin-bookings',
+        'host-dashboard',
+        'host-earnings',
+        'host-bookings',
+        'user-bookings',
+        'booking-detail',
+      ]);
+      refreshUsers({ force: true, silent: true }).finally(applyTestFlag);
     } catch (err) {
       alert('Failed to toggle test account: ' + err.message);
     } finally {
@@ -85,7 +107,30 @@ const AdminUsers = () => {
   return (
     <div className="section" style={{ minHeight: '100vh' }}>
       <div className="container" style={{ maxWidth: '1100px' }}>
-        <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '2rem', marginBottom: '1.5rem' }}>User Management</h2>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
+          <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '2rem', margin: 0 }}>User Management</h2>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={loadUsers}
+            disabled={isRefreshing}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '0.5rem 0.9rem', fontSize: '0.85rem' }}
+          >
+            <RefreshCw size={15} className={isRefreshing ? 'animate-spin' : ''} />
+            {isRefreshing ? 'Refreshing' : 'Refresh'}
+          </button>
+        </div>
+        {(isRefreshing || loadError) && users.length > 0 && (
+          <div style={{ color: loadError ? '#fbbf24' : 'var(--brand-cyan)', fontSize: '0.85rem', marginTop: '-0.75rem', marginBottom: '1rem' }}>
+            {loadError ? 'Could not refresh. Showing cached users.' : 'Refreshing users...'}
+          </div>
+        )}
+        {loadError && users.length === 0 && (
+          <div className="auth-error" style={{ marginBottom: '1rem' }}>
+            {loadError.message || 'Could not load users.'}
+            <button className="btn btn-secondary" onClick={loadUsers} style={{ marginLeft: '1rem', padding: '0.35rem 0.7rem' }}>Retry</button>
+          </div>
+        )}
 
         <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '2rem', flexWrap: 'wrap' }}>
           {[{ key: 'all', label: 'All' }, { key: 'user', label: 'EV Users' }, { key: 'host', label: 'Hosts' }, { key: 'admin', label: 'Admins' }].map(f => (
@@ -96,7 +141,7 @@ const AdminUsers = () => {
           ))}
         </div>
 
-        {loading ? (
+        {loading && users.length === 0 ? (
           <div style={{ color: 'var(--text-secondary)', padding: '2rem', textAlign: 'center' }}>Loading users...</div>
         ) : (
           <div style={{ overflowX: 'auto' }}>

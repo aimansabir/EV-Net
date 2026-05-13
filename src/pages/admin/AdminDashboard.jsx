@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { adminService } from '../../data/api';
 import { formatPKR } from '../../data/feeConfig';
@@ -13,49 +13,27 @@ import {
   AlertTriangle,
   ArrowRight,
   Receipt,
-  X
+  X,
+  RefreshCw
 } from 'lucide-react';
+import { invalidatePageCaches, PAGE_CACHE_TTL, useCachedPageData } from '../../store/pageCacheStore';
 
 const AdminDashboard = () => {
-  const [stats, setStats] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState('');
   const [activePanel, setActivePanel] = useState(null);
   const [feeActionId, setFeeActionId] = useState(null);
 
-  const loadDashboard = useCallback(async () => {
-    try {
-      setLoading(true);
-      setLoadError('');
-      const data = await adminService.getDashboard();
-      setStats(data);
-    } catch (err) {
-      console.error('[EV-Net] Failed to load admin dashboard:', err);
-      setLoadError(err.message || 'Could not load admin dashboard.');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const fetchDashboard = useCallback(() => adminService.getDashboard(), []);
+  const {
+    data: stats,
+    isLoading: loading,
+    isRefreshing,
+    error: loadError,
+    refresh: refreshDashboard,
+  } = useCachedPageData('admin-dashboard', fetchDashboard, {
+    ttl: PAGE_CACHE_TTL.SHORT,
+  });
 
-  useEffect(() => {
-    let mounted = true;
-    setLoading(true);
-    adminService
-      .getDashboard()
-      .then(data => {
-        if (mounted) setStats(data);
-      })
-      .catch(err => {
-        console.error('[EV-Net] Failed to load admin dashboard:', err);
-        if (mounted) setLoadError(err.message || 'Could not load admin dashboard.');
-      })
-      .finally(() => {
-        if (mounted) setLoading(false);
-      });
-    return () => {
-      mounted = false;
-    };
-  }, []);
+  const loadDashboard = useCallback(() => refreshDashboard({ force: true }), [refreshDashboard]);
 
   const handleArchiveOnboardingFee = async (paymentId) => {
     if (feeActionId) return;
@@ -64,6 +42,7 @@ const AdminDashboard = () => {
     try {
       setFeeActionId(paymentId);
       await adminService.archiveOnboardingPayment(paymentId);
+      invalidatePageCaches(['admin-dashboard', 'admin-verification']);
       await loadDashboard();
     } catch (err) {
       alert(err.message || 'Could not exclude host registration payment.');
@@ -78,6 +57,7 @@ const AdminDashboard = () => {
     try {
       setFeeActionId(paymentId);
       await adminService.unarchiveOnboardingPayment(paymentId);
+      invalidatePageCaches(['admin-dashboard', 'admin-verification']);
       await loadDashboard();
     } catch (err) {
       alert(err.message || 'Could not restore host registration payment.');
@@ -101,7 +81,7 @@ const AdminDashboard = () => {
       <div className="glass-card" style={{ padding: '2rem', textAlign: 'center', maxWidth: '420px' }}>
         <AlertTriangle size={36} color="#fb7185" style={{ marginBottom: '1rem' }} />
         <h3 style={{ marginTop: 0 }}>Dashboard could not load</h3>
-        <p style={{ color: 'var(--text-secondary)' }}>{loadError}</p>
+        <p style={{ color: 'var(--text-secondary)' }}>{loadError?.message || 'Could not load admin dashboard.'}</p>
         <button className="btn btn-secondary" onClick={loadDashboard}>Retry</button>
       </div>
     </div>
@@ -276,6 +256,16 @@ const AdminDashboard = () => {
             <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '2.2rem', marginBottom: '0.5rem', letterSpacing: '-0.5px' }}>Admin Overview</h2>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem' }}>Real-time platform metrics and security posture.</p>
           </div>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={loadDashboard}
+            disabled={isRefreshing}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '0.55rem 0.9rem', fontSize: '0.85rem' }}
+          >
+            <RefreshCw size={15} className={isRefreshing ? 'animate-spin' : ''} />
+            {isRefreshing ? 'Refreshing' : 'Refresh'}
+          </button>
           <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
             <div 
               className="glass-card hover-lift" 
@@ -347,6 +337,12 @@ const AdminDashboard = () => {
             </div>
           </div>
         </div>
+
+        {(isRefreshing || loadError) && stats && (
+          <div style={{ color: loadError ? '#fbbf24' : 'var(--brand-cyan)', fontSize: '0.85rem', marginTop: '-1rem', marginBottom: '1.25rem' }}>
+            {loadError ? 'Could not refresh. Showing cached admin dashboard.' : 'Refreshing admin dashboard...'}
+          </div>
+        )}
 
         {renderPanelContent()}
 

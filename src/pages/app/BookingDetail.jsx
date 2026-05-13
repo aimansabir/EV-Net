@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Calendar, MessageSquare, MapPin, Receipt, Star } from 'lucide-react';
+import { ArrowLeft, Calendar, MessageSquare, MapPin, Receipt, RefreshCw, Star } from 'lucide-react';
 import { bookingService, messagingService, reviewService } from '../../data/api';
 import { formatPKR } from '../../data/feeConfig';
 import useAuthStore from '../../store/authStore';
+import { invalidatePageCaches, makePageCacheKey, PAGE_CACHE_TTL, useCachedPageData } from '../../store/pageCacheStore';
 
 const formatTime12h = (time24) => {
   if (!time24) return '';
@@ -76,9 +77,6 @@ const BookingDetail = () => {
   const { bookingId } = useParams();
   const navigate = useNavigate();
   const { user } = useAuthStore();
-  const [booking, setBooking] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState('');
   const [messaging, setMessaging] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
@@ -91,30 +89,41 @@ const BookingDetail = () => {
   const [reviewSubmitted, setReviewSubmitted] = useState(false);
   const [reviewError, setReviewError] = useState('');
 
+  const bookingCacheKey = makePageCacheKey('booking-detail', bookingId);
+  const fetchBooking = useCallback(() => bookingService.getById(bookingId), [bookingId]);
+  const {
+    data: booking,
+    isLoading: loading,
+    isRefreshing,
+    error: loadError,
+    refresh: refreshBooking,
+    setData: setBooking,
+  } = useCachedPageData(bookingCacheKey, fetchBooking, {
+    enabled: !!bookingId,
+    ttl: PAGE_CACHE_TTL.SHORT,
+  });
+
   useEffect(() => {
     let mounted = true;
-    const load = async () => {
-      try {
-        const data = await bookingService.getById(bookingId);
-        if (mounted) setBooking(data);
+    if (!booking || booking.status !== 'COMPLETED' || !user?.id) {
+      setHasReviewed(false);
+      return () => {
+        mounted = false;
+      };
+    }
 
-        // Check if user already reviewed this booking
-        if (data && data.status === 'COMPLETED' && user?.id) {
-          const reviewed = await reviewService.hasReviewedBooking(user.id, bookingId);
-          if (mounted) setHasReviewed(reviewed);
-        }
-      } catch (err) {
-        console.error('[EV-Net] Failed to load booking:', err);
-        if (mounted) setLoadError(err.message || 'Could not load booking details.');
-      } finally {
-        if (mounted) setLoading(false);
-      }
-    };
-    load();
+    reviewService.hasReviewedBooking(user.id, bookingId)
+      .then(reviewed => {
+        if (mounted) setHasReviewed(reviewed);
+      })
+      .catch(err => {
+        console.warn('[EV-Net] Review status check failed:', err.message);
+      });
+
     return () => {
       mounted = false;
     };
-  }, [bookingId, user?.id]);
+  }, [booking, bookingId, user?.id]);
 
   const handleMessageHost = async () => {
     if (!booking?.listingId || messaging) return;
@@ -145,9 +154,15 @@ const BookingDetail = () => {
         paymentProofPath: result.proofPath,
         payment_proof_path: result.proofPath
       } : prev);
-      bookingService.getById(booking.id).then(updated => {
-        if (updated) setBooking(updated);
-      }).catch(err => {
+      invalidatePageCaches([
+        makePageCacheKey('user-bookings', booking.userId || user?.id),
+        'host-bookings',
+        'host-dashboard',
+        'host-earnings',
+        'admin-bookings',
+        'admin-dashboard',
+      ]);
+      refreshBooking({ force: true, silent: true }).catch(err => {
         console.warn('[EV-Net] Background booking refresh after proof upload failed:', err.message);
       });
     } catch (err) {
@@ -180,6 +195,10 @@ const BookingDetail = () => {
       });
       setReviewSubmitted(true);
       setHasReviewed(true);
+      invalidatePageCaches([
+        makePageCacheKey('charger-detail', booking.listingId),
+        'listings:active-approved',
+      ]);
     } catch (err) {
       console.error('[EV-Net] Failed to submit review:', err);
       setReviewError(err.message || 'Failed to submit review. Please try again.');
@@ -188,7 +207,9 @@ const BookingDetail = () => {
     }
   };
 
-  if (loading) {
+  const loadErrorMessage = loadError?.message || 'Could not load booking details.';
+
+  if (loading && !booking) {
     return (
       <div className="section" style={{ minHeight: 'calc(100vh - 72px)' }}>
         <div className="container" style={{ maxWidth: '900px' }}>
@@ -207,8 +228,8 @@ const BookingDetail = () => {
           </button>
           <div className="glass-card" style={{ padding: '2rem' }}>
             <h2 style={{ marginTop: 0 }}>Booking not found</h2>
-            <p style={{ color: 'var(--text-secondary)' }}>{loadError || 'This booking may no longer be available.'}</p>
-            <button className="btn btn-secondary" onClick={() => window.location.reload()}>Retry</button>
+            <p style={{ color: 'var(--text-secondary)' }}>{loadErrorMessage || 'This booking may no longer be available.'}</p>
+            <button className="btn btn-secondary" onClick={() => refreshBooking({ force: true, silent: false })}>Retry</button>
           </div>
         </div>
       </div>
@@ -224,13 +245,30 @@ const BookingDetail = () => {
   return (
     <div className="section" style={{ minHeight: 'calc(100vh - 72px)' }}>
       <div className="container" style={{ maxWidth: '900px' }}>
-        <button
-          className="btn btn-secondary"
-          onClick={() => navigate('/app/bookings')}
-          style={{ marginBottom: '1rem', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-        >
-          <ArrowLeft size={16} /> Back
-        </button>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap' }}>
+          <button
+            className="btn btn-secondary"
+            onClick={() => navigate('/app/bookings')}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+          >
+            <ArrowLeft size={16} /> Back
+          </button>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => refreshBooking({ force: true })}
+            disabled={isRefreshing}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '0.5rem 0.9rem', fontSize: '0.85rem' }}
+          >
+            <RefreshCw size={15} className={isRefreshing ? 'animate-spin' : ''} />
+            {isRefreshing ? 'Refreshing' : 'Refresh'}
+          </button>
+        </div>
+        {(isRefreshing || loadError) && (
+          <div style={{ color: loadError ? '#fbbf24' : 'var(--brand-cyan)', fontSize: '0.85rem', marginBottom: '0.75rem' }}>
+            {loadError ? 'Could not refresh. Showing cached booking details.' : 'Refreshing booking details...'}
+          </div>
+        )}
 
         <div className="glass-card" style={{ padding: '1.5rem' }}>
           <div style={{ display: 'flex', gap: '1.25rem', alignItems: 'flex-start', flexWrap: 'wrap', marginBottom: '1.5rem' }}>

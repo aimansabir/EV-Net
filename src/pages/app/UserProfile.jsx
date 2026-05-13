@@ -4,12 +4,13 @@ import useAuthStore from '../../store/authStore';
 import { PakistanEVBrands, ConnectorType } from '../../data/schema';
 import Avatar from '../../components/ui/Avatar';
 import { profileService } from '../../data/api';
-import { Camera, Loader2 } from 'lucide-react';
+import { Camera, Loader2, RefreshCw } from 'lucide-react';
+import { invalidatePageCaches, makePageCacheKey } from '../../store/pageCacheStore';
 import '../../styles/auth.css';
 
 const UserProfile = () => {
   const navigate = useNavigate();
-  const { user, logout, patchUser } = useAuthStore();
+  const { user, logout, patchUser, reloadUser } = useAuthStore();
   const [editing, setEditing] = useState(false);
   const fileInputRef = useRef(null);
   
@@ -25,6 +26,8 @@ const UserProfile = () => {
   const [uploadError, setUploadError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [refreshError, setRefreshError] = useState('');
   
   const verificationStatus = (user?.verificationStatus || 'draft').toLowerCase();
 
@@ -41,6 +44,10 @@ const UserProfile = () => {
       await profileService.updateEvDetails(user.id, formData);
       const { reloadUser } = useAuthStore.getState();
       await reloadUser();
+      invalidatePageCaches([
+        makePageCacheKey('admin-users'),
+        makePageCacheKey('user-bookings', user.id),
+      ]);
       setEditing(false);
     } catch (err) {
       console.error("Failed to update EV details:", err);
@@ -65,6 +72,10 @@ const UserProfile = () => {
       if (result?.avatarUrl) {
         patchUser({ avatar: result.avatarUrl, avatarPath: result.avatarPath });
       }
+      invalidatePageCaches([
+        makePageCacheKey('admin-users'),
+        makePageCacheKey('user-bookings', user.id),
+      ]);
       useAuthStore.getState().reloadUser().catch(err => {
         console.warn('[EV-Net] Background profile refresh after avatar upload failed:', err.message);
       });
@@ -76,10 +87,35 @@ const UserProfile = () => {
     }
   };
 
+  const handleRefreshProfile = async () => {
+    setIsRefreshing(true);
+    setRefreshError('');
+    try {
+      await reloadUser();
+    } catch (err) {
+      setRefreshError(err.message || 'Could not refresh profile.');
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
   return (
     <div className="section" style={{ minHeight: 'calc(100vh - 72px)' }}>
       <div className="container" style={{ maxWidth: '600px' }}>
-        <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '2rem', marginBottom: '2rem' }}>My Profile</h2>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', marginBottom: '2rem', flexWrap: 'wrap' }}>
+          <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '2rem', margin: 0 }}>My Profile</h2>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={handleRefreshProfile}
+            disabled={isRefreshing}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '0.5rem 0.9rem', fontSize: '0.85rem' }}
+          >
+            <RefreshCw size={15} className={isRefreshing ? 'animate-spin' : ''} />
+            {isRefreshing ? 'Refreshing' : 'Refresh'}
+          </button>
+        </div>
+        {refreshError && <p style={{ color: '#fbbf24', fontSize: '0.85rem', marginTop: '-1rem', marginBottom: '1rem' }}>{refreshError}</p>}
 
         {/* Avatar & Name */}
         <div className="glass-card" style={{ padding: '2.5rem 2rem', textAlign: 'center', marginBottom: '1.5rem', position: 'relative' }}>

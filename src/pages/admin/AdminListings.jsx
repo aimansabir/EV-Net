@@ -1,21 +1,25 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useState } from 'react';
 import { adminService } from '../../data/api';
 import { formatPKR } from '../../data/feeConfig';
+import { RefreshCw } from 'lucide-react';
+import { invalidatePageCaches, PAGE_CACHE_TTL, useCachedPageData } from '../../store/pageCacheStore';
 
 const AdminListings = () => {
-  const [listings, setListings] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
 
-  useEffect(() => {
-    adminService.getListings().then(data => {
-      setListings(data);
-      setLoading(false);
-    }).catch(err => {
-      console.error('[EV-Net] Failed to load listings:', err);
-      setLoading(false);
-    });
-  }, []);
+  const fetchListings = useCallback(() => adminService.getListings(), []);
+  const {
+    data: cachedListings,
+    isLoading: loading,
+    isRefreshing,
+    error: loadError,
+    refresh: refreshListings,
+  } = useCachedPageData('admin-listings', fetchListings, {
+    ttl: PAGE_CACHE_TTL.MEDIUM,
+  });
+  const listings = cachedListings || [];
+
+  const loadListings = useCallback(() => refreshListings({ force: true }), [refreshListings]);
 
   const filtered = filter === 'all' ? listings
     : filter === 'pending' ? listings.filter(l => !l.isApproved && l.setupFeePaid)
@@ -25,8 +29,15 @@ const AdminListings = () => {
   const handleReview = async (listingId, approved) => {
     try {
       await adminService.reviewListing(listingId, { approved });
-      const updated = await adminService.getListings();
-      setListings(updated);
+      invalidatePageCaches([
+        'admin-dashboard',
+        'admin-listings',
+        'host-listings',
+        'host-dashboard',
+        'listings:active-approved',
+        'charger-detail',
+      ]);
+      await loadListings();
     } catch (err) {
       alert('Action failed: ' + err.message);
     }
@@ -42,7 +53,30 @@ const AdminListings = () => {
   return (
     <div className="section" style={{ minHeight: '100vh' }}>
       <div className="container" style={{ maxWidth: '1100px' }}>
-        <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '2rem', marginBottom: '1.5rem' }}>Listing Moderation</h2>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
+          <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '2rem', margin: 0 }}>Listing Moderation</h2>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={loadListings}
+            disabled={isRefreshing}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '0.5rem 0.9rem', fontSize: '0.85rem' }}
+          >
+            <RefreshCw size={15} className={isRefreshing ? 'animate-spin' : ''} />
+            {isRefreshing ? 'Refreshing' : 'Refresh'}
+          </button>
+        </div>
+        {(isRefreshing || loadError) && listings.length > 0 && (
+          <div style={{ color: loadError ? '#fbbf24' : 'var(--brand-cyan)', fontSize: '0.85rem', marginTop: '-0.75rem', marginBottom: '1rem' }}>
+            {loadError ? 'Could not refresh. Showing cached listings.' : 'Refreshing listings...'}
+          </div>
+        )}
+        {loadError && listings.length === 0 && (
+          <div className="auth-error" style={{ marginBottom: '1rem' }}>
+            {loadError.message || 'Could not load listings.'}
+            <button className="btn btn-secondary" onClick={loadListings} style={{ marginLeft: '1rem', padding: '0.35rem 0.7rem' }}>Retry</button>
+          </div>
+        )}
 
         <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '2rem', flexWrap: 'wrap' }}>
           {[{ key: 'all', label: 'All' }, { key: 'pending', label: 'Pending Review' }, { key: 'approved', label: 'Approved' }, { key: 'draft', label: 'Draft' }].map(f => (
@@ -53,7 +87,7 @@ const AdminListings = () => {
           ))}
         </div>
 
-        {loading ? (
+        {loading && listings.length === 0 ? (
           <div style={{ color: 'var(--text-secondary)', padding: '2rem', textAlign: 'center' }}>Loading listings...</div>
         ) : (
           <div style={{ overflowX: 'auto' }}>

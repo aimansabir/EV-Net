@@ -33,6 +33,64 @@ const _hostDashboardInflight = new Map();
 const _profileCache = new Map();
 const _profileInflight = new Map();
 
+// ─── GENERIC SWR (Stale-While-Revalidate) CACHE ─────────
+// Returns cached data instantly, refreshes in the background after TTL expires.
+const _swrCache = new Map();
+const _swrInflight = new Map();
+
+/**
+ * Stale-while-revalidate fetch wrapper.
+ * - If fresh cache exists (< ttl), returns cached data immediately (no network).
+ * - If stale cache exists (> ttl but < staleTTL), returns cached data AND triggers bg refresh.
+ * - If no cache, fetches and caches.
+ */
+async function swr(key, fetchFn, ttl = 30000) {
+  const staleTTL = ttl * 4; // serve stale data for up to 4x TTL before hard refresh
+  const cached = _swrCache.get(key);
+  const now = Date.now();
+
+  if (cached) {
+    const age = now - cached.time;
+    if (age < ttl) {
+      // Fresh — return instantly
+      return cached.data;
+    }
+    if (age < staleTTL) {
+      // Stale — return instantly but refresh in background
+      if (!_swrInflight.has(key)) {
+        const refresh = fetchFn().then(data => {
+          _swrCache.set(key, { data, time: Date.now() });
+          return data;
+        }).catch(err => {
+          console.warn(`[EV-Net][SWR] bg refresh failed for "${key}":`, err.message);
+        }).finally(() => _swrInflight.delete(key));
+        _swrInflight.set(key, refresh);
+      }
+      return cached.data;
+    }
+    // Expired — fall through to fresh fetch
+  }
+
+  // No usable cache — deduplicate concurrent requests
+  if (_swrInflight.has(key)) {
+    return _swrInflight.get(key);
+  }
+  const request = fetchFn().then(data => {
+    _swrCache.set(key, { data, time: Date.now() });
+    return data;
+  }).finally(() => _swrInflight.delete(key));
+  _swrInflight.set(key, request);
+  return request;
+}
+
+function invalidateSwr(keyOrPrefix) {
+  for (const k of _swrCache.keys()) {
+    if (k === keyOrPrefix || k.startsWith(keyOrPrefix + ':')) {
+      _swrCache.delete(k);
+    }
+  }
+}
+
 const PAYMENT_PROOF_UPLOAD_RULES = {
   label: 'Payment proof',
   maxSizeMB: 8,
@@ -591,35 +649,41 @@ export const authService = {
 
       const userId = authData.user.id;
       const authUser = authData.user;
-      const profile = await getProfile(userId);
+
+      // Fetch main profile and role-specific profiles in parallel
+      const [profile, evProfileResult, hostProfileResult] = await Promise.all([
+        getProfile(userId),
+        getEvProfile(userId).catch(() => null),
+        getHostProfile(userId).catch(() => null),
+      ]);
+
       if (!profile) {
         throw new Error('Authentication successful, but user profile was not found in the database.');
       }
 
-      let evProfile = null;
-      let hostProfile = null;
+      let evProfile = profile.role === 'USER' ? evProfileResult : null;
+      let hostProfile = profile.role === 'HOST' ? hostProfileResult : null;
 
-      if (profile.role === 'USER') {
+      // Repair missing sub-profiles only if needed (rare path)
+      if (profile.role === 'USER' && !evProfile) {
+        console.warn(`[EV-Net] User sub-profile missing for ${userId}. Repairing...`);
+        await supabase.rpc('ensure_ev_profile', { p_user_id: userId });
         evProfile = await getEvProfile(userId);
-        if (!evProfile) {
-          console.warn(`[EV-Net] User sub-profile missing for ${userId}. Repairing...`);
-          await supabase.rpc('ensure_ev_profile', { p_user_id: userId });
-          evProfile = await getEvProfile(userId);
-        }
+      } else if (profile.role === 'HOST' && !hostProfile) {
+        console.warn(`[EV-Net] Host sub-profile missing for ${userId}. Repairing...`);
+        await supabase.rpc('ensure_host_profile', { p_user_id: userId });
+        hostProfile = await getHostProfile(userId);
+      }
+
+      // Fire-and-forget email verification sync
+      if (profile.role === 'USER' && evProfile) {
         syncEvEmailVerification(userId, evProfile, authUser).catch(err => {
           console.warn('[EV-Net] Email verification sync skipped:', err.message);
         });
-      } else if (profile.role === 'HOST') {
-        hostProfile = await getHostProfile(userId);
-        if (!hostProfile) {
-          console.warn(`[EV-Net] Host sub-profile missing for ${userId}. Repairing...`);
-          await supabase.rpc('ensure_host_profile', { p_user_id: userId });
-          hostProfile = await getHostProfile(userId);
-        }
       }
 
       return { user: mergeUserShape(profile, evProfile, hostProfile, authUser, {}) };
-    })(), 20000, 'Login succeeded, but profile loading took too long. Please retry; if it keeps happening, check the profiles and role-specific profile tables.');
+    })(), 45000, 'Login succeeded, but profile loading took too long. Please retry; if it keeps happening, check the profiles and role-specific profile tables.');
   },
 
   /**
@@ -2729,6 +2793,7 @@ export const adminService = {
   },
 
   async getUsers() {
+    return swr('admin:users', async () => {
     // Fetch profiles, host_profiles, and ev_profiles in parallel to avoid RLS join issues
     let profilesRes;
     const [hostRes, evRes] = await Promise.all([
@@ -2774,6 +2839,7 @@ export const adminService = {
         avatar: resolveAvatarUrl(evProfile?.avatar_path || hostProfile?.avatar_path) || u.avatar_url
       };
     });
+    }); // end swr
   },
 
   async toggleTestAccount(userId, isTest) {
@@ -2892,6 +2958,7 @@ export const adminService = {
   },
 
   async getVerificationSubmissions() {
+    return swr('admin:verifications', async () => {
     let { data, error } = await supabase
       .from('verification_submissions')
       .select('id, user_id, type, status, cnic_path, cnic_back_path, ev_proof_path, property_proof_path, charger_proof_path, reviewer_notes, submitted_at, reviewed_at, profile_type, document_type, storage_path, user:profiles!user_id(id, name, email, avatar_url, ev_profiles(verification_status, updated_at), host_profiles(verification_status, moderation_notes, updated_at))')
@@ -3040,6 +3107,7 @@ export const adminService = {
         documentUrls: {}
       };
     });
+    }); // end swr
   },
 
   async getConversations() {

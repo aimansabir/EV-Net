@@ -3,7 +3,8 @@ import useAuthStore from '../../store/authStore';
 import { bookingService } from '../../data/api';
 import { formatPKR } from '../../data/feeConfig';
 import { supabase } from '../../lib/supabase';
-import { Bookmark } from 'lucide-react';
+import { Bookmark, RefreshCw } from 'lucide-react';
+import { invalidatePageCaches, isPageCacheStale, makePageCacheKey, PAGE_CACHE_TTL, useCachedPageData } from '../../store/pageCacheStore';
 
 const BOOKING_STATUS_CONFIG = {
   pending: {
@@ -49,46 +50,41 @@ const getBookingStatusConfig = (status) => {
 
 const HostBookings = () => {
   const { user } = useAuthStore();
-  const [bookings, setBookings] = useState([]);
+  const userId = user?.id;
   const [filter, setFilter] = useState('all');
   const [updatingId, setUpdatingId] = useState(null);
   const [error, setError] = useState(null);
-  const [fetchLoading, setFetchLoading] = useState(true);
   const [proofUrls, setProofUrls] = useState({});
   const [proofLoadingId, setProofLoadingId] = useState(null);
 
-  const loadBookings = useCallback(async () => {
-    try {
-      setFetchLoading(true);
-      setError(null);
-      const data = await bookingService.getByHost(user?.id);
-      setBookings(data || []);
-    } catch (err) {
-      console.error("[EV-Net] Failed to load host bookings:", err);
-      setError("Could not load booking requests.");
-    } finally {
-      setFetchLoading(false);
-    }
-  }, [user?.id]);
+  const bookingsCacheKey = makePageCacheKey('host-bookings', userId);
+  const fetchBookings = useCallback(() => bookingService.getByHost(userId), [userId]);
+  const {
+    data: cachedBookings,
+    isLoading: fetchLoading,
+    isRefreshing,
+    error: loadError,
+    refresh: refreshBookings,
+  } = useCachedPageData(bookingsCacheKey, fetchBookings, {
+    enabled: !!userId,
+    ttl: PAGE_CACHE_TTL.SHORT,
+  });
+  const bookings = cachedBookings || [];
 
-  useEffect(() => {
-    if (user?.id) {
-      loadBookings();
-    } else {
-      setFetchLoading(false);
-    }
-  }, [user?.id, loadBookings]);
+  const loadBookings = useCallback(() => {
+    setError(null);
+    return refreshBookings({ force: true });
+  }, [refreshBookings]);
 
-  // Refetch when tab regains focus (stale data fix)
   useEffect(() => {
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible' && user?.id) {
-        loadBookings();
+      if (document.visibilityState === 'visible' && userId && isPageCacheStale(bookingsCacheKey, PAGE_CACHE_TTL.SHORT)) {
+        refreshBookings({ force: true, silent: true });
       }
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, [user?.id, loadBookings]);
+  }, [bookingsCacheKey, refreshBookings, userId]);
 
   const filtered = filter === 'all' ? bookings : bookings.filter(b => String(b.status || 'pending').toLowerCase() === filter.toLowerCase());
 
@@ -97,8 +93,15 @@ const HostBookings = () => {
       setUpdatingId(bookingId);
       setError(null);
       await bookingService.updateStatus(bookingId, newStatus);
-      // Refresh list
-      await loadBookings();
+      invalidatePageCaches([
+        'user-bookings',
+        'booking-detail',
+        makePageCacheKey('host-dashboard', userId),
+        makePageCacheKey('host-earnings', userId),
+        'admin-bookings',
+        'admin-dashboard',
+      ]);
+      await refreshBookings({ force: true, silent: true });
     } catch (err) {
       console.error("[EV-Net] Failed to update booking status:", err);
       alert(err.message || "Failed to update booking. Please try again.");
@@ -167,11 +170,11 @@ const HostBookings = () => {
     }
   };
 
-  if (fetchLoading) return <div className="section" style={{ minHeight: 'calc(100vh - 72px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><div style={{ color: 'var(--text-secondary)' }}>Loading...</div></div>;
-  if (error) return (
+  if (fetchLoading && bookings.length === 0) return <div className="section" style={{ minHeight: 'calc(100vh - 72px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><div style={{ color: 'var(--text-secondary)' }}>Loading...</div></div>;
+  if ((error || loadError) && bookings.length === 0) return (
     <div className="section" style={{ minHeight: 'calc(100vh - 72px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div style={{ textAlign: 'center' }}>
-        <div style={{ color: 'var(--brand-red)', marginBottom: '1rem' }}>{error}</div>
+        <div style={{ color: 'var(--brand-red)', marginBottom: '1rem' }}>{error || loadError?.message || 'Could not load booking requests.'}</div>
         <button className="btn btn-secondary" onClick={loadBookings}>Try Again</button>
       </div>
     </div>
@@ -180,7 +183,24 @@ const HostBookings = () => {
   return (
     <div className="section" style={{ minHeight: 'calc(100vh - 72px)' }}>
       <div className="container" style={{ maxWidth: '900px' }}>
-        <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '2rem', marginBottom: '1.5rem' }}>Booking Requests</h2>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
+          <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '2rem', margin: 0 }}>Booking Requests</h2>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={loadBookings}
+            disabled={isRefreshing}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '0.5rem 0.9rem', fontSize: '0.85rem' }}
+          >
+            <RefreshCw size={15} className={isRefreshing ? 'animate-spin' : ''} />
+            {isRefreshing ? 'Refreshing' : 'Refresh'}
+          </button>
+        </div>
+        {(isRefreshing || loadError) && bookings.length > 0 && (
+          <div style={{ color: loadError ? '#fbbf24' : 'var(--brand-cyan)', fontSize: '0.85rem', marginTop: '-0.75rem', marginBottom: '1rem' }}>
+            {loadError ? 'Could not refresh. Showing cached booking requests.' : 'Refreshing booking requests...'}
+          </div>
+        )}
         
         <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '2rem', flexWrap: 'wrap' }}>
           {[{ key: 'all', label: 'All' }, { key: 'pending', label: 'Pending' }, { key: 'confirmed', label: 'Confirmed' }, { key: 'completed', label: 'Completed' }].map(f => (

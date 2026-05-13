@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Calendar, MessageSquare } from 'lucide-react';
+import { Calendar, MessageSquare, RefreshCw } from 'lucide-react';
 import useAuthStore from '../../store/authStore';
 import { bookingService, messagingService } from '../../data/api';
 import { formatPKR } from '../../data/feeConfig';
 import { ListSkeleton } from '../../components/ui/Skeleton';
+import { invalidatePageCaches, makePageCacheKey, PAGE_CACHE_TTL, useCachedPageData } from '../../store/pageCacheStore';
 
 const formatTime12h = (time24) => {
   if (!time24) return '';
@@ -19,27 +20,25 @@ const formatTime12h = (time24) => {
 const Bookings = () => {
   const navigate = useNavigate();
   const { user } = useAuthStore();
-  const [bookings, setBookings] = useState([]);
   const [filter, setFilter] = useState('all');
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState('');
   const [messagingId, setMessagingId] = useState(null);
 
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const data = await bookingService.getByUser(user?.id || 'user_ali');
-        setBookings(data);
-        setLoadError('');
-      } catch (err) {
-        console.error(err);
-        setLoadError(err.message || 'Could not load your bookings.');
-      } finally {
-        setLoading(false);
-      }
-    };
-    load();
-  }, [user?.id]);
+  const userId = user?.id || 'user_ali';
+  const bookingsCacheKey = makePageCacheKey('user-bookings', userId);
+  const fetchBookings = useCallback(() => bookingService.getByUser(userId), [userId]);
+  const {
+    data: cachedBookings,
+    isLoading: loading,
+    isRefreshing,
+    error: loadError,
+    refresh: refreshBookings,
+    setData: setBookings,
+  } = useCachedPageData(bookingsCacheKey, fetchBookings, {
+    ttl: PAGE_CACHE_TTL.SHORT,
+  });
+
+  const bookings = cachedBookings || [];
+  const loadErrorMessage = loadError?.message || 'Could not load your bookings.';
 
   const filtered = filter === 'all' ? bookings : bookings.filter(b => b.status === filter.toUpperCase());
 
@@ -74,7 +73,7 @@ const Bookings = () => {
       setUploadingId(bookingId);
       setUploadError('');
       const result = await bookingService.uploadPaymentProof(bookingId, file);
-      setBookings(prev => prev.map(booking => (
+      setBookings(prev => (prev || []).map(booking => (
         booking.id === bookingId
           ? {
               ...booking,
@@ -85,7 +84,15 @@ const Bookings = () => {
             }
           : booking
       )));
-      bookingService.getByUser(user?.id).then(setBookings).catch(err => {
+      invalidatePageCaches([
+        makePageCacheKey('booking-detail', bookingId),
+        'host-bookings',
+        'host-dashboard',
+        'host-earnings',
+        'admin-bookings',
+        'admin-dashboard',
+      ]);
+      refreshBookings({ force: true, silent: true }).catch(err => {
         console.warn('[EV-Net] Background bookings refresh after proof upload failed:', err.message);
       });
     } catch (err) {
@@ -119,7 +126,7 @@ const Bookings = () => {
     { key: 'cancelled', label: 'Cancelled' },
   ];
 
-  if (loading) {
+  if (loading && bookings.length === 0) {
     return (
       <div className="section" style={{ minHeight: 'calc(100vh - 72px)' }}>
         <div className="container" style={{ maxWidth: '900px' }}>
@@ -133,10 +140,25 @@ const Bookings = () => {
   return (
     <div className="section" style={{ minHeight: 'calc(100vh - 72px)' }}>
       <div className="container" style={{ maxWidth: '900px' }}>
-        <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '2rem', marginBottom: '1.5rem' }}>My Bookings</h2>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
+          <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '2rem', margin: 0 }}>My Bookings</h2>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => refreshBookings({ force: true })}
+            disabled={isRefreshing}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '0.5rem 0.9rem', fontSize: '0.85rem' }}
+          >
+            <RefreshCw size={15} className={isRefreshing ? 'animate-spin' : ''} />
+            {isRefreshing ? 'Refreshing' : 'Refresh'}
+          </button>
+        </div>
+        {isRefreshing && bookings.length > 0 && (
+          <div style={{ color: 'var(--brand-cyan)', fontSize: '0.85rem', marginBottom: '0.75rem' }}>Refreshing bookings...</div>
+        )}
         {(loadError || uploadError) && (
           <div className="auth-error" style={{ marginBottom: '1rem' }}>
-            {loadError || uploadError}
+            {uploadError || (bookings.length > 0 ? 'Could not refresh. Showing cached bookings.' : loadErrorMessage)}
           </div>
         )}
         
