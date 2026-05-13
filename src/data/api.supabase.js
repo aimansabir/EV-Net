@@ -1116,7 +1116,8 @@ export const listingService = {
         listing_photos ( id, storage_path, display_order )
       `)
       .eq('is_active', true)
-      .eq('is_approved', true);
+      .eq('is_approved', true)
+      .is('archived_at', null);
 
     if (queryFilters.city) query = query.eq('city', queryFilters.city);
     if (queryFilters.chargerType) query = query.eq('charger_type', queryFilters.chargerType);
@@ -2749,11 +2750,21 @@ export const adminService = {
     return data;
   },
 
-  async getListings() {
-    const { data, error } = await supabase
-      .from('listings')
-      .select('id, title, host_id, charger_type, price_day_per_kwh, price_night_per_kwh, price_per_hour, is_approved, is_active, setup_fee_paid, created_at, host:profiles!host_id(id, name, email)')
-      .order('created_at', { ascending: false });
+  async getListings(options = {}) {
+    const showArchived = options.showArchived === true;
+    const cacheKey = `admin:listings:${showArchived ? 'with-archived' : 'active-only'}`;
+    
+    return swr(cacheKey, async () => {
+      let query = supabase
+        .from('listings')
+        .select('id, title, host_id, charger_type, price_day_per_kwh, price_night_per_kwh, price_per_hour, is_approved, is_active, setup_fee_paid, created_at, archived_at, archived_by, archive_reason, host:profiles!host_id(id, name, email)')
+        .order('created_at', { ascending: false });
+
+      if (!showArchived) {
+        query = query.is('archived_at', null);
+      }
+
+      const { data, error } = await query;
     if (error) throw error;
 
     const listingIds = (data || []).map(l => l.id).filter(Boolean);
@@ -2789,7 +2800,33 @@ export const adminService = {
       pricePerHour: l.price_per_hour,
       images: firstPhotoByListing.get(l.id) ? [firstPhotoByListing.get(l.id)] : [],
       createdAt: l.created_at,
+      archivedAt: l.archived_at,
+      archivedBy: l.archived_by,
+      archiveReason: l.archive_reason,
+      isArchived: !!l.archived_at
     }));
+    });
+  },
+
+  async archiveListing(listingId, reason) {
+    const { data, error } = await supabase.rpc('admin_archive_listing', {
+      p_listing_id: listingId,
+      p_reason: reason || null
+    });
+    if (error) throw new Error(error.message);
+    invalidateSwr('admin:listings');
+    clearListingCaches();
+    return data;
+  },
+
+  async unarchiveListing(listingId) {
+    const { data, error } = await supabase.rpc('admin_unarchive_listing', {
+      p_listing_id: listingId
+    });
+    if (error) throw new Error(error.message);
+    invalidateSwr('admin:listings');
+    clearListingCaches();
+    return data;
   },
 
   async getUsers() {
