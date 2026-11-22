@@ -48,9 +48,10 @@ const AreaComboBox = ({
   // Reset value if city changes and current value isn't in new city
   useEffect(() => {
     if (city && value && !availableAreas.includes(value)) {
-        onChange('');
+      onChange('');
     }
-  }, [city]);
+    // Guarded by the includes() check, so an unstable onChange can't loop.
+  }, [city, value, availableAreas, onChange]);
 
   const handleSelect = (area) => {
     onChange(area);

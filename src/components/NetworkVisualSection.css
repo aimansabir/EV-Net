@@ -107,14 +107,30 @@
 }
 
 @media (max-width: 768px) {
+  .network-visual-section {
+    padding-bottom: 4rem;
+  }
+
+  /* Stack the image and stat cards instead of laying them out in a row. */
+  .visual-wrapper {
+    flex-direction: column;
+    max-height: none;
+    padding-bottom: 0.5rem;
+  }
+
+  .network-image {
+    max-height: 320px;
+  }
+
   .floating-stat {
+    padding: 1rem 1.25rem;
     position: relative;
     top: auto !important;
     left: auto !important;
     right: auto !important;
     bottom: auto !important;
-    margin: 1rem auto;
-    width: 85%;
+    margin: 0.5rem auto;
+    width: calc(100% - 2rem);
     transform: none !important;
     animation: none;
   }

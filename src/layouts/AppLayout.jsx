@@ -1,9 +1,13 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import useAuthStore from '../store/authStore';
-import logoUrl from '../assets/logo.png';
+import logoUrl from '../assets/logo.webp';
 import NotificationCenter from '../components/NotificationCenter';
+import Avatar from '../components/ui/Avatar';
+import MobileNavStrip from './MobileNavStrip';
+import { isNavItemActive } from './navUtils';
 import '../components/Navbar.css';
+import './layouts.css';
 
 const AppLayout = ({ children }) => {
   const { user } = useAuthStore();
@@ -12,46 +16,54 @@ const AppLayout = ({ children }) => {
   const navItems = [
     { path: '/app/explore', label: 'Explore' },
     { path: '/app/bookings', label: 'Bookings' },
+    { path: '/app/favorites', label: 'Favorites' },
     { path: '/app/messages', label: 'Messages' },
     { path: '/app/verification', label: user?.verificationStatus === 'approved' ? 'Verified ✓' : 'Verification' },
-    { path: '/app/profile', label: 'Profile' }
+    { path: '/app/profile', label: 'Profile' },
   ];
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
-      <nav className="navbar nav-scrolled" style={{ position: 'relative', background: 'var(--bg-main)' }}>
-        <div className="container nav-container" style={{ maxWidth: '100%' }}>
-          <Link to="/" className="logo" style={{ display: 'flex', alignItems: 'center', textDecoration: 'none' }}>
-            <img src={logoUrl} alt="EV-Net Logo" style={{ height: '32px', width: 'auto' }} />
+    <div className="layout-shell">
+      <nav className="navbar nav-scrolled layout-header" style={{ position: 'relative', background: 'var(--bg-main)' }} aria-label="Main">
+        <div className="container nav-container">
+          <Link to="/" className="logo layout-logo" aria-label="EV-Net home">
+            <img src={logoUrl} alt="EV-Net" />
           </Link>
 
           <ul className="nav-links">
-            {navItems.map(item => (
-              <li key={item.path}>
-                <Link to={item.path} style={{ color: location.pathname === item.path ? 'var(--brand-green)' : undefined }}>
-                  {item.label}
-                </Link>
-              </li>
-            ))}
+            {navItems.map(item => {
+              const active = isNavItemActive(location.pathname, item.path);
+              return (
+                <li key={item.path}>
+                  <Link
+                    to={item.path}
+                    style={{ color: active ? 'var(--brand-green)' : undefined }}
+                    aria-current={active ? 'page' : undefined}
+                  >
+                    {item.label}
+                  </Link>
+                </li>
+              );
+            })}
           </ul>
 
-          <div className="nav-actions" style={{ display: 'flex', alignItems: 'center', gap: '1.25rem' }}>
+          <div className="nav-actions" style={{ gap: '1.25rem' }}>
             <NotificationCenter />
-            
-            <Link to="/app/profile" style={{
-              width: '36px', height: '36px', borderRadius: '50%',
-              background: user?.avatar ? `url(${user.avatar}) center/cover` : 'var(--brand-green)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              color: '#000', fontWeight: 'bold', fontSize: '0.9rem',
-              border: '2px solid var(--brand-green)',
-            }}>
-              {!user?.avatar && (user?.name?.[0] || 'U')}
+            <Link to="/app/profile" className="layout-avatar-link" aria-label="Your profile">
+              <Avatar
+                src={user?.avatar}
+                name={user?.name}
+                size="36px"
+                style={{ border: '2px solid var(--brand-green)' }}
+              />
             </Link>
           </div>
         </div>
       </nav>
 
-      <main style={{ flex: 1, overflowY: 'auto', position: 'relative' }}>
+      <MobileNavStrip items={navItems} accent="var(--brand-green)" />
+
+      <main className="layout-main">
         {children}
       </main>
     </div>

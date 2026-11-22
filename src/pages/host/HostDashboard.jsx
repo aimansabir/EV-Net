@@ -94,7 +94,7 @@ const HostDashboard = () => {
             padding: '1rem 1.5rem', borderRadius: '12px', marginBottom: '1.5rem',
             background: isPendingVerification ? 'rgba(251,191,36,0.1)' : verificationStatus === 'rejected' ? 'rgba(239,68,68,0.1)' : 'rgba(156,163,175,0.1)',
             border: `1px solid ${isPendingVerification ? 'rgba(251,191,36,0.3)' : verificationStatus === 'rejected' ? 'rgba(239,68,68,0.3)' : 'rgba(156,163,175,0.3)'}`,
-            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem',
           }}>
             <div>
               <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '0.25rem', color: isPendingVerification ? '#fbbf24' : verificationStatus === 'rejected' ? '#f87171' : '#9CA3AF' }}>
@@ -113,15 +113,15 @@ const HostDashboard = () => {
         )}
 
         {/* Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem', marginBottom: '2rem' }}>
           <div>
-            <h2 style={{ fontFamily: 'var(--font-heading)', margin: 0, fontSize: '2rem' }}>
+            <h2 style={{ fontFamily: 'var(--font-heading)', margin: 0, fontSize: 'clamp(1.6rem, 5vw, 2rem)' }}>
               Host Dashboard
               {verificationStatus === 'approved' && <span style={{ marginLeft: '10px', fontSize: '0.8rem', padding: '0.2rem 0.6rem', display: 'inline-flex', alignItems: 'center', gap: '4px', background: 'rgba(0,210,106,0.2)', color: 'var(--brand-green)', borderRadius: '20px', verticalAlign: 'middle' }}><CheckCircle size={14} /> Verified</span>}
             </h2>
             <p style={{ color: 'var(--text-secondary)', margin: '0.3rem 0 0', fontSize: '0.9rem' }}>Welcome back, {user?.name || 'Host'}</p>
           </div>
-          <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
             <button
               type="button"
               className="btn btn-secondary"

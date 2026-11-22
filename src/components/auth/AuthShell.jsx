@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, ShieldCheck, MapPin, CreditCard, Wallet, Users, Zap } from 'lucide-react';
-import logoUrl from '../../assets/logo.png';
+import logoUrl from '../../assets/logo.webp';
 const AuthShell = ({ children, title, subtitle, role = 'login' }) => {
 
   const getPanelContent = () => {
