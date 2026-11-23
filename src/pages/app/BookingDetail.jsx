@@ -372,10 +372,10 @@ const BookingDetail = () => {
                 {uploading ? 'Uploading...' : 'Upload Payment Proof'}
                 <input
                   type="file"
-                  accept="image/*,application/pdf"
+                  accept="image/jpeg,image/png,image/webp,application/pdf"
                   style={{ display: 'none' }}
                   disabled={uploading}
-                  onChange={(e) => handleUploadProof(e.target.files[0])}
+                  onChange={(e) => { const f = e.target.files[0]; e.target.value = ''; if (f) handleUploadProof(f); }}
                 />
               </label>
             )}

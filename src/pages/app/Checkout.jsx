@@ -44,8 +44,16 @@ const Checkout = () => {
       setProofFile(null);
       return;
     }
-    if (file.size > 8 * 1024 * 1024) {
-      setError('Payment proof is too large. Maximum size is 8MB.');
+    if (/hei[cf]/i.test(file.type || '') || /\.hei[cf]$/i.test(file.name || '')) {
+      setError("iPhone HEIC photos aren't supported. Please upload a screenshot or a JPG/PNG.");
+      setProofFile(null);
+      return;
+    }
+    // Photos are compressed before upload, so only PDFs need the strict limit.
+    const isPdf = file.type === 'application/pdf' || file.name?.toLowerCase().endsWith('.pdf');
+    const limitMB = isPdf ? 8 : 25;
+    if (file.size > limitMB * 1024 * 1024) {
+      setError(`Payment proof is too large. Maximum size is ${limitMB}MB.`);
       setProofFile(null);
       return;
     }
@@ -368,8 +376,8 @@ const Checkout = () => {
                             <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, marginBottom: '8px', color: 'var(--brand-green)' }}>UPLOAD PROOF</label>
                             <input
                               type="file"
-                              accept="image/*,application/pdf"
-                              onChange={e => handleProofFileChange(e.target.files[0])}
+                              accept="image/jpeg,image/png,image/webp,application/pdf"
+                              onChange={e => { handleProofFileChange(e.target.files[0]); e.target.value = ''; }}
                               style={{ width: '100%', fontSize: '0.8rem', color: 'var(--text-secondary)' }}
                             />
                             {proofFile && <div style={{ marginTop: '5px', fontSize: '0.75rem', color: 'var(--brand-green)' }}>Attached: {proofFile.name}</div>}

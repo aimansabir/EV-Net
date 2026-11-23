@@ -105,6 +105,16 @@ const AVATAR_UPLOAD_RULES = {
   acceptedExtensions: ['.jpg', '.jpeg', '.png', '.webp']
 };
 
+const LISTING_PHOTO_UPLOAD_RULES = {
+  label: 'Charger photo',
+  maxSizeMB: 8,
+  acceptedTypes: ['image/jpeg', 'image/png', 'image/webp'],
+  acceptedExtensions: ['.jpg', '.jpeg', '.png', '.webp']
+};
+
+const LISTING_PHOTO_IMAGE_OPTIONS = { maxDimension: 1920, quality: 0.82 };
+const PHOTO_UPLOAD_TIMEOUT_MS = 60000;
+
 const VERIFICATION_UPLOAD_RULES = {
   label: 'Verification document',
   maxSizeMB: 8,
@@ -222,7 +232,7 @@ async function withOperationTimeout(promise, ms, message) {
   return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timeoutId));
 }
 
-function validateUploadFile(file, rules) {
+function validateUploadFile(file, rules, { checkSize = true } = {}) {
   if (!file) throw new Error(`${rules.label || 'File'} is required.`);
   if (typeof file !== 'object' || typeof file.name !== 'string') {
     throw new Error(`${rules.label || 'File'} is not a valid browser file.`);
@@ -234,9 +244,13 @@ function validateUploadFile(file, rules) {
   const allowedByExtension = (rules.acceptedExtensions || []).some(ext => fileName.endsWith(ext));
 
   if (!allowedByType && !allowedByExtension) {
+    if (/hei[cf]/.test(fileType) || /\.hei[cf]$/.test(fileName)) {
+      throw new Error(`${rules.label || 'File'}: iPhone HEIC photos aren't supported. Please choose a JPG or PNG (or take a screenshot of the photo).`);
+    }
     throw new Error(`${rules.label || 'File'} must be ${rules.acceptedExtensions.join(', ')}.`);
   }
 
+  if (!checkSize) return;
   const maxBytes = (rules.maxSizeMB || 5) * 1024 * 1024;
   if (file.size > maxBytes) {
     throw new Error(`${rules.label || 'File'} is too large. Maximum size is ${rules.maxSizeMB}MB.`);
@@ -353,32 +367,39 @@ function canvasToBlob(canvas, type, quality) {
   });
 }
 
-async function optimizeVerificationUploadFile(file) {
+/**
+ * Downscale + re-encode large photos in the browser before upload.
+ * Phone camera images (5-12 MB) become ~200-600 KB, which is what makes
+ * uploads finish reliably on mobile data. Non-images, small images and
+ * anything the browser can't decode are returned unchanged.
+ */
+async function optimizeImageFile(file, { maxDimension = 1600, quality = 0.82, minBytes = 700 * 1024 } = {}) {
   if (
     typeof window === 'undefined' ||
     typeof Image === 'undefined' ||
     !file?.type?.startsWith('image/') ||
-    file.size < 700 * 1024
+    file.type === 'image/gif' ||
+    file.type === 'image/svg+xml'
   ) {
     return file;
   }
 
-  const maxDimension = 1600;
-  const outputType = 'image/jpeg';
-  const quality = 0.82;
   const objectUrl = URL.createObjectURL(file);
 
   try {
     const img = await new Promise((resolve, reject) => {
       const image = new Image();
       image.onload = () => resolve(image);
-      image.onerror = () => reject(new Error('Could not optimize image before upload.'));
+      image.onerror = () => reject(new Error('Could not read image before upload.'));
       image.src = objectUrl;
     });
 
-    const ratio = Math.min(1, maxDimension / Math.max(img.width, img.height));
-    const width = Math.max(1, Math.round(img.width * ratio));
-    const height = Math.max(1, Math.round(img.height * ratio));
+    const longestSide = Math.max(img.naturalWidth || img.width, img.naturalHeight || img.height);
+    if (file.size < minBytes && longestSide <= maxDimension) return file;
+
+    const ratio = Math.min(1, maxDimension / longestSide);
+    const width = Math.max(1, Math.round((img.naturalWidth || img.width) * ratio));
+    const height = Math.max(1, Math.round((img.naturalHeight || img.height) * ratio));
 
     const canvas = document.createElement('canvas');
     canvas.width = width;
@@ -386,21 +407,52 @@ async function optimizeVerificationUploadFile(file) {
     const context = canvas.getContext('2d');
     if (!context) return file;
 
+    // JPEG has no transparency: paint white first so PNG cut-outs don't go black.
+    context.fillStyle = '#ffffff';
+    context.fillRect(0, 0, width, height);
     context.drawImage(img, 0, 0, width, height);
+
+    const outputType = 'image/jpeg';
     const blob = await canvasToBlob(canvas, outputType, quality);
     if (!blob || blob.size >= file.size) return file;
 
-    const baseName = file.name.replace(/\.[^.]+$/, '') || 'document';
-    return new File([blob], `${baseName}.jpg`, {
-      type: outputType,
-      lastModified: Date.now()
-    });
+    const baseName = file.name.replace(/\.[^.]+$/, '') || 'image';
+    return new File([blob], `${baseName}.jpg`, { type: outputType, lastModified: Date.now() });
   } catch (err) {
     console.warn('[EV-Net] Image optimization skipped:', err.message);
     return file;
   } finally {
     URL.revokeObjectURL(objectUrl);
   }
+}
+
+function optimizeVerificationUploadFile(file) {
+  return optimizeImageFile(file, { maxDimension: 1600, quality: 0.82 });
+}
+
+/**
+ * Validate type -> compress -> validate size. Size is checked AFTER
+ * compression so ordinary phone photos aren't rejected as "too large".
+ */
+async function prepareUploadFile(file, rules, imageOptions) {
+  validateUploadFile(file, rules, { checkSize: false });
+  const prepared = await optimizeImageFile(file, imageOptions);
+  validateUploadFile(prepared, rules);
+  return prepared;
+}
+
+/** Run async tasks with limited parallelism (keeps mobile uploads stable). */
+async function mapWithConcurrency(items, limit, worker) {
+  const results = new Array(items.length);
+  let next = 0;
+  const runners = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) {
+      const index = next++;
+      results[index] = await worker(items[index], index);
+    }
+  });
+  await Promise.all(runners);
+  return results;
 }
 
 async function createVerificationSignedUrl(path) {
@@ -1010,10 +1062,12 @@ export const profileService = {
 
   async uploadAvatar(userId, file, role) {
     if (!file) throw new Error("No file provided");
-    validateUploadFile(file, AVATAR_UPLOAD_RULES);
+    file = await prepareUploadFile(file, AVATAR_UPLOAD_RULES, { maxDimension: 512, quality: 0.85, minBytes: 200 * 1024 });
 
     const fileExt = getFileExtension(file, 'jpg');
-    const filePath = `${userId}/avatar.${fileExt}`;
+    // Unique name per upload so browsers/CDN don't keep showing the old
+    // cached photo; the previous file is removed below.
+    const filePath = `${userId}/avatar_${Date.now()}.${fileExt}`;
     const table = role === 'HOST' ? 'host_profiles' : 'ev_profiles';
 
     // 1. Get current path to delete if it changes
@@ -1050,7 +1104,9 @@ export const profileService = {
 
     // 4. Cleanup old if path changed (different extension)
     if (oldPath && oldPath !== filePath) {
-      await supabase.storage.from('profile_avatars').remove([oldPath]);
+      // Best-effort cleanup; never block or fail the upload on it.
+      supabase.storage.from('profile_avatars').remove([oldPath])
+        .catch(err => console.warn('[EV-Net] Old avatar cleanup failed:', err?.message));
     }
 
     clearProfileCache(userId);
@@ -1350,20 +1406,25 @@ export const listingService = {
     // 3. Upload and insert photos
     if (data.images && data.images.length > 0) {
       debugLog(`[EV-Net] listingService.create: Starting upload for ${data.images.length} photos...`);
-      const uploadedPaths = await Promise.all(data.images.map(async (image, index) => {
-        const file = image?.file || image;
-        if (typeof file === 'string') return file;
+      const uploadedPaths = await mapWithConcurrency(data.images, 3, async (image, index) => {
+        const rawFile = image?.file || image;
+        if (typeof rawFile === 'string') return rawFile;
 
+        const file = await prepareUploadFile(rawFile, LISTING_PHOTO_UPLOAD_RULES, LISTING_PHOTO_IMAGE_OPTIONS);
         const extension = getFileExtension(file, 'jpg');
         const filePath = `${data.hostId}/${listing.id}/${Date.now()}_${index}.${extension}`;
         
         debugLog(`[EV-Net] Uploading photo ${index + 1} to 'listing_photos' bucket at: ${filePath}`);
-        const { error: uploadError } = await supabase.storage
-          .from('listing_photos')
-          .upload(filePath, file, {
-            upsert: true,
-            contentType: file.type || 'image/jpeg'
-          });
+        const { error: uploadError } = await withOperationTimeout(
+          supabase.storage
+            .from('listing_photos')
+            .upload(filePath, file, {
+              upsert: true,
+              contentType: file.type || 'image/jpeg'
+            }),
+          PHOTO_UPLOAD_TIMEOUT_MS,
+          `Photo ${index + 1} upload timed out. Please check your connection and retry.`
+        );
 
         if (uploadError) {
           console.error(`[EV-Net] Error uploading photo ${index + 1}:`, uploadError);
@@ -1371,7 +1432,7 @@ export const listingService = {
         }
         debugLog(`[EV-Net] Photo ${index + 1} uploaded successfully.`);
         return filePath;
-      }));
+      });
 
       debugLog("[EV-Net] listingService.create: Inserting photo metadata rows...");
       const photoRows = uploadedPaths.map((path, index) => ({
@@ -1648,20 +1709,24 @@ export const listingService = {
     let nextOrder = currentPhotos && currentPhotos.length > 0 ? currentPhotos[0].display_order + 1 : 0;
 
     // 2. Upload files
-    const uploadedPaths = await Promise.all(uploadableFiles.map(async (image, index) => {
-      const file = image?.file || image;
+    const uploadedPaths = await mapWithConcurrency(uploadableFiles, 3, async (image, index) => {
+      const file = await prepareUploadFile(image?.file || image, LISTING_PHOTO_UPLOAD_RULES, LISTING_PHOTO_IMAGE_OPTIONS);
       const extension = getFileExtension(file, 'jpg');
       const filePath = `${hostId}/${listingId}/${Date.now()}_added_${index}.${extension}`;
-      const { error: uploadError } = await supabase.storage
-        .from('listing_photos')
-        .upload(filePath, file, {
-          upsert: true,
-          contentType: file.type || 'image/jpeg'
-        });
+      const { error: uploadError } = await withOperationTimeout(
+        supabase.storage
+          .from('listing_photos')
+          .upload(filePath, file, {
+            upsert: true,
+            contentType: file.type || 'image/jpeg'
+          }),
+        PHOTO_UPLOAD_TIMEOUT_MS,
+        `Photo ${index + 1} upload timed out. Please check your connection and retry.`
+      );
 
       if (uploadError) throw uploadError;
       return filePath;
-    }));
+    });
 
     // 3. Insert rows
     const photoRows = uploadedPaths.map((path, index) => ({
@@ -1955,8 +2020,7 @@ export const bookingService = {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Please log in before reserving.');
 
-      const file = data.paymentProofFile;
-      validateUploadFile(file, PAYMENT_PROOF_UPLOAD_RULES);
+      const file = await prepareUploadFile(data.paymentProofFile, PAYMENT_PROOF_UPLOAD_RULES, { maxDimension: 2000, quality: 0.85 });
       const extension = getFileExtension(file, 'jpg');
       const filePath = `${user.id}/${Date.now()}_payment_proof.${extension}`;
 
@@ -2247,7 +2311,7 @@ export const bookingService = {
   async uploadPaymentProof(bookingId, file) {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error("Not authenticated");
-    validateUploadFile(file, PAYMENT_PROOF_UPLOAD_RULES);
+    file = await prepareUploadFile(file, PAYMENT_PROOF_UPLOAD_RULES, { maxDimension: 2000, quality: 0.85 });
 
     const extension = getFileExtension(file, 'jpg');
     const filePath = `${user.id}/${Date.now()}_payment_proof.${extension}`;
@@ -3267,9 +3331,7 @@ export const onboardingPaymentService = {
     if (data.method === 'BANK_TRANSFER' && data.screenshot) {
       debugLog("[EV-Net] Uploading payment proof");
       const screenshotFile = data.screenshot?.file || data.screenshot;
-      validateUploadFile(screenshotFile, PAYMENT_PROOF_UPLOAD_RULES);
-
-      const screenshotUploadFile = await optimizeVerificationUploadFile(screenshotFile);
+      const screenshotUploadFile = await prepareUploadFile(screenshotFile, PAYMENT_PROOF_UPLOAD_RULES, { maxDimension: 2000, quality: 0.85 });
       const extension = getFileExtension(screenshotUploadFile, screenshotUploadFile.type === 'image/jpeg' ? 'jpg' : 'png');
       const safeListingId = data.listingId || 'general';
       const fileName = `${safeListingId}_${Date.now()}.${extension}`;
@@ -4089,7 +4151,7 @@ export const verificationService = {
    */
   async uploadDocument(userId, profileType, documentType, file, options = {}) {
     if (!file) throw new Error("No file provided");
-    validateUploadFile(file, VERIFICATION_UPLOAD_RULES);
+    validateUploadFile(file, VERIFICATION_UPLOAD_RULES, { checkSize: false });
     
     // 0. Ensure session exists
     const { data: { session } } = await supabase.auth.getSession();
@@ -4102,6 +4164,7 @@ export const verificationService = {
     debugLog(`[EV-Net] Starting upload for ${documentType} (User: ${userId})...`);
 
     const uploadFile = await optimizeVerificationUploadFile(file);
+    validateUploadFile(uploadFile, VERIFICATION_UPLOAD_RULES);
     const fileExt = getFileExtension(uploadFile, uploadFile.type === 'image/jpeg' ? 'jpg' : 'bin');
     const filePath = `${sessionUserId}/${documentType}_${Date.now()}.${fileExt}`;
     const normalizedProfileType = profileType === 'HOST' ? 'HOST' : 'EV_USER';

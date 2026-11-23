@@ -278,7 +278,7 @@ const Bookings = () => {
                             fontSize: '0.75rem', fontWeight: 700, cursor: isUploading ? 'not-allowed' : 'pointer', transition: 'all 0.2s' 
                           }}>
                             {isUploading ? 'Uploading...' : 'Upload Payment Proof'}
-                            <input type="file" accept="image/*,application/pdf" style={{ display: 'none' }} disabled={isUploading} onChange={(e) => handleUploadProof(booking.id, e.target.files[0])} />
+                            <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" style={{ display: 'none' }} disabled={isUploading} onChange={(e) => { const f = e.target.files[0]; e.target.value = ''; if (f) handleUploadProof(booking.id, f); }} />
                           </label>
                         )}
                         {booking.status === 'COMPLETED' && (
