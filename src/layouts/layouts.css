@@ -172,3 +172,22 @@
     justify-content: center;
   }
 }
+
+/* Admin conversation moderation: fixed list width on desktop only. */
+.admin-conv-layout {
+  height: 700px;
+}
+
+@media (min-width: 901px) {
+  .admin-conv-sidebar {
+    width: 400px;
+    min-width: 400px;
+  }
+}
+
+@media (max-width: 900px) {
+  .admin-conv-layout {
+    height: calc(100dvh - 220px);
+    min-height: 420px;
+  }
+}

@@ -221,8 +221,8 @@ const AdminDashboard = () => {
         {rows.length === 0 ? (
           <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>No records found.</div>
         ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
+          <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+            <table style={{ width: '100%', minWidth: '720px', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
                   {columns.map(c => <th key={c.key} style={{ textAlign: 'left', padding: '0.75rem', color: 'var(--text-secondary)' }}>{c.label}</th>)}
@@ -349,7 +349,7 @@ const AdminDashboard = () => {
         {/* Row 1: Business Metrics */}
         <div style={{ marginBottom: '3rem' }}>
           <h3 style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: '1.5rem', fontWeight: 700 }}>Business Performance</h3>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.5rem' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(240px, 100%), 1fr))', gap: '1.5rem' }}>
             {businessCards.map((card, i) => {
               const Icon = card.icon;
               return (
@@ -369,7 +369,7 @@ const AdminDashboard = () => {
         {/* Row 2: Moderation Queue */}
         <div style={{ marginBottom: '3rem' }}>
           <h3 style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: '1.5rem', fontWeight: 700 }}>Moderation & Safety</h3>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.5rem' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(240px, 100%), 1fr))', gap: '1.5rem' }}>
             {moderationCards.map((card, i) => {
               const Icon = card.icon;
               return (

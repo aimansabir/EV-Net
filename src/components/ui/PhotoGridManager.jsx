@@ -80,7 +80,7 @@ const PhotoGridManager = ({
 
       <div style={{
           display: 'grid', 
-          gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(min(140px, 100%), 1fr))',
           gap: '1rem',
           marginBottom: '1rem'
       }}>

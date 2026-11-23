@@ -9,6 +9,7 @@ import 'leaflet/dist/leaflet.css'
 import 'react-datepicker/dist/react-datepicker.css'
 import './styles/auth.css'
 import './styles/calendar.css'
+import './styles/reserve.css'
 import './pages/app/Explore.css'
 import './pages/app/Messages.css'
 

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { adminService, messagingService } from '../../data/api';
-import { MessageSquare, ShieldAlert, Lock, Unlock, Eye, MapPin, XCircle, AlertTriangle, ShieldX } from 'lucide-react';
+import { ArrowLeft, MessageSquare, ShieldAlert, Lock, Unlock, Eye, MapPin, XCircle, AlertTriangle, ShieldX } from 'lucide-react';
 import '../app/Messages.css'; // Reuse core chat structures
 
 const AdminConversations = () => {
@@ -57,16 +57,16 @@ const AdminConversations = () => {
     <div className="section" style={{ minHeight: '100vh', padding: '2rem' }}>
       <div className="container" style={{ maxWidth: '1400px' }}>
         <div style={{ marginBottom: '2.5rem' }}>
-          <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '2.2rem', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: 'clamp(1.6rem, 5vw, 2.2rem)', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '12px' }}>
             <MessageSquare size={32} style={{ color: '#fb7185' }} />
             Conversation Moderation
           </h2>
           <p style={{ color: 'var(--text-secondary)' }}>Review reported messages and take appropriate actions against policy violations.</p>
         </div>
 
-        <div className="messages-layout" style={{ height: '700px', marginTop: 0 }}>
-          {/* List View */}
-          <div className="messages-sidebar glass-card" style={{ width: '400px', minWidth: '400px' }}>
+        <div className="messages-layout admin-conv-layout" style={{ marginTop: 0 }}>
+          {/* List View — hidden on phones while a conversation is open */}
+          <div className={`messages-sidebar glass-card admin-conv-sidebar ${selectedConv ? 'hide-on-mobile' : ''}`}>
             <div style={{ padding: '1.5rem', borderBottom: '1px solid var(--border-color)', display: 'flex', gap: '10px' }}>
                <select className="input-field" style={{ padding: '0.6rem', width: '100%' }}>
                   <option value="ALL">All Conversations</option>
@@ -102,12 +102,15 @@ const AdminConversations = () => {
           </div>
 
           {/* Audit View */}
-          <div className="messages-main glass-card" style={{ display: 'flex', flexDirection: 'column' }}>
+          <div className={`messages-main glass-card ${!selectedConv ? 'hide-on-mobile' : ''}`} style={{ display: 'flex', flexDirection: 'column' }}>
             {selectedConv ? (
               <>
                 <div className="chat-header" style={{ borderBottom: '1px solid rgba(225, 29, 72, 0.3)', background: 'rgba(225, 29, 72, 0.02)' }}>
-                  <div>
-                    <h3 style={{ margin: '0 0 0.5rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <button type="button" className="back-btn mobile-only" onClick={() => setSelectedConv(null)} aria-label="Back to conversations">
+                    <ArrowLeft size={20} />
+                  </button>
+                  <div style={{ minWidth: 0 }}>
+                    <h3 style={{ margin: '0 0 0.5rem', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', overflowWrap: 'anywhere' }}>
                       Audit Log: {selectedConv.id}
                       <span style={{ fontSize: '0.75rem', padding: '2px 8px', background: 'var(--bg-main)', borderRadius: '20px', border: '1px solid var(--border-color)' }}>
                          Type: {selectedConv.type}

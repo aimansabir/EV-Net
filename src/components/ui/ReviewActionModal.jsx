@@ -241,7 +241,7 @@ const ReviewActionModal = ({ isOpen, onClose, user, targetType = 'evType', submi
                   <p style={{ margin: 0, color: 'var(--text-secondary)' }}>No document paths found in this submission record.</p>
                 </div>
               ) : (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '1.5rem', marginBottom: '2rem' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(300px, 100%), 1fr))', gap: '1.5rem', marginBottom: '2rem' }}>
                    {realDocs.map(doc => (
                        <div key={doc.id} style={{ border: '1px solid var(--border-color)', borderRadius: '12px', overflow: 'hidden', background: 'rgba(0,0,0,0.2)' }}>
                           <div style={{ minHeight: '180px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>

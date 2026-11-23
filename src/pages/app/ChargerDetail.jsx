@@ -28,6 +28,7 @@ import { messagingService } from '../../data/api';
 import { getFuzzyCoordinates } from '../../data/cityCoordinates';
 import 'react-datepicker/dist/react-datepicker.css';
 import '../../styles/calendar.css';
+import '../../styles/reserve.css';
 import 'leaflet/dist/leaflet.css';
 
 const smallIcon = new L.DivIcon({ className: 'custom-map-marker', html: `<div class="marker-pin"></div>`, iconSize: [20, 20], iconAnchor: [10, 10] });
@@ -42,6 +43,12 @@ const formatTime12h = (time24) => {
   return `${hour}:${minuteStr} ${ampm}`;
 };
 
+const VEHICLE_LABELS = {
+  SMALL: { name: 'Small car', hint: 'Hatchbacks and compact city EVs' },
+  MEDIUM: { name: 'Mid-size', hint: 'Sedans, crossovers and compact SUVs' },
+  LARGE: { name: 'Large SUV', hint: 'Full-size SUVs, pickups and luxury EVs' },
+};
+
 const ChargerDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -53,7 +60,6 @@ const ChargerDetail = () => {
   const [isDurationOpen, setIsDurationOpen] = useState(false);
   const [vehicleSize, setVehicleSize] = useState(VEHICLE_SIZES.SMALL);
   const [isStartOpen, setIsStartOpen] = useState(false);
-  const [isVehicleOpen, setIsVehicleOpen] = useState(false);
   const [isCreatingInquiry, setIsCreatingInquiry] = useState(false);
   const [inquiryError, setInquiryError] = useState('');
   const { user } = useAuthStore();
@@ -153,7 +159,6 @@ const ChargerDetail = () => {
     const handleClickOutside = (e) => {
       if (!e.target.closest('.custom-dropdown-container')) {
         setIsStartOpen(false);
-        setIsVehicleOpen(false);
         setIsDurationOpen(false);
       }
     };
@@ -162,6 +167,18 @@ const ChargerDetail = () => {
   }, []);
 
   const loadErrorMessage = listingLoadError?.message || 'Could not load charger details.';
+
+  // Only claim availability we can actually see in the loaded slots.
+  const isSelectedDateToday = (() => {
+    const d = selectedDate instanceof Date ? selectedDate : new Date(selectedDate);
+    return d.toDateString() === new Date().toDateString();
+  })();
+  const hasOpenSlots = slots.some(slot => !slot.isBooked);
+  const availabilityChip = slotsLoading
+    ? null
+    : hasOpenSlots
+      ? { label: isSelectedDateToday ? 'Available today' : 'Available', tone: 'ok' }
+      : { label: 'Fully booked', tone: 'warn' };
 
   if (loading) return <div className="section" style={{ minHeight: 'calc(100vh - 72px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><div style={{ color: 'var(--text-secondary)' }}>Loading...</div></div>;
   if (!listing) return <div className="section" style={{ minHeight: 'calc(100vh - 72px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><div className="glass-card" style={{ padding: '2rem', textAlign: 'center' }}><div>{loadErrorMessage || 'Listing not found'}</div><button className="btn btn-secondary" onClick={() => refreshListing({ force: true, silent: false })} style={{ marginTop: '1rem' }}>Retry</button></div></div>;
@@ -413,7 +430,7 @@ const ChargerDetail = () => {
               {listing.amenities?.length > 0 && (
                 <div style={{ marginBottom: '2rem' }}>
                   <h3 style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem', marginBottom: '1rem' }}>Amenities & Features</h3>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '0.75rem' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(180px, 100%), 1fr))', gap: '0.75rem' }}>
                     {listing.amenities.map((amenity, i) => {
                       const icon = amenityIconsMap[amenity.toLowerCase()] || <CheckCircle size={18} style={{ opacity: 0.5 }} />;
                       return (
@@ -581,214 +598,122 @@ const ChargerDetail = () => {
             {/* Right Column — Booking Card */}
             <div className="col-lg-5" id="reserve">
               <div style={{ position: 'sticky', top: '100px' }}>
-                <div className="glass-card" style={{ width: '100%', maxWidth: '620px', marginLeft: 'auto', padding: '2rem', borderRadius: '24px', position: 'relative', overflow: 'visible' }}>
-                  {/* Main Header - Pricing Summary */}
-                  <div style={{ marginBottom: '2rem' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                      <div>
-                        <h3 style={{ fontSize: '1.3rem', fontWeight: 800, color: '#fff', marginBottom: '0.4rem' }}>Reserve Session</h3>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                          {hasEnergyPricing ? (
-                            <div className="modern-pricing-pill" style={{ display: 'flex', alignItems: 'center', gap: '0.8rem', background: 'rgba(255,255,255,0.03)', padding: '0.4rem 0.8rem', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
-                              <span style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--brand-green)' }}>{formatPKR(fees.rateUsed)} <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 400 }}>{'/ kWh'}</span></span>
-                              <div style={{ width: '1px', height: '12px', background: 'rgba(255,255,255,0.1)' }} />
-                              <span style={{ fontSize: '0.6rem', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '1px', color: currentBand === PRICING_BAND.DAY ? 'var(--brand-cyan)' : '#fbbf24', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                {currentBand === PRICING_BAND.DAY ? <Zap size={10} /> : <Moon size={10} />}
-                                {currentBand}
-                              </span>
-                            </div>
-                          ) : (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                              <span style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--brand-green)' }}>{formatPKR(listing.pricePerHour)} <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', fontWeight: 400 }}>{'/ hr'}</span></span>
-                              <div style={{ fontSize: '0.6rem', color: 'var(--text-secondary)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '1px' }}>Legacy Hourly Rate</div>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                      <div style={{
-                        position: 'absolute',
-                        top: '1rem',
-                        right: '1rem',
-                        background: 'rgba(0,210,106,0.1)',
-                        padding: '0.2rem 0.4rem',
-                        borderRadius: '4px',
-                        border: '1px solid rgba(0,210,106,0.2)',
-                        height: 'fit-content'
-                      }}>
-                        <span style={{ fontSize: '0.55rem', fontWeight: 800, color: 'var(--brand-green)', textTransform: 'uppercase' }}>Available Today</span>
-                      </div>
+                <div className="glass-card reserve-card">
+                  {/* Header: title, availability, price */}
+                  <div className="reserve-header">
+                    <div className="reserve-title-row">
+                      <h3 className="reserve-title">Reserve a session</h3>
+                      {availabilityChip && (
+                        <span className={`reserve-chip reserve-chip--${availabilityChip.tone}`}>{availabilityChip.label}</span>
+                      )}
                     </div>
+                    {hasEnergyPricing ? (
+                      <div className="reserve-price">
+                        <span className="reserve-price-value">{formatPKR(fees.rateUsed)}</span>
+                        <span className="reserve-price-unit">/ kWh</span>
+                        <span className={`reserve-band ${currentBand === PRICING_BAND.DAY ? 'is-day' : 'is-night'}`}>
+                          {currentBand === PRICING_BAND.DAY ? <Zap size={11} /> : <Moon size={11} />}
+                          {currentBand === PRICING_BAND.DAY ? 'Day rate' : 'Night rate'}
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="reserve-price">
+                        <span className="reserve-price-value">{formatPKR(listing.pricePerHour)}</span>
+                        <span className="reserve-price-unit">/ hr</span>
+                      </div>
+                    )}
                   </div>
 
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', marginBottom: '2rem' }}>
-                    {/* Date — Full Width */}
-                    <div style={{ border: '1px solid var(--border-color)', padding: '1rem', borderRadius: '12px', background: 'rgba(255,255,255,0.02)', boxShadow: 'inset 0 1px 1px rgba(255,255,255,0.05)' }}>
-                      <label style={{ display: 'block', fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: '1.2px', color: 'var(--text-secondary)', marginBottom: '0.6rem', fontWeight: 800 }}>Choose Date</label>
+                  <div className="reserve-fields">
+                    {/* Date */}
+                    <div className="reserve-field">
+                      <label className="reserve-label">Date</label>
                       <DatePicker
                         selected={selectedDate instanceof Date ? selectedDate : new Date(selectedDate)}
                         onChange={(date) => setSelectedDate(date)}
                         minDate={new Date()}
                         dateFormat="EEEE, MMMM d, yyyy"
                         customInput={
-                          <button className="custom-date-input" style={{ width: '100%', border: 'none', background: 'transparent', display: 'flex', alignItems: 'center', gap: '12px', color: '#fff', fontSize: '1rem', padding: 0, textAlign: 'left', cursor: 'pointer' }}>
-                            <div style={{ background: 'rgba(0,210,106,0.1)', padding: '8px', borderRadius: '8px' }}><Calendar size={20} color="var(--brand-green)" /></div>
-                            <span style={{ fontWeight: 600 }}>{selectedDate instanceof Date ? selectedDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }) : new Date(selectedDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                          <button type="button" className="reserve-control">
+                            <Calendar size={18} color="var(--brand-green)" />
+                            <span className="reserve-control-value">
+                              {(selectedDate instanceof Date ? selectedDate : new Date(selectedDate)).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
+                            </span>
+                            <ChevronDown size={16} className="reserve-chevron" />
                           </button>
                         }
                       />
                     </div>
 
-                    {/* Row 2 — Time and Duration */}
-                    <div style={{ display: 'flex', gap: '16px' }}>
-                      {/* Start Time Dropdown */}
-                      <div className="custom-dropdown-container" style={{ flex: 1, position: 'relative' }}>
-                        <label style={{ display: 'block', fontSize: '0.65rem', color: 'var(--text-secondary)', marginBottom: '0.4rem', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 800 }}>Arrival</label>
+                    {/* Arrival + Duration */}
+                    <div className="reserve-row">
+                      <div className="reserve-field custom-dropdown-container">
+                        <label className="reserve-label">Arrival</label>
                         <button
-                          onClick={() => setIsStartOpen(!isStartOpen)}
                           type="button"
-                          style={{
-                            width: '100%',
-                            height: '64px',
-                            background: 'rgba(255,255,255,0.03)',
-                            border: `1px solid ${isStartOpen ? 'var(--brand-green)' : 'var(--border-color)'}`,
-                            padding: '0.75rem 1rem',
-                            borderRadius: '12px',
-                            color: '#fff',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            gap: '12px',
-                            cursor: 'pointer',
-                            transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                            boxShadow: isStartOpen ? '0 8px 16px rgba(0,0,0,0.3)' : 'none',
-                            position: 'relative'
-                          }}
+                          className={`reserve-control ${isStartOpen ? 'is-open' : ''}`}
+                          onClick={() => { setIsStartOpen(!isStartOpen); setIsDurationOpen(false); }}
+                          aria-expanded={isStartOpen}
                         >
-                          <Clock size={18} color="var(--brand-green)" />
-                          <span style={{ fontSize: '1rem', fontWeight: 700 }}>
-                            {selectedStart ? formatTime12h(selectedStart) : 'Select'}
+                          <span className={`reserve-control-value ${selectedStart ? '' : 'is-placeholder'}`}>
+                            {selectedStart ? formatTime12h(selectedStart) : 'Select time'}
                           </span>
-                          <ChevronDown size={16} style={{ opacity: 0.3, marginLeft: 'auto', transform: isStartOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+                          <ChevronDown size={16} className="reserve-chevron" />
                         </button>
 
                         {isStartOpen && (
-                          <div style={{
-                            position: 'absolute', 
-                            top: '100%', 
-                            left: 0, 
-                            width: '100%', 
-                            marginTop: '10px',
-                            background: '#1a1a1a', 
-                            border: '1px solid rgba(255,255,255,0.15)',
-                            borderRadius: '12px', 
-                            overflow: 'hidden', 
-                            zIndex: 9999,
-                            boxShadow: '0 20px 60px rgba(0,0,0,0.9)', 
-                            backdropFilter: 'blur(40px)',
-                            minHeight: '40px'
-                          }}>
-                            <div style={{ maxHeight: '240px', overflowY: 'auto', padding: '6px' }}>
-                              {slotsLoading ? (
-                                <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
-                                  Loading hours...
-                                </div>
-                              ) : slots.length === 0 ? (
-                                <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
-                                  No hours available
-                                </div>
-                              ) : (
-                                slots.map(s => (
+                          <div className="reserve-popover reserve-popover--wide" role="listbox" aria-label="Arrival time">
+                            {slotsLoading ? (
+                              <div className="reserve-popover-empty">Loading times…</div>
+                            ) : slots.length === 0 ? (
+                              <div className="reserve-popover-empty">No times available on this date.</div>
+                            ) : (
+                              <div className="reserve-chip-grid">
+                                {slots.map(slot => (
                                   <button
-                                    key={s.startTime}
-                                    disabled={s.isBooked}
-                                    onClick={() => { 
-                                      if (!s.isBooked) {
-                                        setSelectedStart(s.startTime); 
-                                        setIsStartOpen(false); 
-                                      }
-                                    }}
-                                    style={{
-                                      width: '100%', 
-                                      padding: '0.8rem 1rem', 
-                                      background: 'transparent',
-                                      border: 'none', 
-                                      color: s.isBooked ? '#4b5563' : (selectedStart === s.startTime ? 'var(--brand-green)' : '#fff'),
-                                      textAlign: 'left', 
-                                      cursor: s.isBooked ? 'not-allowed' : 'pointer', 
-                                      fontSize: '0.95rem',
-                                      display: 'flex', 
-                                      alignItems: 'center', 
-                                      justifyContent: 'space-between',
-                                      borderRadius: '8px', 
-                                      transition: 'background 0.2s',
-                                      marginBottom: '2px',
-                                      opacity: s.isBooked ? 0.6 : 1
-                                    }}
-                                    onMouseOver={e => !s.isBooked && (e.currentTarget.style.background = 'rgba(255,255,255,0.08)')}
-                                    onMouseOut={e => !s.isBooked && (e.currentTarget.style.background = 'transparent')}
+                                    type="button"
+                                    key={slot.startTime}
+                                    role="option"
+                                    aria-selected={selectedStart === slot.startTime}
+                                    disabled={slot.isBooked}
+                                    title={slot.isBooked ? 'Already booked' : undefined}
+                                    className={`reserve-option ${selectedStart === slot.startTime ? 'is-selected' : ''}`}
+                                    onClick={() => { setSelectedStart(slot.startTime); setIsStartOpen(false); }}
                                   >
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                      {formatTime12h(s.startTime)}
-                                      {s.isBooked && <span style={{ fontSize: '0.65rem', background: 'rgba(239,68,68,0.1)', color: '#ef4444', padding: '2px 6px', borderRadius: '4px' }}>Booked</span>}
-                                    </div>
-                                    {selectedStart === s.startTime && <CheckCircle size={14} color="var(--brand-green)" />}
+                                    {formatTime12h(slot.startTime)}
                                   </button>
-                                ))
-                              )}
-                            </div>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
 
-                      {/* Duration Dropdown */}
-                      <div className="custom-dropdown-container" style={{ flex: 0.7, position: 'relative' }}>
-                        <label style={{ display: 'block', fontSize: '0.65rem', color: 'var(--text-secondary)', marginBottom: '0.4rem', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 800 }}>Duration</label>
+                      <div className="reserve-field custom-dropdown-container">
+                        <label className="reserve-label">Duration</label>
                         <button
-                          onClick={() => setIsDurationOpen(!isDurationOpen)}
                           type="button"
-                          style={{
-                            width: '100%',
-                            height: '64px',
-                            background: 'rgba(255,255,255,0.03)',
-                            border: `1px solid ${isDurationOpen ? 'var(--brand-green)' : 'var(--border-color)'}`,
-                            padding: '0.75rem 1rem',
-                            borderRadius: '12px',
-                            color: '#fff',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            gap: '8px',
-                            cursor: 'pointer',
-                            transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                            boxShadow: isDurationOpen ? '0 8px 16px rgba(0,0,0,0.3)' : 'none'
-                          }}
+                          className={`reserve-control ${isDurationOpen ? 'is-open' : ''}`}
+                          onClick={() => { setIsDurationOpen(!isDurationOpen); setIsStartOpen(false); }}
+                          aria-expanded={isDurationOpen}
                         >
-                          <span style={{ fontSize: '1rem', fontWeight: 700 }}>{duration} hr</span>
-                          <ChevronDown size={14} style={{ opacity: 0.3, marginLeft: 'auto', transform: isDurationOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+                          <span className="reserve-control-value">{duration} {duration === 1 ? 'hour' : 'hours'}</span>
+                          <ChevronDown size={16} className="reserve-chevron" />
                         </button>
 
                         {isDurationOpen && (
-                          <div style={{
-                            position: 'absolute', top: '100%', right: 0, width: '120px', marginTop: '10px',
-                            background: '#1a1a1a', border: '1px solid rgba(255,255,255,0.15)',
-                            borderRadius: '12px', overflow: 'hidden', zIndex: 9999,
-                            boxShadow: '0 20px 60px rgba(0,0,0,0.9)', backdropFilter: 'blur(40px)'
-                          }}>
-                            <div style={{ padding: '6px' }}>
+                          <div className="reserve-popover reserve-popover--right" role="listbox" aria-label="Duration">
+                            <div className="reserve-chip-grid reserve-chip-grid--duration">
                               {[1, 2, 3, 4, 6, 8, 12].map(h => (
                                 <button
+                                  type="button"
                                   key={h}
+                                  role="option"
+                                  aria-selected={duration === h}
+                                  className={`reserve-option ${duration === h ? 'is-selected' : ''}`}
                                   onClick={() => { setDuration(h); setIsDurationOpen(false); }}
-                                  style={{
-                                    width: '100%', padding: '0.8rem', background: 'transparent',
-                                    border: 'none', color: duration === h ? 'var(--brand-green)' : '#fff',
-                                    textAlign: 'center', cursor: 'pointer', fontSize: '0.95rem',
-                                    borderRadius: '8px', transition: 'background 0.2s'
-                                  }}
-                                  onMouseOver={e => e.currentTarget.style.background = 'rgba(255,255,255,0.08)'}
-                                  onMouseOut={e => e.currentTarget.style.background = 'transparent'}
                                 >
-                                  {h} hr
+                                  {h}h
                                 </button>
                               ))}
                             </div>
@@ -797,123 +722,67 @@ const ChargerDetail = () => {
                       </div>
                     </div>
 
-                    {/* Row 3 — Vehicle Size */}
+                    {/* Vehicle: three options, so a segmented control instead of a dropdown */}
                     {hasEnergyPricing && (
-                      <div className="custom-dropdown-container" style={{ width: '100%', position: 'relative' }}>
-                          <label style={{ display: 'block', fontSize: '0.65rem', color: 'var(--text-secondary)', marginBottom: '0.4rem', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 800 }}>Vehicle</label>
-                          <button
-                            onClick={() => setIsVehicleOpen(!isVehicleOpen)}
-                            style={{
-                              width: '100%',
-                              height: '64px',
-                              background: 'rgba(255,255,255,0.03)',
-                              border: `1px solid ${isVehicleOpen ? 'var(--brand-green)' : 'var(--border-color)'}`,
-                              padding: '0.75rem 1.25rem',
-                              borderRadius: '12px',
-                              color: '#fff',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              gap: '12px',
-                              cursor: 'pointer',
-                              transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                              boxShadow: isVehicleOpen ? '0 8px 16px rgba(0,0,0,0.3)' : 'none'
-                            }}
-                          >
-                            <Zap size={18} color="var(--brand-green)" />
-                            <span style={{ fontSize: '1rem', fontWeight: 700 }}>{vehicleSize === 'MEDIUM' ? 'Medium-size' : vehicleSize.charAt(0) + vehicleSize.slice(1).toLowerCase()}</span>
-                            <div style={{ fontSize: '0.85rem', color: 'var(--brand-cyan)', fontWeight: 700, marginLeft: 'auto' }}>{ENERGY_BY_SIZE[vehicleSize]} kWh</div>
-                            <ChevronDown size={16} style={{ opacity: 0.3, marginLeft: '8px', transform: isVehicleOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
-                          </button>
-
-                          {isVehicleOpen && (
-                            <div style={{
-                              position: 'absolute', top: '100%', left: 0, width: '100%', marginTop: '10px',
-                              background: '#1a1a1a', border: '1px solid rgba(255,255,255,0.15)',
-                              borderRadius: '16px', overflow: 'hidden', zIndex: 9999,
-                              boxShadow: '0 30px 80px rgba(0,0,0,0.95)', backdropFilter: 'blur(40px)'
-                            }}>
-                              <div style={{ padding: '8px' }}>
-                                {Object.keys(VEHICLE_SIZES).map(size => (
-                                  <button
-                                    key={size}
-                                    onClick={() => { setVehicleSize(size); setIsVehicleOpen(false); }}
-                                    style={{
-                                      width: '100%', padding: '1.25rem 1.5rem', background: 'transparent',
-                                      border: 'none', color: vehicleSize === size ? 'var(--brand-green)' : '#fff',
-                                      textAlign: 'left', cursor: 'pointer', fontSize: '0.95rem',
-                                      borderRadius: '12px', transition: 'all 0.2s',
-                                      display: 'flex', flexDirection: 'column', gap: '4px',
-                                      marginBottom: '6px'
-                                    }}
-                                    onMouseOver={e => e.currentTarget.style.background = 'rgba(255,255,255,0.08)'}
-                                    onMouseOut={e => e.currentTarget.style.background = 'transparent'}
-                                  >
-                                    <span style={{ fontWeight: 700, fontSize: '1.05rem', whiteSpace: 'nowrap', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                      {size === 'SMALL' ? 'Small Car (40 kWh)' : size === 'MEDIUM' ? 'Medium-size (60 kWh)' : 'Large SUV (80 kWh)'}
-                                      {vehicleSize === size && <CheckCircle size={14} color="var(--brand-green)" />}
-                                    </span>
-                                    <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: '1.4', opacity: 0.8 }}>
-                                      {size === 'SMALL' ? 'Ideal for Hatchbacks & small city EVs' : size === 'MEDIUM' ? 'Ideal for Sedans, Crossovers & compact SUVs' : 'Ideal for full-size SUVs, Trucks & Luxury EVs'}
-                                    </span>
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                          )}
+                      <div className="reserve-field">
+                        <span className="reserve-label" id="vehicle-label">Vehicle</span>
+                        <div className="reserve-segmented" role="radiogroup" aria-labelledby="vehicle-label">
+                          {Object.keys(VEHICLE_SIZES).map(size => (
+                            <button
+                              type="button"
+                              key={size}
+                              role="radio"
+                              aria-checked={vehicleSize === size}
+                              className={`reserve-segment ${vehicleSize === size ? 'is-selected' : ''}`}
+                              onClick={() => setVehicleSize(size)}
+                            >
+                              <span className="reserve-segment-name">{VEHICLE_LABELS[size]?.name || size}</span>
+                              <span className="reserve-segment-meta">{ENERGY_BY_SIZE[size]} kWh</span>
+                            </button>
+                          ))}
                         </div>
-                      )}
+                        <div className="reserve-hint">{VEHICLE_LABELS[vehicleSize]?.hint}</div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Microcopy Help Text */}
                   {hasEnergyPricing && currentBand === PRICING_BAND.NIGHT && (
-                    <div style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(251, 191, 36, 0.05)', padding: '0.8rem 1rem', borderRadius: '12px', border: '1px solid rgba(251, 191, 36, 0.2)' }}>
+                    <div style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(251, 191, 36, 0.05)', padding: '0.6rem 0.85rem', borderRadius: '10px', border: '1px solid rgba(251, 191, 36, 0.2)' }}>
                       <Moon size={14} color="#fbbf24" />
                       <span style={{ fontSize: '0.85rem', color: '#fbbf24', fontWeight: 600 }}>Night bookings are charged at a higher rate.</span>
                     </div>
                   )}
 
                   {/* Pricing Breakdown */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: '1.5rem', background: 'rgba(255,255,255,0.02)', borderRadius: '16px', border: '1px solid var(--border-color)', marginBottom: '1.5rem' }}>
+                  <div className="reserve-summary">
                     {hasEnergyPricing ? (
                       <>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.6rem', fontSize: '0.9rem' }}>
-                          <span style={{ color: 'var(--text-secondary)' }}>Rate ({currentBand})</span>
-                          <span style={{ fontWeight: 600 }}>{formatPKR(fees.rateUsed)} {'/ kWh'}</span>
+                        <div className="reserve-summary-row">
+                          <span>{fees.energyKwh} kWh × {formatPKR(fees.rateUsed)}</span>
+                          <span>{formatPKR(fees.baseCharge)}</span>
                         </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.6rem', fontSize: '0.9rem' }}>
-                          <span style={{ color: 'var(--text-secondary)' }}>Energy Estimate</span>
-                          <span style={{ fontWeight: 600 }}>{fees.energyKwh} kWh</span>
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.6rem', fontSize: '0.9rem' }}>
-                          <span style={{ color: 'var(--text-secondary)' }}>Service Fee</span>
-                          <span style={{ fontWeight: 600 }}>{formatPKR(fees.userServiceFee)}</span>
+                        <div className="reserve-summary-row">
+                          <span>Service fee</span>
+                          <span>{formatPKR(fees.userServiceFee)}</span>
                         </div>
                       </>
                     ) : (
                       <>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.6rem', fontSize: '0.9rem', whiteSpace: 'nowrap' }}>
-                          <span style={{ color: 'var(--text-secondary)' }}>Base ({duration}hr window)</span>
-                          <span style={{ fontWeight: 600 }}>{formatPKR(fees.baseCharge || fees.baseFee)}</span>
+                        <div className="reserve-summary-row">
+                          <span>Base ({duration} hr window)</span>
+                          <span>{formatPKR(fees.baseCharge || fees.baseFee)}</span>
                         </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.6rem', fontSize: '0.9rem' }}>
-                          <span style={{ color: 'var(--text-secondary)' }}>Service fee</span>
-                          <span style={{ fontWeight: 600 }}>{formatPKR(fees.userServiceFee || fees.serviceFee)}</span>
+                        <div className="reserve-summary-row">
+                          <span>Service fee</span>
+                          <span>{formatPKR(fees.userServiceFee || fees.serviceFee)}</span>
                         </div>
                       </>
                     )}
 
-                    <div style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      marginTop: '1.25rem',
-                      paddingTop: '1.25rem',
-                      borderTop: '1px dashed rgba(255,255,255,0.1)',
-                      width: '100%'
-                    }}>
-                      <span style={{ color: '#fff', fontSize: '1rem', fontWeight: 700 }}>Total Payable</span>
-                      <span style={{ color: 'var(--brand-green)', fontSize: '1.15rem', fontWeight: 800, marginLeft: 'auto' }}>{formatPKR(fees.userTotal || fees.totalFee)}</span>
+                    <div className="reserve-summary-total">
+                      <span>Total</span>
+                      <span>{formatPKR(fees.userTotal || fees.totalFee)}</span>
                     </div>
                   </div>
 

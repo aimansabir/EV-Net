@@ -1,0 +1,297 @@
+/*
+ * Landing page — phone sizing.
+ *
+ * The section styles were designed for desktop; on phones the same type
+ * sizes and paddings made every block huge and the page ~13,000px tall.
+ * Loaded after the section stylesheets (see LandingPage.jsx) so these win.
+ */
+@media (max-width: 600px) {
+  /* Shared */
+  .section-subtitle,
+  .solution-intro {
+    font-size: 0.95rem;
+    line-height: 1.6;
+  }
+
+  .glass-card:hover {
+    transform: none;
+  }
+
+  /* Stats: compact 2 x 2 grid instead of four full-width blocks */
+  .stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .stat-card {
+    padding: 1rem 0.5rem;
+    border-right: none;
+    border-bottom: none;
+  }
+
+  .stat-card:nth-child(odd) {
+    border-right: 1px solid var(--border-color);
+  }
+
+  .stat-card:nth-child(-n + 2) {
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  .stat-number {
+    font-size: 1.5rem;
+    margin-bottom: 0.25rem;
+  }
+
+  .stat-label {
+    font-size: 0.7rem;
+    letter-spacing: 0.5px;
+  }
+
+  /* Problem */
+  .problem-grid {
+    gap: 1.5rem;
+  }
+
+  .ratio-card {
+    padding: 1.5rem 1.25rem !important;
+  }
+
+  .ratio-badge {
+    font-size: 0.7rem;
+    padding: 0.35rem 0.75rem;
+    margin-bottom: 1rem;
+  }
+
+  .ratio-text {
+    font-size: 3.25rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .ratio-desc {
+    font-size: 0.95rem;
+    line-height: 1.6;
+  }
+
+  .pain-points h4 {
+    font-size: 1.2rem;
+    margin-bottom: 1rem;
+  }
+
+  .bullet-list li {
+    padding: 0.75rem 1rem;
+    margin-bottom: 0.6rem;
+    gap: 0.75rem;
+    font-size: 0.875rem;
+  }
+
+  /* Solution */
+  .solution-columns {
+    gap: 1.25rem;
+  }
+
+  .solution-card {
+    padding: 1.5rem 1.25rem;
+  }
+
+  .solution-card .card-title {
+    font-size: 1.3rem;
+    margin-bottom: 1.25rem;
+    min-height: 0;
+  }
+
+  .card-icon {
+    width: 48px;
+    height: 48px;
+    margin-bottom: 1.25rem;
+  }
+
+  .benefit-list li {
+    font-size: 0.9rem;
+    margin-bottom: 0.75rem;
+    padding-left: 1.5rem;
+  }
+
+  .card-actions {
+    padding-top: 1.25rem;
+  }
+
+  /* How it works */
+  .flows-container {
+    gap: 2rem;
+  }
+
+  .flow-title {
+    font-size: 1.3rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .steps-wrapper {
+    gap: 0.75rem;
+  }
+
+  .step-card {
+    padding: 1rem;
+    gap: 1rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .step-number {
+    width: 36px;
+    height: 36px;
+    min-width: 36px;
+    font-size: 1rem;
+  }
+
+  .step-content h4 {
+    font-size: 1rem;
+    margin-bottom: 0.25rem;
+  }
+
+  .step-content p {
+    font-size: 0.85rem;
+  }
+
+  /* Features: slim rows (icon left, text right) instead of tall cards */
+  .features-grid {
+    gap: 0.6rem;
+  }
+
+  .feature-card {
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 0.85rem;
+    padding: 0.9rem 1rem;
+    text-align: left;
+  }
+
+  .feature-icon-wrapper {
+    flex-shrink: 0;
+    width: 38px;
+    height: 38px;
+    margin: 0;
+    border-radius: 10px;
+  }
+
+  .feature-icon-wrapper svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .feature-content {
+    min-width: 0;
+  }
+
+  .feature-title {
+    font-size: 0.98rem;
+    margin-bottom: 0.2rem;
+  }
+
+  .feature-desc {
+    font-size: 0.82rem;
+    line-height: 1.45;
+  }
+
+  /* Business model: same slim-row treatment */
+  .business-section p.text-center {
+    margin-bottom: 1.5rem !important;
+    font-size: 0.95rem;
+  }
+
+  .business-grid {
+    gap: 0.6rem;
+  }
+
+  .b-card {
+    display: grid;
+    grid-template-columns: 38px 1fr;
+    column-gap: 0.85rem;
+    align-items: start;
+    padding: 0.9rem 1rem !important;
+  }
+
+  .b-icon-wrapper {
+    grid-row: span 2;
+    width: 38px;
+    height: 38px;
+    margin: 0;
+    border-radius: 10px;
+  }
+
+  .b-icon-wrapper svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .b-title {
+    font-size: 0.98rem;
+    margin-bottom: 0.2rem;
+  }
+
+  .b-card p {
+    font-size: 0.82rem !important;
+    line-height: 1.45;
+    margin: 0;
+  }
+
+  /* Impact: 2 x 2 instead of four tall cards */
+  .impact-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+    margin-top: 1.5rem;
+  }
+
+  .impact-item {
+    padding: 1.1rem 0.9rem;
+  }
+
+  .impact-number {
+    font-size: 1.75rem;
+    margin-bottom: 0.4rem;
+  }
+
+  .impact-item p {
+    font-size: 0.85rem;
+    line-height: 1.4;
+  }
+
+  /* Marketplace preview */
+  .mb-5 {
+    margin-bottom: 1.5rem;
+  }
+
+  .pw-body {
+    height: auto;
+  }
+
+  .pw-sidebar {
+    height: 200px;
+    padding: 1rem;
+  }
+
+  .pw-map {
+    min-height: 220px;
+  }
+
+  /* Network visual */
+  .network-visual-section {
+    padding-top: 2rem;
+  }
+
+  /* Final CTA */
+  .cta-section {
+    margin-top: 0;
+  }
+
+  .cta-box {
+    padding: 1.75rem 1.25rem !important;
+  }
+
+  .cta-box h2 {
+    font-size: 1.6rem;
+  }
+
+  .cta-box p {
+    font-size: 0.95rem;
+    margin-bottom: 1.5rem;
+  }
+}

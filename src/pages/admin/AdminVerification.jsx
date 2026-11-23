@@ -4,7 +4,8 @@ import ReviewActionModal from '../../components/ui/ReviewActionModal';
 import StatusBadge from '../../components/ui/StatusBadge';
 import { adminService } from '../../data/api';
 import { invalidatePageCaches, PAGE_CACHE_TTL, useCachedPageData } from '../../store/pageCacheStore';
-const isPendingStatus = (status) => ['pending', 'under_review'].includes((status || '').toLowerCase());
+
+const isPendingStatus = (status) => ['pending', 'under_review'].includes((status || '').toLowerCase());
 const isApprovedStatus = (status) => ['approved', 'verified'].includes((status || '').toLowerCase());
 const isRejectedStatus = (status) => (status || '').toLowerCase() === 'rejected';
 const isReviewedStatus = (status) => isApprovedStatus(status) || isRejectedStatus(status);
@@ -164,7 +165,7 @@ const AdminVerification = () => {
         <div style={{ marginBottom: '2rem' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem', flexWrap: 'wrap' }}>
             <div>
-              <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '2rem', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: 'clamp(1.6rem, 5vw, 2rem)', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '12px' }}>
                 <ShieldCheck size={32} className="text-secondary" />
                 Verification Queue
               </h2>
@@ -189,7 +190,7 @@ const AdminVerification = () => {
         </div>
 
         {/* Stats Row */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.5rem', marginBottom: '2.5rem' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(240px, 100%), 1fr))', gap: '1.5rem', marginBottom: '2.5rem' }}>
           {stats.map((stat, i) => {
             const Icon = stat.icon;
             return (
@@ -242,11 +243,12 @@ const AdminVerification = () => {
               ))}
             </div>
             
-            <div style={{ position: 'relative' }}>
+            <div style={{ position: 'relative', flex: '1 1 200px', maxWidth: '280px' }}>
               <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
               <input 
                 type="text" 
-                placeholder="Search user..." 
+                placeholder="Search user..."
+                aria-label="Search submissions by user" 
                 style={{
                   background: 'rgba(255, 255, 255, 0.05)',
                   border: '1px solid var(--border-color)',
@@ -254,7 +256,7 @@ const AdminVerification = () => {
                   padding: '0.5rem 1rem 0.5rem 2.5rem',
                   color: '#fff',
                   fontSize: '0.85rem',
-                  width: '240px'
+                  width: '100%'
                 }}
               />
             </div>
@@ -289,34 +291,34 @@ const AdminVerification = () => {
                       <div key={sub.id} 
                            onClick={() => handleReviewClick(sub)}
                            style={{ 
-                               padding: '1.5rem', borderBottom: idx !== filteredSubmissions.length -1 ? '1px solid var(--border-color)' : 'none',
-                               display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                               padding: 'clamp(1rem, 3vw, 1.5rem)', borderBottom: idx !== filteredSubmissions.length -1 ? '1px solid var(--border-color)' : 'none',
+                               display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem',
                                cursor: 'pointer', transition: 'background 0.2s'
                            }}
                            onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.02)'}
                            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                       >
-                         <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
+                         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', minWidth: 0, flex: '1 1 220px' }}>
                             { (sub.user?.avatar || sub.user?.avatar_url) ? (
-                              <img src={sub.user.avatar || sub.user.avatar_url} alt="" style={{ width: '48px', height: '48px', borderRadius: '50%', objectFit: 'cover' }} />
+                              <img src={sub.user.avatar || sub.user.avatar_url} alt="" style={{ width: '48px', height: '48px', borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
                             ) : (
-                              <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: 'var(--bg-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold' }}>
+                              <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: 'var(--bg-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', flexShrink: 0 }}>
                                   {sub.user?.name?.[0] || 'U'}
                               </div>
                             )}
-                            <div>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '4px' }}>
+                            <div style={{ minWidth: 0 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem 0.75rem', marginBottom: '4px', flexWrap: 'wrap' }}>
                                     <span style={{ fontWeight: 600, fontSize: '1.1rem' }}>{sub.user?.name || 'Unknown User'}</span>
                                     <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', border: '1px solid var(--border-color)', padding: '2px 6px', borderRadius: '4px' }}>
                                         {(sub.type || sub.profile_type) === 'EV_USER' ? 'EV User' : 'Host'}
                                     </span>
                                 </div>
-                                <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                                <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', overflowWrap: 'anywhere' }}>
                                     {sub.user?.email} • {sub.method ? `Payment: ${sub.method}` : sub.document_type?.replace(/_/g, ' ') || 'Grouped documents'} • {new Date(sub.submittedAt || sub.submitted_at || sub.created_at).toLocaleDateString()}
                                 </div>
                             </div>
                          </div>
-                         <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
+                         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginLeft: 'auto' }}>
                             <StatusBadge status={sub.status} />
                             <ChevronRight size={20} color="var(--text-secondary)" />
                          </div>

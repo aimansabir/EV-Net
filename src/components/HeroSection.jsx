@@ -28,7 +28,7 @@ const HeroSection = () => {
         <div className="hero-content animate-fade-in">
           <div className="badge">Pakistan’s First Community-Powered EV Charging</div>
           <h1 className="hero-title">
-            Unlocking Pakistan’s Hidden <br />
+            Unlocking Pakistan’s Hidden <br className="hero-title-break" />
             <span className="text-gradient">EV Charging Network</span>
           </h1>
           <p className="hero-subtitle">
@@ -93,9 +93,9 @@ const HeroSection = () => {
               </div>
 
               <div className="mockup-card" style={{ zIndex: 1000, position: 'absolute', bottom: '20px', right: '20px', background: 'rgba(17,24,39,0.95)', border: '1px solid var(--border-color)', padding: '1.2rem', borderRadius: '8px', width: '240px' }}>
-                <div style={{ fontWeight: 600, marginBottom: '0.5rem', color: '#fff' }}>{activeMarker.title}</div>
-                <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>{activeMarker.desc}</div>
-                <button style={{ background: 'var(--brand-green)', color: '#000', border: 'none', padding: '0.5rem 1rem', borderRadius: '4px', fontWeight: 600, width: '100%', cursor: 'pointer' }} onClick={() => navigate('/app/book/1')}>Book Slot</button>
+                <div className="mc-header" style={{ fontWeight: 600, marginBottom: '0.5rem', color: '#fff' }}>{activeMarker.title}</div>
+                <div className="mc-details" style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>{activeMarker.desc}</div>
+                <button type="button" className="mc-btn" style={{ background: 'var(--brand-green)', color: '#000', border: 'none', padding: '0.5rem 1rem', borderRadius: '4px', fontWeight: 600, width: '100%', cursor: 'pointer' }} onClick={() => navigate('/app/explore')}>Book Slot</button>
               </div>
             </div>
           </div>

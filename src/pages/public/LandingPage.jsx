@@ -12,6 +12,8 @@ import ImpactSection from '../../components/ImpactSection';
 import NetworkVisualSection from '../../components/NetworkVisualSection';
 import FinalCTASection from '../../components/FinalCTASection';
 import Footer from '../../components/Footer';
+// Phone sizing overrides — must load after the section stylesheets above.
+import '../../styles/landing-mobile.css';
 
 const LandingPage = () => {
   return (
