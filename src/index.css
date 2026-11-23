@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Outfit:wght@400;500;700;800&display=swap');
+/* Fonts (Inter + Outfit) are loaded from index.html with preconnect hints. */
 
 :root {
   /* Colors */
@@ -15,6 +15,12 @@
   
   --border-color: rgba(255, 255, 255, 0.1);
   --border-glow: rgba(0, 210, 106, 0.3);
+
+  /* Aliases referenced across components */
+  --text-main: var(--text-primary);
+  --border: var(--border-color);
+  --brand-red: #F87171;
+  --bg-hover: rgba(255, 255, 255, 0.05);
 
   /* Typography */
   --font-body: 'Inter', system-ui, -apple-system, sans-serif;
@@ -138,7 +144,7 @@ img {
   transform: none;
 }
 
-.btn-primary:hover {
+.btn-primary:hover:not(:disabled) {
   transform: translateY(-2px);
   box-shadow: 0 6px 20px rgba(0, 210, 106, 0.5);
 }
@@ -149,8 +155,13 @@ img {
   border: 1px solid var(--brand-green);
 }
 
-.btn-secondary:hover {
+.btn-secondary:hover:not(:disabled) {
   background: rgba(0, 210, 106, 0.1);
+}
+
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
 }
 
 /* Base Animations */
@@ -188,3 +199,84 @@ img {
   background-color: var(--brand-cyan);
 }
 
+
+
+/* Tighter page gutters on phones (container already adds 1.5rem). */
+@media (max-width: 600px) {
+  :root {
+    --section-padding: 2rem 0.25rem;
+  }
+}
+
+/* ─── Shared utilities ─────────────────────────────────── */
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.spinner {
+  width: 24px;
+  height: 24px;
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  border-top-color: var(--brand-cyan);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  flex-shrink: 0;
+}
+
+.page-loader {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 40vh;
+  padding: 3rem 1rem;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+/* Visible keyboard focus everywhere (mouse clicks stay clean). */
+:focus-visible {
+  outline: 2px solid var(--brand-cyan);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: rgba(0, 210, 106, 0.35);
+  color: var(--text-primary);
+}
+
+/* Respect users who ask the OS for less motion. */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  /* Loading spinners still need to signal progress. */
+  .spinner {
+    animation-duration: 1.5s !important;
+    animation-iteration-count: infinite !important;
+  }
+}
+
+/* ─── Maps ─────────────────────────────────────────────── */
+
+/* Darken the light OpenStreetMap tiles to fit the site theme
+   (see components/ui/BaseMapTiles.jsx). */
+.evnet-dark-tiles {
+  filter: invert(100%) hue-rotate(180deg) brightness(0.95) contrast(0.85) saturate(0.4);
+}
+
+/* Avoid a light-grey flash while tiles load. */
+.leaflet-container:has(.evnet-dark-tiles) {
+  background: #0b0f19;
+}

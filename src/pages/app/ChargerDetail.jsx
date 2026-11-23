@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { MapContainer, TileLayer, Marker } from 'react-leaflet';
+import { MapContainer, Marker } from 'react-leaflet';
+import BaseMapTiles from '../../components/ui/BaseMapTiles';
 import L from 'leaflet';
 import { listingService, availabilityService, bookingService } from '../../data/api';
 import { makePageCacheKey, PAGE_CACHE_TTL, useCachedPageData } from '../../store/pageCacheStore';
@@ -513,7 +514,7 @@ const ChargerDetail = () => {
                     scrollWheelZoom={false}
                     dragging={exactLocationUnlocked}
                   >
-                    <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" />
+                    <BaseMapTiles />
                     {exactLocationUnlocked ? (
                       <Marker position={[listing.lat, listing.lng]} icon={smallIcon} />
                     ) : (

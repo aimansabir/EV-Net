@@ -3,12 +3,44 @@
 
 <head>
   <meta charset="UTF-8" />
-  <link rel="icon" type="image/svg+xml" href="/favicon-96x96.png" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>EV-Net</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>EV-Net — Peer-to-Peer EV Charging in Pakistan</title>
+  <meta name="description" content="EV-Net connects EV drivers with private home and business chargers. Find and book a charger near you, or earn by sharing your own." />
+  <meta name="theme-color" content="#0B0F19" />
+  <meta name="color-scheme" content="dark" />
+
+  <!-- Icons & PWA -->
+  <link rel="icon" href="/favicon.ico" sizes="any" />
+  <link rel="icon" type="image/png" sizes="96x96" href="/favicon-96x96.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+  <link rel="manifest" href="/site.webmanifest" />
+
+  <!-- Social sharing -->
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="EV-Net" />
+  <meta property="og:title" content="EV-Net — Peer-to-Peer EV Charging" />
+  <meta property="og:description" content="Find and book private EV chargers near you, or earn by sharing your own." />
+  <meta property="og:image" content="/og-image.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="EV-Net — Peer-to-Peer EV Charging" />
+  <meta name="twitter:description" content="Find and book private EV chargers near you, or earn by sharing your own." />
+  <meta name="twitter:image" content="/og-image.png" />
+
+  <!-- Fonts: preconnect so they don't block first paint -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Outfit:wght@400;500;700;800&display=swap" />
+
+  <style>
+    /* Paint the brand background immediately, before the JS bundle loads. */
+    html, body { background: #0B0F19; }
+  </style>
 </head>
 
 <body>
+  <noscript>EV-Net needs JavaScript enabled to run.</noscript>
   <div id="root"></div>
   <script type="module" src="/src/main.jsx"></script>
 </body>

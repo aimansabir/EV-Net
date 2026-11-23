@@ -16,7 +16,10 @@ const Avatar = ({
   className = '', 
   style = {} 
 }) => {
-  const [hasError, setHasError] = React.useState(false);
+  // Track which URL failed so a new src (e.g. after an upload) is retried.
+  const [failedSrc, setFailedSrc] = React.useState(null);
+  const hasError = Boolean(src) && failedSrc === src;
+  const numericSize = parseFloat(size) || 40;
 
   // Fallback 1: Name initials
   const initials = name
@@ -45,7 +48,9 @@ const Avatar = ({
           src={src} 
           alt={name || 'User avatar'} 
           style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-          onError={() => setHasError(true)}
+          onError={() => setFailedSrc(src)}
+          loading="lazy"
+          decoding="async"
         />
       </div>
     );
@@ -70,7 +75,7 @@ const Avatar = ({
   // Fallback 3: Generic User Icon
   return (
     <div className={`avatar-fallback ${className}`} style={containerStyle}>
-      <User size={`calc(${size} * 0.6)`} color="var(--text-secondary)" />
+      <User size={Math.round(numericSize * 0.6)} color="var(--text-secondary)" aria-hidden="true" />
     </div>
   );
 };

@@ -1,31 +1,54 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import AuthShell from '../../components/auth/AuthShell';
 import useAuthStore from '../../store/authStore';
 import { Eye, EyeOff } from 'lucide-react';
+import GoogleIcon from '../../components/ui/GoogleIcon';
 
 const Login = () => {
   const navigate = useNavigate();
   const { login, loginWithGoogle, resetPassword, isLoading, error, clearError } = useAuthStore();
-  const [email, setEmail] = useState('');
+  const location = useLocation();
+  const [email, setEmail] = useState(() => location.state?.email || '');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [localMessage, setLocalMessage] = useState('');
   const [localError, setLocalError] = useState('');
-  const location = useLocation();
 
+  const requestPasswordReset = useCallback(async (targetEmail) => {
+    clearError();
+    setLocalError('');
+    setLocalMessage('');
+
+    const trimmed = (targetEmail || '').trim();
+    if (!trimmed) {
+      setLocalError('Enter your email address first, then use Forgot password.');
+      return;
+    }
+
+    try {
+      await resetPassword(trimmed);
+      setLocalMessage('If this email has an account, a password reset link will be sent shortly.');
+    } catch (err) {
+      setLocalError(err.message || 'Could not start password reset.');
+    }
+  }, [clearError, resetPassword]);
+
+  // One-shot "send reset link" trigger passed from signup when an email
+  // already exists. Guarded by location.key so StrictMode double effects
+  // don't send two emails, then consumed so a refresh doesn't resend.
+  const handledResetKey = useRef(null);
   useEffect(() => {
-    if (location.state?.email) {
-      setEmail(location.state.email);
-    }
-    if (location.state?.triggerReset && location.state?.email) {
-      // Small delay to ensure state is settled
-      const timer = setTimeout(() => {
-        handleForgotPassword(location.state.email);
-      }, 500);
-      return () => clearTimeout(timer);
-    }
-  }, [location.state]);
+    const state = location.state;
+    if (!state?.email || !state.triggerReset) return;
+    if (handledResetKey.current === location.key) return;
+    handledResetKey.current = location.key;
+
+    Promise.resolve().then(() => requestPasswordReset(state.email));
+    navigate(location.pathname, { replace: true, state: { email: state.email } });
+  }, [location.state, location.key, location.pathname, navigate, requestPasswordReset]);
+
+  const handleForgotPassword = () => requestPasswordReset(email);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -48,26 +71,6 @@ const Login = () => {
       await loginWithGoogle();
     } catch {
       // error is set in store
-    }
-  };
-
-  const handleForgotPassword = async (overrideEmail) => {
-    clearError();
-    setLocalError('');
-    setLocalMessage('');
-
-    const targetEmail = (typeof overrideEmail === 'string' ? overrideEmail : email).trim();
-
-    if (!targetEmail) {
-      setLocalError('Enter your email address first, then use Forgot password.');
-      return;
-    }
-
-    try {
-      await resetPassword(targetEmail);
-      setLocalMessage('If this email has an account, a password reset link will be sent shortly.');
-    } catch (err) {
-      setLocalError(err.message || 'Could not start password reset.');
     }
   };
 
@@ -95,7 +98,7 @@ const Login = () => {
       <form onSubmit={handleSubmit} className="auth-form">
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '1.5rem' }}>
           <button type="button" onClick={handleGoogleLogin} disabled={isLoading} className="btn" style={{ width: '100%', background: '#fff', color: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', fontWeight: 600 }}>
-            <img src="https://www.google.com/favicon.ico" width="16" height="16" alt="Google" />
+            <GoogleIcon size={16} />
             Continue with Google
           </button>
           <div className="auth-divider">
@@ -104,9 +107,11 @@ const Login = () => {
         </div>
 
         <div className="auth-field">
-          <label>Email</label>
+          <label htmlFor="login-email">Email</label>
           <input
+            id="login-email"
             type="email"
+            autoComplete="email"
             className="auth-input"
             placeholder="you@example.com"
             value={email}
@@ -116,9 +121,11 @@ const Login = () => {
         </div>
 
         <div className="auth-field">
-          <label>Password</label>
+          <label htmlFor="login-password">Password</label>
           <div className="password-input-wrapper">
             <input
+              id="login-password"
+              autoComplete="current-password"
               type={showPassword ? "text" : "password"}
               className="auth-input"
               placeholder="••••••••"

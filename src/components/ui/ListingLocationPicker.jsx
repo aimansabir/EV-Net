@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { MapContainer, TileLayer, Marker, useMap } from 'react-leaflet';
+import { MapContainer, Marker, useMap } from 'react-leaflet';
+import BaseMapTiles from './BaseMapTiles';
 import L from 'leaflet';
 import { Search, MapPin, X, LocateFixed, Loader2 } from 'lucide-react';
 import axios from 'axios';
@@ -306,10 +307,7 @@ const ListingLocationPicker = ({
           style={{ height: '100%', width: '100%' }}
           scrollWheelZoom={false}
         >
-          <TileLayer
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          />
+          <BaseMapTiles variant="light" />
           <LocationMarker position={position} onDragEnd={handleMarkerDragEnd} />
           <RecenterMap position={position} />
         </MapContainer>

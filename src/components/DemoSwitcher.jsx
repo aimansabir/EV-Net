@@ -6,12 +6,29 @@ import useAuthStore from '../store/authStore';
  * Dev-only Demo Mode switcher.
  * 
  * Visibility rules:
- * 1. Only renders in development (import.meta.env.DEV)
- * 2. OR when ?demo=1 query param is present
- * 3. NEVER included in production navigation
+ * 1. Only when the mock API layer is active (VITE_USE_MOCK=true) — switching
+ *    roles signs in as seeded demo accounts, which don't exist in Supabase.
+ * 2. AND either development (import.meta.env.DEV) or ?demo=1 is present.
  * 
  * Labeled clearly as "Demo Mode" — non-production.
  */
+const DEMO_FLAG_KEY = 'evnet:demo';
+
+// ?demo=1 is remembered for the browser session so the switcher survives
+// navigation (the query string is dropped on the first route change).
+const hasDemoFlag = () => {
+  if (typeof window === 'undefined') return false;
+  try {
+    if (new URLSearchParams(window.location.search).get('demo') === '1') {
+      sessionStorage.setItem(DEMO_FLAG_KEY, '1');
+      return true;
+    }
+    return sessionStorage.getItem(DEMO_FLAG_KEY) === '1';
+  } catch {
+    return false;
+  }
+};
+
 const DemoSwitcher = () => {
   const navigate = useNavigate();
   const { role, isAuthenticated, switchRole, logout } = useAuthStore();
@@ -19,16 +36,18 @@ const DemoSwitcher = () => {
   const [switching, setSwitching] = useState(false);
 
   // Guard: only show in dev mode or with ?demo=1 param
+  const isMock = import.meta.env.VITE_USE_MOCK === 'true';
   const isDev = import.meta.env.DEV;
-  const hasDemo = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('demo') === '1';
-  
-  if (!isDev && !hasDemo) return null;
+  const hasDemo = hasDemoFlag();
+
+  if (!isMock || (!isDev && !hasDemo)) return null;
 
   const handleSwitch = async (newRole) => {
     if (switching) return;
     setSwitching(true);
     try {
       await switchRole(newRole);
+      setIsOpen(false);
       switch (newRole) {
         case 'user': navigate('/app/explore'); break;
         case 'host': navigate('/host/dashboard'); break;
@@ -156,6 +175,8 @@ const DemoSwitcher = () => {
           transition: 'all 0.2s',
         }}
         title="Demo Mode Switcher"
+        aria-label={isOpen ? 'Close demo mode switcher' : 'Open demo mode switcher'}
+        aria-expanded={isOpen}
       >
         {isOpen ? '✕' : '⚡'}
       </button>

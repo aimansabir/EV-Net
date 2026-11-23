@@ -1,6 +1,6 @@
 import React from 'react';
 import './NetworkVisualSection.css';
-import networkImage from '../assets/ev_network_visual.png';
+import networkImage from '../assets/ev_network_visual.webp';
 
 const NetworkVisualSection = () => {
   return (
@@ -15,7 +15,7 @@ const NetworkVisualSection = () => {
 
         <div className="visual-wrapper">
           <div className="glow-backdrop"></div>
-          <img src={networkImage} alt="EV Network Map Visual" className="network-image" />
+          <img src={networkImage} alt="Illustration of a connected EV charging network" className="network-image" loading="lazy" decoding="async" width="1024" height="1024" />
 
           <div className="floating-stat stat-1 glass-card">
             <span className="stat-value text-gradient">24/7</span>

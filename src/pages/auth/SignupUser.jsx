@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Eye, EyeOff, Mail, Info } from 'lucide-react';
 import AuthShell from '../../components/auth/AuthShell';
+import GoogleIcon from '../../components/ui/GoogleIcon';
 import useAuthStore from '../../store/authStore';
 import { PakistanEVBrands, ConnectorType } from '../../data/schema';
 import { normalizePersonName } from '../../utils/text';
@@ -209,7 +210,7 @@ const SignupUser = () => {
           <div className="auth-step animate-in">
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '1.5rem' }}>
               <button type="button" onClick={handleGoogleLogin} disabled={isLoading} className="btn" style={{ width: '100%', background: '#fff', color: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', fontWeight: 600 }}>
-                <img src="https://www.google.com/favicon.ico" width="16" height="16" alt="Google" />
+                <GoogleIcon size={16} />
                 Continue with Google
               </button>
               <div className="auth-divider">

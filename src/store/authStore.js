@@ -10,6 +10,13 @@ import { authService } from '../data/api.js';
 
 const STORAGE_KEY = 'EV-Net_auth';
 const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true';
+
+// Seeded mock-mode accounts used by the dev DemoSwitcher (see data/seed.js).
+const DEMO_ACCOUNTS = {
+  user: { email: 'ali@example.com', password: 'demo123' },
+  host: { email: 'omar@example.com', password: 'demo123' },
+  admin: { email: 'admin@EV-Net.pk', password: 'admin123' },
+};
 const AUTH_TIMEOUT_MS = 20000;
 
 function authDebug(...args) {
@@ -334,6 +341,19 @@ const useAuthStore = create((set, get) => ({
     }
   },
 
+
+  /**
+   * Demo-only: sign in as a seeded account for the given role.
+   * Only available in mock mode — real accounts can't change role client-side.
+   */
+  switchRole: async (newRole) => {
+    if (!USE_MOCK) {
+      throw new Error('Role switching is only available in mock/demo mode.');
+    }
+    const account = DEMO_ACCOUNTS[newRole];
+    if (!account) throw new Error(`Unknown demo role: ${newRole}`);
+    return get().login(account.email, account.password);
+  },
 
   /**
    * Clear error

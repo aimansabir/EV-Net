@@ -1,0 +1,174 @@
+/* ─── Shared app shell styles (user / host / admin layouts) ─── */
+
+.layout-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+.layout-main {
+  flex: 1;
+  overflow-y: auto;
+  position: relative;
+  background: var(--bg-main);
+}
+
+.layout-header .nav-container {
+  max-width: 100%;
+  gap: 1rem;
+}
+
+.layout-logo img {
+  display: block;
+  height: 32px;
+  width: auto;
+}
+
+.layout-role-badge {
+  font-size: 0.75rem;
+  padding: 0.15rem 0.45rem;
+  background: var(--brand-green);
+  color: #000;
+  border-radius: 4px;
+  font-weight: 700;
+}
+
+.layout-signout {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: var(--text-primary);
+  padding: 0.4rem 0.8rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-family: inherit;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  transition: border-color 0.2s, color 0.2s;
+}
+
+.layout-signout:hover {
+  border-color: var(--brand-cyan);
+  color: var(--brand-cyan);
+}
+
+.layout-avatar-link {
+  display: inline-flex;
+  border-radius: 50%;
+}
+
+/* Mobile section nav (hidden on desktop, where header links show). */
+.mobile-nav-strip {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .mobile-nav-strip {
+    display: flex;
+    gap: 0.5rem;
+    overflow-x: auto;
+    padding: 0.6rem 1rem;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border-color);
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    flex-shrink: 0;
+  }
+
+  .mobile-nav-strip::-webkit-scrollbar {
+    display: none;
+  }
+
+  .mobile-nav-link {
+    flex-shrink: 0;
+    padding: 0.4rem 0.9rem;
+    border-radius: 999px;
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+
+  .mobile-nav-link.is-active {
+    background: rgba(0, 210, 106, 0.08);
+  }
+}
+
+@media (max-width: 480px) {
+  .layout-header .nav-actions {
+    gap: 0.75rem !important;
+  }
+
+  .layout-signout-label {
+    display: none;
+  }
+
+  .layout-signout {
+    padding: 0.45rem;
+  }
+}
+
+/* ─── Admin console ─── */
+
+.admin-sidebar {
+  width: 260px;
+  min-width: 260px;
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  padding: 1.5rem 0;
+  transition: width 0.2s, min-width 0.2s;
+}
+
+@media (max-width: 768px) {
+  /* Collapse to an icon rail so content keeps most of the screen. */
+  .admin-sidebar {
+    width: 64px;
+    min-width: 64px;
+    padding: 1rem 0;
+  }
+
+  .admin-sidebar .admin-nav-label,
+  .admin-sidebar .admin-console-badge {
+    display: none;
+  }
+
+  .admin-sidebar .admin-logo-wrap {
+    padding: 0 0.5rem !important;
+    margin-bottom: 1.25rem !important;
+  }
+
+  /* Show only the lightning mark from the wordmark logo. */
+  .admin-sidebar .admin-logo-wrap a {
+    justify-content: center;
+  }
+
+  .admin-sidebar .admin-logo-wrap img {
+    width: 36px !important;
+    height: 32px !important;
+    object-fit: cover;
+    object-position: left center;
+    box-shadow: none !important;
+  }
+
+  .admin-sidebar nav {
+    padding: 0 0.5rem !important;
+  }
+
+  .admin-sidebar .admin-nav-item {
+    justify-content: center;
+    padding: 0.75rem 0 !important;
+  }
+
+  .admin-sidebar .admin-footer {
+    padding: 1rem 0 !important;
+    display: flex;
+    justify-content: center;
+  }
+}

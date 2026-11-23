@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from 'react-leaflet';
+import { MapContainer, CircleMarker, Popup, useMap } from 'react-leaflet';
+import BaseMapTiles from '../../components/ui/BaseMapTiles';
 import L from 'leaflet';
 import { useNavigate } from 'react-router-dom';
 import { listingService } from '../../data/api';
@@ -319,10 +320,7 @@ const Explore = () => {
           zoom={DEFAULT_ZOOM}
           style={{ height: '100%', width: '100%', background: '#0b0f19' }}
         >
-          <TileLayer
-            url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>'
-          />
+          <BaseMapTiles />
           <MapBoundsUpdater positions={mapPositions} />
           {mapChargers.map(({ charger, position }) => {
             return (

@@ -1,216 +1,177 @@
-import React from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import React, { Suspense, lazy, useEffect } from 'react';
+import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
 
-// Public Pages
+// Landing page is the most common entry point — keep it in the main bundle.
 import LandingPage from './pages/public/LandingPage';
 
-// Auth Pages
-import Login from './pages/auth/Login';
-import SignupUser from './pages/auth/SignupUser';
-import SignupHost from './pages/auth/SignupHost';
-import AuthCallback from './pages/auth/AuthCallback';
-
-// App Pages (EV User)
-import Explore from './pages/app/Explore';
-import ChargerDetail from './pages/app/ChargerDetail';
-const Checkout = React.lazy(() => import('./pages/app/Checkout'));
-import Bookings from './pages/app/Bookings';
-const BookingDetail = React.lazy(() => import('./pages/app/BookingDetail'));
-import Favorites from './pages/app/Favorites';
-import UserProfile from './pages/app/UserProfile';
-import Verification from './pages/app/Verification';
-const UserMessages = React.lazy(() => import('./pages/app/Messages'));
-
-// Host Pages
-const HostOnboarding = React.lazy(() => import('./pages/host/HostOnboarding'));
-import HostDashboard from './pages/host/HostDashboard';
-import HostListings from './pages/host/HostListings';
-import CreateListing from './pages/host/CreateListing';
-import HostBookings from './pages/host/HostBookings';
-import HostEarnings from './pages/host/HostEarnings';
-import HostAvailability from './pages/host/HostAvailability';
-import HostProfile from './pages/host/HostProfile';
-const HostMessages = React.lazy(() => import('./pages/host/HostMessages'));
-
-// Admin Pages
-import AdminDashboard from './pages/admin/AdminDashboard';
-import AdminListings from './pages/admin/AdminListings';
-import AdminBookings from './pages/admin/AdminBookings';
-import AdminUsers from './pages/admin/AdminUsers';
-const AdminVerification = React.lazy(() => import('./pages/admin/AdminVerification'));
-import AdminReports from './pages/admin/AdminReports';
-import AdminConversations from './pages/admin/AdminConversations';
-
-// Layouts
+// Layouts & shell components
 import AppLayout from './layouts/AppLayout';
 import HostLayout from './layouts/HostLayout';
 import AdminLayout from './layouts/AdminLayout';
-
-// Components
 import ProtectedRoute from './components/ProtectedRoute';
-import useAuthStore from './store/authStore';
+import ErrorBoundary from './components/ErrorBoundary';
+import ScrollToTop from './components/ScrollToTop';
 import DemoSwitcher from './components/DemoSwitcher';
+import useAuthStore from './store/authStore';
 
-import './App.css';
 
-const InlineSpinner = () => (
-  <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '3rem' }}>
-    <div className="spinner" style={{ width: '24px', height: '24px', border: '2px solid rgba(255,255,255,0.1)', borderTopColor: 'var(--brand-cyan)', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></div>
+// Every other screen is code-split so visitors only download what they use.
+
+// Auth
+const Login = lazy(() => import('./pages/auth/Login'));
+const SignupUser = lazy(() => import('./pages/auth/SignupUser'));
+const SignupHost = lazy(() => import('./pages/auth/SignupHost'));
+const AuthCallback = lazy(() => import('./pages/auth/AuthCallback'));
+
+// EV User
+const Explore = lazy(() => import('./pages/app/Explore'));
+const ChargerDetail = lazy(() => import('./pages/app/ChargerDetail'));
+const Checkout = lazy(() => import('./pages/app/Checkout'));
+const Bookings = lazy(() => import('./pages/app/Bookings'));
+const BookingDetail = lazy(() => import('./pages/app/BookingDetail'));
+const Favorites = lazy(() => import('./pages/app/Favorites'));
+const UserProfile = lazy(() => import('./pages/app/UserProfile'));
+const Verification = lazy(() => import('./pages/app/Verification'));
+const UserMessages = lazy(() => import('./pages/app/Messages'));
+
+// Host
+const HostOnboarding = lazy(() => import('./pages/host/HostOnboarding'));
+const HostDashboard = lazy(() => import('./pages/host/HostDashboard'));
+const HostListings = lazy(() => import('./pages/host/HostListings'));
+const CreateListing = lazy(() => import('./pages/host/CreateListing'));
+const HostBookings = lazy(() => import('./pages/host/HostBookings'));
+const HostEarnings = lazy(() => import('./pages/host/HostEarnings'));
+const HostAvailability = lazy(() => import('./pages/host/HostAvailability'));
+const HostProfile = lazy(() => import('./pages/host/HostProfile'));
+const HostMessages = lazy(() => import('./pages/host/HostMessages'));
+
+// Admin
+const AdminDashboard = lazy(() => import('./pages/admin/AdminDashboard'));
+const AdminVerification = lazy(() => import('./pages/admin/AdminVerification'));
+const AdminListings = lazy(() => import('./pages/admin/AdminListings'));
+const AdminBookings = lazy(() => import('./pages/admin/AdminBookings'));
+const AdminUsers = lazy(() => import('./pages/admin/AdminUsers'));
+const AdminReports = lazy(() => import('./pages/admin/AdminReports'));
+const AdminConversations = lazy(() => import('./pages/admin/AdminConversations'));
+
+const NotFound = lazy(() => import('./pages/shared/NotFound'));
+
+const USER_ROLES = ['user', 'admin'];
+const HOST_ROLES = ['host', 'admin'];
+const ADMIN_ROLES = ['admin'];
+
+const userRoutes = [
+  ['/app/explore', Explore],
+  ['/app/charger/:id', ChargerDetail],
+  ['/app/book/:chargerId', Checkout],
+  ['/app/bookings', Bookings],
+  ['/app/bookings/:bookingId', BookingDetail],
+  ['/app/favorites', Favorites],
+  ['/app/profile', UserProfile],
+  ['/app/verification', Verification],
+  ['/app/messages', UserMessages],
+];
+
+const hostRoutes = [
+  ['/host/dashboard', HostDashboard],
+  ['/host/listings', HostListings],
+  ['/host/listings/new', CreateListing],
+  ['/host/bookings', HostBookings],
+  ['/host/earnings', HostEarnings],
+  ['/host/availability', HostAvailability],
+  ['/host/profile', HostProfile],
+  ['/host/messages', HostMessages],
+];
+
+const adminRoutes = [
+  ['/admin', AdminDashboard],
+  ['/admin/verifications', AdminVerification],
+  ['/admin/listings', AdminListings],
+  ['/admin/bookings', AdminBookings],
+  ['/admin/users', AdminUsers],
+  ['/admin/reports', AdminReports],
+  ['/admin/conversations', AdminConversations],
+];
+
+const PageLoader = () => (
+  <div className="page-loader" role="status" aria-live="polite">
+    <span className="spinner" aria-hidden="true" />
+    <span>Loading…</span>
   </div>
 );
+
+/**
+ * Keeps the layout (sidebar / nav) mounted while the page chunk loads, so
+ * navigating between sections doesn't flash a blank screen.
+ */
+const guarded = (roles, Layout, Page) => (
+  <ProtectedRoute allowedRoles={roles}>
+    <Layout>
+      <Suspense fallback={<PageLoader />}>
+        <Page />
+      </Suspense>
+    </Layout>
+  </ProtectedRoute>
+);
+
+function AppRoutes() {
+  const location = useLocation();
+
+  return (
+    <ErrorBoundary resetKey={location.pathname}>
+      <Suspense fallback={<PageLoader />}>
+        <Routes>
+          {/* ═══ Public ═══ */}
+          <Route path="/" element={<LandingPage />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/signup/user" element={<SignupUser />} />
+          <Route path="/signup/host" element={<SignupHost />} />
+          <Route path="/auth/callback" element={<AuthCallback />} />
+
+          {/* ═══ EV User ═══ */}
+          {userRoutes.map(([path, Page]) => (
+            <Route key={path} path={path} element={guarded(USER_ROLES, AppLayout, Page)} />
+          ))}
+
+          {/* ═══ Host ═══ */}
+          <Route
+            path="/host/onboarding"
+            element={
+              <ProtectedRoute allowedRoles={HOST_ROLES}>
+                <HostOnboarding />
+              </ProtectedRoute>
+            }
+          />
+          {hostRoutes.map(([path, Page]) => (
+            <Route key={path} path={path} element={guarded(HOST_ROLES, HostLayout, Page)} />
+          ))}
+
+          {/* ═══ Admin ═══ */}
+          {adminRoutes.map(([path, Page]) => (
+            <Route key={path} path={path} element={guarded(ADMIN_ROLES, AdminLayout, Page)} />
+          ))}
+
+          {/* ═══ Fallback ═══ */}
+          <Route path="*" element={<NotFound />} />
+        </Routes>
+      </Suspense>
+    </ErrorBoundary>
+  );
+}
 
 function App() {
   const initAuth = useAuthStore(state => state.initAuth);
 
-  React.useEffect(() => {
+  useEffect(() => {
     initAuth();
   }, [initAuth]);
 
   return (
     <BrowserRouter>
-      <React.Suspense fallback={<InlineSpinner />}>
-        <Routes>
-        {/* ═══ Public Routes ═══ */}
-        <Route path="/" element={<LandingPage />} />
-        <Route path="/login" element={<Login />} />
-        <Route path="/signup/user" element={<SignupUser />} />
-        <Route path="/signup/host" element={<SignupHost />} />
-        <Route path="/auth/callback" element={<AuthCallback />} />
+      <ScrollToTop />
+      <AppRoutes />
 
-        {/* ═══ EV User Routes ═══ */}
-        <Route path="/app/explore" element={
-          <ProtectedRoute allowedRoles={['user', 'admin']}>
-            <AppLayout><Explore /></AppLayout>
-          </ProtectedRoute>
-        } />
-        <Route path="/app/charger/:id" element={
-          <ProtectedRoute allowedRoles={['user', 'admin']}>
-            <AppLayout><ChargerDetail /></AppLayout>
-          </ProtectedRoute>
-        } />
-        <Route path="/app/book/:chargerId" element={
-          <ProtectedRoute allowedRoles={['user', 'admin']}>
-            <AppLayout><Checkout /></AppLayout>
-          </ProtectedRoute>
-        } />
-        <Route path="/app/bookings" element={
-          <ProtectedRoute allowedRoles={['user', 'admin']}>
-            <AppLayout><Bookings /></AppLayout>
-          </ProtectedRoute>
-        } />
-        <Route path="/app/bookings/:bookingId" element={
-          <ProtectedRoute allowedRoles={['user', 'admin']}>
-            <AppLayout><BookingDetail /></AppLayout>
-          </ProtectedRoute>
-        } />
-        <Route path="/app/favorites" element={
-          <ProtectedRoute allowedRoles={['user', 'admin']}>
-            <AppLayout><Favorites /></AppLayout>
-          </ProtectedRoute>
-        } />
-        <Route path="/app/profile" element={
-          <ProtectedRoute allowedRoles={['user', 'admin']}>
-            <AppLayout><UserProfile /></AppLayout>
-          </ProtectedRoute>
-        } />
-        <Route path="/app/verification" element={
-          <ProtectedRoute allowedRoles={['user', 'admin']}>
-            <AppLayout><Verification /></AppLayout>
-          </ProtectedRoute>
-        } />
-        <Route path="/app/messages" element={
-          <ProtectedRoute allowedRoles={['user', 'admin']}>
-            <AppLayout><UserMessages /></AppLayout>
-          </ProtectedRoute>
-        } />
-
-        {/* ═══ Host Routes ═══ */}
-        <Route path="/host/onboarding" element={
-          <ProtectedRoute allowedRoles={['host', 'admin']}>
-            <HostOnboarding />
-          </ProtectedRoute>
-        } />
-        <Route path="/host/dashboard" element={
-          <ProtectedRoute allowedRoles={['host', 'admin']}>
-            <HostLayout><HostDashboard /></HostLayout>
-          </ProtectedRoute>
-        } />
-        <Route path="/host/listings" element={
-          <ProtectedRoute allowedRoles={['host', 'admin']}>
-            <HostLayout><HostListings /></HostLayout>
-          </ProtectedRoute>
-        } />
-        <Route path="/host/listings/new" element={
-          <ProtectedRoute allowedRoles={['host', 'admin']}>
-            <HostLayout><CreateListing /></HostLayout>
-          </ProtectedRoute>
-        } />
-        <Route path="/host/bookings" element={
-          <ProtectedRoute allowedRoles={['host', 'admin']}>
-            <HostLayout><HostBookings /></HostLayout>
-          </ProtectedRoute>
-        } />
-        <Route path="/host/earnings" element={
-          <ProtectedRoute allowedRoles={['host', 'admin']}>
-            <HostLayout><HostEarnings /></HostLayout>
-          </ProtectedRoute>
-        } />
-        <Route path="/host/availability" element={
-          <ProtectedRoute allowedRoles={['host', 'admin']}>
-            <HostLayout><HostAvailability /></HostLayout>
-          </ProtectedRoute>
-        } />
-        <Route path="/host/profile" element={
-          <ProtectedRoute allowedRoles={['host', 'admin']}>
-            <HostLayout><HostProfile /></HostLayout>
-          </ProtectedRoute>
-        } />
-        <Route path="/host/messages" element={
-          <ProtectedRoute allowedRoles={['host', 'admin']}>
-            <HostLayout><HostMessages /></HostLayout>
-          </ProtectedRoute>
-        } />
-
-        {/* ═══ Admin Routes ═══ */}
-        <Route path="/admin" element={
-          <ProtectedRoute allowedRoles={['admin']}>
-            <AdminLayout><AdminDashboard /></AdminLayout>
-          </ProtectedRoute>
-        } />
-        <Route path="/admin/verifications" element={
-          <ProtectedRoute allowedRoles={['admin']}>
-            <AdminLayout><AdminVerification /></AdminLayout>
-          </ProtectedRoute>
-        } />
-        <Route path="/admin/listings" element={
-          <ProtectedRoute allowedRoles={['admin']}>
-            <AdminLayout><AdminListings /></AdminLayout>
-          </ProtectedRoute>
-        } />
-        <Route path="/admin/bookings" element={
-          <ProtectedRoute allowedRoles={['admin']}>
-            <AdminLayout><AdminBookings /></AdminLayout>
-          </ProtectedRoute>
-        } />
-        <Route path="/admin/users" element={
-          <ProtectedRoute allowedRoles={['admin']}>
-            <AdminLayout><AdminUsers /></AdminLayout>
-          </ProtectedRoute>
-        } />
-        <Route path="/admin/reports" element={
-          <ProtectedRoute allowedRoles={['admin']}>
-            <AdminLayout><AdminReports /></AdminLayout>
-          </ProtectedRoute>
-        } />
-        <Route path="/admin/conversations" element={
-          <ProtectedRoute allowedRoles={['admin']}>
-            <AdminLayout><AdminConversations /></AdminLayout>
-          </ProtectedRoute>
-        } />
-      </Routes>
-      </React.Suspense>
-
-      {/* Demo Mode Switcher — dev-only or ?demo=1 */}
+      {/* Demo Mode Switcher — mock mode only, in dev or with ?demo=1 */}
       <DemoSwitcher />
     </BrowserRouter>
   );

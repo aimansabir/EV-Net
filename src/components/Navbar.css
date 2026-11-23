@@ -23,10 +23,6 @@
   align-items: center;
 }
 
-.logo {
-  cursor: pointer;
-}
-
 .nav-links {
   display: flex;
   gap: 2rem;
@@ -44,8 +40,162 @@
   color: var(--brand-cyan);
 }
 
-@media (max-width: 768px) {
+
+/* ─── Logo & actions ─────────────────────────────────── */
+
+.logo {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.nav-logo-img {
+  display: block;
+  width: 170px;
+  height: auto;
+}
+
+.nav-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.75rem;
+}
+
+.nav-actions-placeholder {
+  width: 100px;
+  height: 40px;
+}
+
+.nav-btn {
+  font-size: 0.9rem;
+  white-space: nowrap;
+  text-align: center;
+}
+
+.nav-btn-ghost {
+  border: 1px solid var(--border-color);
+  background: transparent;
+}
+
+.nav-avatar {
+  display: inline-flex;
+  border-radius: 50%;
+  transition: transform 0.2s;
+}
+
+.nav-avatar:hover {
+  transform: scale(1.05);
+}
+
+/* ─── Mobile menu ─────────────────────────────────────── */
+
+.nav-menu-toggle {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.nav-mobile-menu {
+  display: none;
+}
+
+.navbar.nav-menu-open {
+  background: rgba(11, 15, 25, 0.98);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+}
+
+@media (max-width: 1024px) {
+  .nav-links {
+    gap: 1.25rem;
+  }
+}
+
+@media (max-width: 900px) {
   .nav-links {
     display: none;
+  }
+
+  .nav-menu-toggle {
+    display: inline-flex;
+  }
+
+  .nav-mobile-menu {
+    display: block;
+    padding-top: 1rem;
+    padding-bottom: 0.5rem;
+    animation: fadeInV 0.25s ease-out;
+  }
+
+  .nav-mobile-menu ul {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .nav-mobile-menu li a {
+    display: block;
+    padding: 0.85rem 0.25rem;
+    color: var(--text-secondary);
+    font-weight: 500;
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  .nav-mobile-menu li a:hover {
+    color: var(--brand-cyan);
+  }
+
+  .nav-mobile-actions {
+    display: flex;
+    gap: 0.75rem;
+    margin-top: 1rem;
+  }
+
+  .nav-mobile-actions .btn {
+    flex: 1;
+    text-align: center;
+    white-space: nowrap;
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+  }
+
+  /* Log In already sits in the header on wider phones/tablets. */
+  .nav-mobile-login {
+    display: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .navbar {
+    padding: 1rem 0;
+  }
+
+  .nav-logo-img {
+    width: 112px;
+  }
+
+  .nav-actions {
+    gap: 0.5rem;
+  }
+
+  .nav-btn {
+    padding: 0.55rem 0.85rem;
+    font-size: 0.85rem;
+  }
+
+  /* Small phones: move Log In into the menu to keep the header on one row. */
+  .nav-btn-ghost {
+    display: none;
+  }
+
+  .nav-mobile-login {
+    display: block;
   }
 }

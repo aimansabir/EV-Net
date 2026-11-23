@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { MapContainer, TileLayer, Marker, useMap } from 'react-leaflet';
+import { MapContainer, Marker, useMap } from 'react-leaflet';
+import BaseMapTiles from './ui/BaseMapTiles';
 import L from 'leaflet';
 import { useNavigate } from 'react-router-dom';
 import 'leaflet/dist/leaflet.css';
@@ -77,10 +78,7 @@ const MarketplacePreview = () => {
                  style={{ height: '100%', width: '100%', zIndex: 0 }}
                  zoomControl={false}
                >
-                 <TileLayer
-                    url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-                    attribution='&copy; OpenStreetMap'
-                 />
+                 <BaseMapTiles />
                  <MapFlyToMarker activeListing={active} />
                  {mockListings.map(m => (
                    <Marker 
