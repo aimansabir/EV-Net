@@ -93,6 +93,10 @@ const useAuthStore = create((set, get) => ({
         set({ _authSubscription: null });
       }
 
+      // Subscribe first so sign-in / sign-out / expiry are tracked even when
+      // the visitor starts logged out.
+      get()._subscribeToAuthChanges();
+
       try {
       authDebug('[EV-Net][Auth] checking session');
       // 1. Try Supabase session hydration (returns null in mock mode)
@@ -177,35 +181,6 @@ const useAuthStore = create((set, get) => ({
         }
       }
 
-      // 3. Subscribe to Supabase auth state changes (token refresh, sign out)
-      if (authService.onAuthStateChange) {
-        const { data: { subscription } } = authService.onAuthStateChange(async (event, session) => {
-          if (event === 'SIGNED_OUT') {
-            get()._clearAuth();
-          } else if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && session?.user) {
-            try {
-              const user = await authService.getMe(session.user.id);
-              if (user) {
-                const state = {
-                  user,
-                  role: user.role.toLowerCase(),
-                  isAuthenticated: true,
-                };
-                set(state);
-                persistAuth(state);
-              } else {
-                get()._clearAuth();
-              }
-            } catch (err) {
-              console.error('[EV-Net] Auth error during state change:', err);
-            }
-          }
-        });
-        
-        if (subscription) {
-          set({ _authSubscription: subscription });
-        }
-      }
     } catch (err) {
       console.warn('[EV-Net][Auth] session hydration failed', err.message);
       if (persisted.user) {
@@ -220,6 +195,54 @@ const useAuthStore = create((set, get) => ({
 
     set({ _initPromise: promise });
     return promise;
+  },
+
+  /**
+   * Listen for Supabase auth events.
+   *
+   * IMPORTANT: the callback must stay synchronous and must not call Supabase
+   * directly. supabase-js runs it while holding its internal auth lock, so
+   * awaiting a query (or auth.getUser) inside it deadlocks the client and
+   * every later request — uploads, page loads — hangs forever. Follow-up work
+   * is deferred with setTimeout, as the Supabase docs recommend.
+   */
+  _subscribeToAuthChanges: () => {
+    if (!authService.onAuthStateChange) return;
+
+    const result = authService.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT') {
+        setTimeout(() => get()._clearAuth(), 0);
+        return;
+      }
+
+      // Token refreshes don't change who the user is — nothing to reload.
+      if (event === 'TOKEN_REFRESHED' || !session?.user) return;
+
+      if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
+        const current = get().user;
+        // supabase-js re-emits SIGNED_IN when a tab regains focus; skip the
+        // reload if this user's profile is already loaded.
+        if (event === 'SIGNED_IN' && current?.id === session.user.id) return;
+
+        const userId = session.user.id;
+        setTimeout(async () => {
+          try {
+            const user = await authService.getMe(userId, { force: event === 'USER_UPDATED' });
+            if (!user) return;
+            const state = { user, role: user.role.toLowerCase(), isAuthenticated: true };
+            set({ ...state, hydrationError: null });
+            persistAuth(state);
+          } catch (err) {
+            // Keep the current session on transient errors instead of
+            // logging the user out.
+            console.error('[EV-Net] Auth error during state change:', err);
+          }
+        }, 0);
+      }
+    });
+
+    const subscription = result?.data?.subscription;
+    if (subscription) set({ _authSubscription: subscription });
   },
 
   /**

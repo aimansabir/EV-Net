@@ -63,6 +63,7 @@ const UserProfile = () => {
 
   const handleFileChange = async (e) => {
     const file = e.target.files?.[0];
+    e.target.value = ''; // allow re-selecting the same file
     if (!file || !user) return;
     
     setIsUploading(true);
@@ -132,7 +133,7 @@ const UserProfile = () => {
               type="file" 
               ref={fileInputRef} 
               onChange={handleFileChange} 
-              accept="image/jpeg, image/png" 
+              accept="image/jpeg, image/png, image/webp" 
               style={{ display: 'none' }} 
             />
             

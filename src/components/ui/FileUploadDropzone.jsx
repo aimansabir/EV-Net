@@ -1,5 +1,10 @@
 import React, { useState, useRef } from 'react';
-import { UploadCloud, Camera, FileIcon, X, CheckCircle2, AlertCircle } from 'lucide-react';
+import { UploadCloud, Camera, FileIcon, X, AlertCircle } from 'lucide-react';
+
+// Photos are downscaled in the browser before upload (see api.supabase.js),
+// so raw camera images can be much larger than the stored limit.
+const RAW_IMAGE_MAX_MB = 25;
+const isHeic = (file) => /hei[cf]/i.test(file.type || '') || /\.hei[cf]$/i.test(file.name || '');
 
 /**
  * FileUploadDropzone
@@ -33,6 +38,16 @@ const FileUploadDropzone = ({
     }
   };
 
+  const acceptsImages = /image/.test(accept);
+  const acceptsPdf = /pdf/.test(accept);
+  const formatsLabel = accept
+    .split(',')
+    .map(m => m.trim().split('/')[1] || m.trim())
+    .filter(Boolean)
+    .map(ext => ext.replace('jpeg', 'jpg').toUpperCase())
+    .filter((ext, i, arr) => arr.indexOf(ext) === i)
+    .join(', ');
+
   const validateAndProcessFiles = (newFiles) => {
     setInternalError('');
     let validFiles = [];
@@ -52,19 +67,23 @@ const FileUploadDropzone = ({
     for (let i = 0; i < newFiles.length; i++) {
         const file = newFiles[i];
 
+        if (isHeic(file)) {
+            setInternalError(`${file.name}: iPhone HEIC photos aren't supported. Please choose a JPG/PNG or take a screenshot of the photo.`);
+            continue;
+        }
+
         if (!isAccepted(file)) {
-            setInternalError(`File ${file.name} must be an image or PDF.`);
+            setInternalError(`${file.name} isn't a supported file type (${formatsLabel}).`);
             continue;
         }
 
-        // Validate size
-        if (file.size > maxSizeMB * 1024 * 1024) {
-            setInternalError(`File ${file.name} is too large. Max size is ${maxSizeMB}MB.`);
+        const isImage = (file.type || '').startsWith('image/');
+        const limitMB = isImage ? Math.max(maxSizeMB, RAW_IMAGE_MAX_MB) : maxSizeMB;
+        if (file.size > limitMB * 1024 * 1024) {
+            setInternalError(`${file.name} is too large. Max size is ${limitMB}MB.`);
             continue;
         }
 
-        // Generate object URL for preview if it's an image
-        const isImage = file.type.startsWith('image/');
         const previewUrl = isImage ? URL.createObjectURL(file) : null;
 
         validFiles.push({
@@ -102,11 +121,20 @@ const FileUploadDropzone = ({
     if (e.target.files && e.target.files[0]) {
       validateAndProcessFiles(e.target.files);
     }
+    // Reset so choosing the same file again (e.g. after removing it) fires onChange.
+    e.target.value = '';
   };
 
   const onButtonClick = () => {
     if (disabled) return;
-    inputRef.current.click();
+    inputRef.current?.click();
+  };
+
+  const onZoneKeyDown = (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      onButtonClick();
+    }
   };
 
   const removeFile = (idToRemove) => {
@@ -136,6 +164,11 @@ const FileUploadDropzone = ({
             onDragOver={handleDrag}
             onDrop={handleDrop}
             onClick={onButtonClick}
+            onKeyDown={onZoneKeyDown}
+            role="button"
+            tabIndex={disabled ? -1 : 0}
+            aria-disabled={disabled}
+            aria-label={label ? `Upload ${label}` : 'Upload file'}
             style={{
                 border: `2px dashed ${dragActive ? 'var(--brand-cyan)' : 'var(--border-color)'}`,
                 borderRadius: '12px',
@@ -163,7 +196,9 @@ const FileUploadDropzone = ({
                 {mode === 'image' ? 'Take Photo or Choose File' : 'Drag & Drop, or Browse'}
             </h4>
             <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
-                Supported formats: {accept.split(',').map(m => m.trim().split('/')[1]).join(', ')} (Max {maxSizeMB}MB)
+                {formatsLabel}
+                {acceptsImages && ' · photos are compressed automatically'}
+                {acceptsPdf && ` · PDFs up to ${maxSizeMB}MB`}
             </p>
         </div>
       )}
@@ -195,6 +230,8 @@ const FileUploadDropzone = ({
                       </div>
 
                       <button 
+                         type="button"
+                         aria-label={`Remove ${fileObj.file.name}`}
                          onClick={() => removeFile(fileObj.id)}
                          style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', padding: '0.75rem', cursor: 'pointer' }}
                          title="Remove File"

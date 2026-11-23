@@ -8,6 +8,8 @@ import { Camera, X, Image as ImageIcon } from 'lucide-react';
  * listing creation. Enforces minimum rules and visually
  * distinguishes the Cover Photo.
  */
+const ACCEPTED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+
 const PhotoGridManager = ({
   files = [], // { file, preview, id }
   onChange,
@@ -16,23 +18,38 @@ const PhotoGridManager = ({
 }) => {
   const inputRef = useRef(null);
   const [dragActive, setDragActive] = useState(false);
+  const [notice, setNotice] = useState('');
 
   const processFiles = (newFiles) => {
-    let validFiles = [];
+    const validFiles = [];
+    const skipped = [];
+    const all = Array.from(newFiles);
     // Only accept up to the max limit
     const remainingSlots = maxPhotos - files.length;
-    const toProcess = Array.from(newFiles).slice(0, remainingSlots);
 
-    for (let file of toProcess) {
-      if (file.type.startsWith('image/')) {
+    for (const file of all) {
+      if (validFiles.length >= remainingSlots) break;
+      if (ACCEPTED_TYPES.includes((file.type || '').toLowerCase())) {
         validFiles.push({
           id: Math.random().toString(36).substring(7),
           file,
           preview: URL.createObjectURL(file)
         });
+      } else {
+        skipped.push(file.name);
       }
     }
-    onChange([...files, ...validFiles]);
+
+    const messages = [];
+    if (skipped.length) {
+      messages.push(`Skipped ${skipped.join(', ')} — please use JPG, PNG or WebP (iPhone HEIC photos aren't supported).`);
+    }
+    if (all.length - skipped.length > validFiles.length) {
+      messages.push(`You can add up to ${maxPhotos} photos.`);
+    }
+    setNotice(messages.join(' '));
+
+    if (validFiles.length) onChange([...files, ...validFiles]);
   };
 
   const handleDrag = (e) => {
@@ -97,6 +114,8 @@ const PhotoGridManager = ({
                     </div>
                 )}
                 <button 
+                  type="button"
+                  aria-label={`Remove photo ${idx + 1}`}
                   onClick={(e) => { e.preventDefault(); removeFile(fileObj.id); }}
                   style={{
                       position: 'absolute', top: '6px', right: '6px',
@@ -113,6 +132,10 @@ const PhotoGridManager = ({
               <div 
                   onDragEnter={handleDrag} onDragLeave={handleDrag} onDragOver={handleDrag} onDrop={handleDrag}
                   onClick={() => inputRef.current?.click()}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); inputRef.current?.click(); } }}
+                  role="button"
+                  tabIndex={0}
+                  aria-label="Add photos"
                   style={{
                       aspectRatio: '1', borderRadius: '12px',
                       border: `2px dashed ${dragActive ? 'var(--brand-cyan)' : 'var(--border-color)'}`,
@@ -121,13 +144,18 @@ const PhotoGridManager = ({
                       cursor: 'pointer', transition: 'all 0.2s'
                   }}
               >
-                 <input ref={inputRef} type="file" multiple accept="image/jpeg, image/png" onChange={e => { if(e.target.files) processFiles(e.target.files); }} style={{ display: 'none' }} />
+                 <input ref={inputRef} type="file" multiple accept="image/jpeg, image/png, image/webp" onChange={e => { if (e.target.files) processFiles(e.target.files); e.target.value = ''; }} style={{ display: 'none' }} />
                  <Camera size={28} color="var(--text-secondary)" style={{ marginBottom: '8px' }} />
                  <span style={{ fontSize: '0.8rem', color: 'var(--brand-cyan)', fontWeight: 500 }}>Add Photos</span>
               </div>
           )}
       </div>
 
+      {notice && (
+        <div style={{ fontSize: '0.8rem', color: '#fbbf24', marginBottom: '0.75rem' }} role="status">
+          {notice}
+        </div>
+      )}
       {error && <div className="auth-error">{error}</div>}
     </div>
   );
