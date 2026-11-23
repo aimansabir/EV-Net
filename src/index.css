@@ -267,3 +267,16 @@ img {
     animation-iteration-count: infinite !important;
   }
 }
+
+/* ─── Maps ─────────────────────────────────────────────── */
+
+/* Darken the light OpenStreetMap tiles to fit the site theme
+   (see components/ui/BaseMapTiles.jsx). */
+.evnet-dark-tiles {
+  filter: invert(100%) hue-rotate(180deg) brightness(0.95) contrast(0.85) saturate(0.4);
+}
+
+/* Avoid a light-grey flash while tiles load. */
+.leaflet-container:has(.evnet-dark-tiles) {
+  background: #0b0f19;
+}

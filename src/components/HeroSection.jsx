@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { MapContainer, TileLayer, Marker } from 'react-leaflet';
+import { MapContainer, Marker } from 'react-leaflet';
+import BaseMapTiles from './ui/BaseMapTiles';
 import { useNavigate } from 'react-router-dom';
 import useAuthStore from '../store/authStore';
 import 'leaflet/dist/leaflet.css';
@@ -75,10 +76,7 @@ const HeroSection = () => {
                 style={{ height: '100%', width: '100%', zIndex: 0 }}
                 zoomControl={false}
               >
-                <TileLayer
-                  url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-                  attribution='&copy; OpenStreetMap'
-                />
+                <BaseMapTiles />
 
                 {mockMarkers.map(m => (
                   <Marker
