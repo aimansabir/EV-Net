@@ -24,14 +24,58 @@
   transform: translate(-50%, -50%);
   width: 90%;
   height: 90%;
-  background: radial-gradient(circle, rgba(0, 210, 106, 0.2) 0%, rgba(0, 0, 0, 0) 65%);
+  background: radial-gradient(closest-side, rgba(0, 210, 106, 0.2), transparent);
   z-index: 0;
   pointer-events: none;
 }
 
+.network-illustration {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 960 / 460;
+  border-radius: 20px;
+  position: relative;
+  z-index: 1;
+}
+
+.ni-flow {
+  stroke-dasharray: 4 12;
+  animation: ni-flow 2.4s linear infinite;
+}
+
+@keyframes ni-flow {
+  to { stroke-dashoffset: -32; }
+}
+
+.ni-pulse {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: ni-pulse 3s ease-in-out infinite;
+}
+
+@keyframes ni-pulse {
+  0%, 100% { opacity: 0.55; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.35); }
+}
+
+.ni-label {
+  fill: #9CA3AF;
+  font-family: var(--font-body);
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.ni-label.is-major {
+  fill: #F9FAFB;
+  font-size: 17px;
+  font-weight: 600;
+}
+
+
 .network-image {
   width: 100%;
-  height: 100%;
+  height: auto;
   max-height: 450px;
   object-fit: cover;
   object-position: center;
@@ -108,30 +152,66 @@
 
 @media (max-width: 768px) {
   .network-visual-section {
-    padding-bottom: 4rem;
+    padding-bottom: 5rem;
   }
 
-  /* Stack the image and stat cards instead of laying them out in a row. */
   .visual-wrapper {
-    flex-direction: column;
+    display: block;
     max-height: none;
-    padding-bottom: 0.5rem;
+    padding: 0;
+    border-radius: 18px;
   }
 
-  .network-image {
-    max-height: 320px;
+  /* Tighter crop (slice) so the cities fill the narrow screen. */
+  .network-illustration {
+    aspect-ratio: 1.3;
+    border-radius: 18px;
   }
 
+  .ni-label {
+    font-size: 24px;
+  }
+
+  .ni-label.is-major {
+    font-size: 26px;
+  }
+
+  /* Stats keep floating on phones: three compact cards hovering over the
+     bottom edge of the map (half on, half off), gently bobbing. */
   .floating-stat {
-    padding: 1rem 1.25rem;
-    position: relative;
     top: auto !important;
-    left: auto !important;
+    bottom: -50px !important;
+    width: calc((100% - 2.5rem) / 3);
+    padding: 0.6rem 0.25rem;
+    border-radius: 12px;
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.5);
+  }
+
+  .floating-stat.stat-1 {
+    left: 0.75rem !important;
     right: auto !important;
-    bottom: auto !important;
-    margin: 0.5rem auto;
-    width: calc(100% - 2rem);
-    transform: none !important;
-    animation: none;
+  }
+
+  .floating-stat.stat-2 {
+    left: 50% !important;
+    right: auto !important;
+    margin-left: calc((100% - 2.5rem) / -6);
+  }
+
+  .floating-stat.stat-3 {
+    right: 0.75rem !important;
+    left: auto !important;
+  }
+
+  .floating-stat .stat-value {
+    font-size: 1.3rem;
+    margin-bottom: 0.15rem;
+  }
+
+  .floating-stat .stat-label {
+    font-size: 0.58rem;
+    letter-spacing: 0.4px;
+    text-align: center;
+    line-height: 1.2;
   }
 }

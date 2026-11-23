@@ -111,20 +111,26 @@ const HostAvailability = () => {
           </div>
         )}
 
-        <div className="glass-card" style={{ padding: '2rem' }}>
+        <div className="glass-card" style={{ padding: 'clamp(1rem, 4vw, 2rem)' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
             {DAYS.map((dayName, dayIdx) => {
               const dayData = schedule[dayIdx];
               const isEnabled = dayData?.enabled;
               return (
                 <div key={dayIdx} style={{
-                  display: 'flex', alignItems: 'center', gap: '1rem', padding: '0.75rem',
+                  display: 'flex', alignItems: 'center', gap: '0.6rem 1rem', padding: '0.75rem', flexWrap: 'wrap',
                   borderRadius: '8px', background: isEnabled ? 'rgba(0,210,106,0.05)' : 'transparent',
                   border: isEnabled ? '1px solid rgba(0,210,106,0.2)' : '1px solid var(--border-color)',
                   transition: 'all 0.2s',
                 }}>
-                  <button onClick={() => toggleDay(dayIdx)} style={{
-                    width: '40px', height: '24px', borderRadius: '12px', border: 'none', cursor: 'pointer',
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={!!isEnabled}
+                    aria-label={`${dayName} availability`}
+                    onClick={() => toggleDay(dayIdx)}
+                    style={{
+                    width: '40px', height: '24px', borderRadius: '12px', border: 'none', cursor: 'pointer', flexShrink: 0, padding: 0,
                     background: isEnabled ? 'var(--brand-green)' : 'rgba(255,255,255,0.1)',
                     position: 'relative', transition: 'background 0.2s',
                   }}>
@@ -134,16 +140,16 @@ const HostAvailability = () => {
                       left: isEnabled ? '19px' : '3px', transition: 'left 0.2s',
                     }} />
                   </button>
-                  <span style={{ width: '90px', fontWeight: 500, color: isEnabled ? '#fff' : 'var(--text-secondary)' }}>{dayName}</span>
+                  <span style={{ width: '90px', flexShrink: 0, fontWeight: 500, color: isEnabled ? '#fff' : 'var(--text-secondary)' }}>{dayName}</span>
                   {isEnabled ? (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: '1 1 200px', minWidth: 0 }}>
                       <select value={dayData.start} onChange={e => updateTime(dayIdx, 'start', e.target.value)}
-                        style={{ padding: '0.4rem', borderRadius: '6px', border: '1px solid var(--border-color)', background: 'rgba(11,15,25,0.6)', color: '#fff', fontSize: '0.85rem' }}>
+                        aria-label="Time" style={{ flex: 1, minWidth: 0, padding: '0.45rem', borderRadius: '6px', border: '1px solid var(--border-color)', background: 'rgba(11,15,25,0.6)', color: '#fff', fontSize: '0.85rem' }}>
                         {HOURS.map(h => <option key={h} value={h}>{format12h(h)}</option>)}
                       </select>
                       <span style={{ color: 'var(--text-secondary)' }}>to</span>
                       <select value={dayData.end} onChange={e => updateTime(dayIdx, 'end', e.target.value)}
-                        style={{ padding: '0.4rem', borderRadius: '6px', border: '1px solid var(--border-color)', background: 'rgba(11,15,25,0.6)', color: '#fff', fontSize: '0.85rem' }}>
+                        aria-label="Time" style={{ flex: 1, minWidth: 0, padding: '0.45rem', borderRadius: '6px', border: '1px solid var(--border-color)', background: 'rgba(11,15,25,0.6)', color: '#fff', fontSize: '0.85rem' }}>
                         {HOURS.map(h => <option key={h} value={h}>{format12h(h)}</option>)}
                       </select>
                     </div>

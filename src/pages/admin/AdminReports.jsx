@@ -13,9 +13,9 @@ const AdminReports = () => {
           <p style={{ color: 'var(--text-secondary)' }}>Manage platform safety by reviewing user reports, flagged listings, and platform violations.</p>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '2rem' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(300px, 100%), 1fr))', gap: '2rem' }}>
           {/* Dispute Statistics Placeholder */}
-          <div className="glass-card" style={{ padding: '2rem' }}>
+          <div className="glass-card" style={{ padding: 'clamp(1.25rem, 4vw, 2rem)' }}>
             <h4 style={{ marginBottom: '1.5rem', fontSize: '1.1rem', color: 'var(--text-main)' }}>Moderation Summary</h4>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
               {[
@@ -37,7 +37,7 @@ const AdminReports = () => {
             </div>
           </div>
 
-          <div className="glass-card" style={{ padding: '2rem', background: 'rgba(225, 29, 72, 0.03)', border: '1px dashed rgba(225, 29, 72, 0.3)' }}>
+          <div className="glass-card" style={{ padding: 'clamp(1.25rem, 4vw, 2rem)', background: 'rgba(225, 29, 72, 0.03)', border: '1px dashed rgba(225, 29, 72, 0.3)' }}>
             <h4 style={{ marginBottom: '1rem', color: '#fb7185' }}>Module: Case Resolution</h4>
             <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', lineHeight: '1.6', marginBottom: '1.5rem' }}>
               The Reports module is currently under development. Note: Conversation moderation and chat logs are now managed in the dedicated Conversations tab.

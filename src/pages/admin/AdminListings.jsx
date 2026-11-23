@@ -140,8 +140,8 @@ const AdminListings = () => {
         {loading && listings.length === 0 ? (
           <div style={{ color: 'var(--text-secondary)', padding: '2rem', textAlign: 'center' }}>Loading listings...</div>
         ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
+          <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+            <table style={{ width: '100%', minWidth: '720px', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
                   {['Listing', 'Host', 'Type', 'Rate (kWh)', 'Status', 'Actions'].map(h => (

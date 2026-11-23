@@ -993,7 +993,7 @@ const HostOnboarding = () => {
                 </select>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginBottom: '2.5rem', alignItems: 'start' }}>
+              <div className="stack-on-phone" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginBottom: '2.5rem', alignItems: 'start' }}>
                 <div style={{ minWidth: 0 }}>
                   <ValidatedInput
                     label="Day Rate"

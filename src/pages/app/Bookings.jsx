@@ -231,26 +231,28 @@ const Bookings = () => {
                   {/* Listing Image */}
                   <div style={{
                     width: '100px', height: '80px', borderRadius: '10px', flexShrink: 0,
-                    background: booking.listing?.images?.[0] ? `url(${booking.listing.images[0]}) center/cover` : '#222',
+                    background: booking.listing?.images?.[0] ? `url("${booking.listing.images[0]}") center/cover no-repeat, #1f2937` : 'linear-gradient(135deg, #1f2937, #111827)',
                   }} />
                   
                   {/* Details */}
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem', flexWrap: 'wrap' }}>
                       <h4 style={{ margin: 0, fontSize: '1.1rem' }}>{booking.listing?.title || 'Charger'}</h4>
-                      <div style={{ display: 'flex', gap: '8px' }}>
+                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                         <span style={{
                           padding: '0.2rem 0.7rem', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 600,
                           background: status.bg, color: status.color,
                         }}>
                           {status.label}
                         </span>
-                        <span style={{
-                          padding: '0.2rem 0.7rem', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 600,
-                          background: 'rgba(255,255,255,0.05)', color: payStatus.color, border: `1px solid ${payStatus.color}44`
-                        }}>
-                          {payStatus.label}
-                        </span>
+                        {payStatus.label && (
+                          <span style={{
+                            padding: '0.2rem 0.7rem', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 600,
+                            background: 'rgba(255,255,255,0.05)', color: payStatus.color, border: `1px solid ${payStatus.color}44`
+                          }}>
+                            {payStatus.label}
+                          </span>
+                        )}
                       </div>
                     </div>
                     <div style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginTop: '0.3rem' }}>

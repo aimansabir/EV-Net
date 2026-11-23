@@ -50,7 +50,7 @@ const Favorites = () => {
       <div className="section" style={{ minHeight: 'calc(100vh - 72px)' }}>
         <div className="container" style={{ maxWidth: '1000px' }}>
           <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '2rem', marginBottom: '1.5rem', opacity: 0.1 }}>Saved Chargers</h2>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1.5rem' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(280px, 100%), 1fr))', gap: '1.5rem' }}>
             {[1, 2, 3].map(i => <CardSkeleton key={i} />)}
           </div>
         </div>
@@ -107,7 +107,7 @@ const Favorites = () => {
             </button>
           </div>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1.5rem' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(280px, 100%), 1fr))', gap: '1.5rem' }}>
             {favoriteListings.map(listing => (
               <div key={listing.id} className="glass-card" style={{ padding: 0, overflow: 'hidden', cursor: 'pointer' }}
                 onClick={() => navigate(`/app/charger/${listing.id}`)}

@@ -49,10 +49,10 @@ const HostDashboard = () => {
             </div>
             <Skeleton width="120px" height="40px" />
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', marginBottom: '2.5rem' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(220px, 100%), 1fr))', gap: '1rem', marginBottom: '2.5rem' }}>
             {[1, 2, 3, 4].map(i => <Skeleton key={i} height="100px" />)}
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '2rem' }}>
+          <div className="stack-on-tablet" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '2rem' }}>
             <ListSkeleton />
             <Skeleton height="300px" />
           </div>
@@ -142,7 +142,7 @@ const HostDashboard = () => {
         )}
 
         {/* Stats */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', marginBottom: '2.5rem' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(220px, 100%), 1fr))', gap: '1rem', marginBottom: '2.5rem' }}>
           <div className="glass-card" style={{ padding: '1.5rem' }}>
             <div style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '0.5rem' }}>Total Host Earnings</div>
             <div style={{ fontSize: '1.8rem', fontWeight: 'bold', color: 'var(--brand-green)' }}>{formatPKR(dashboard.totalEarnings)}</div>
@@ -166,7 +166,7 @@ const HostDashboard = () => {
           </div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '2rem' }}>
+        <div className="stack-on-tablet" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '2rem' }}>
           {/* Listings */}
           <div>
             <h3 style={{ marginBottom: '1rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>Your Listings</h3>

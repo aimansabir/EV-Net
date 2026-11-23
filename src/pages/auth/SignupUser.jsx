@@ -333,7 +333,7 @@ const SignupUser = () => {
             </button>
             <div className="auth-divider" style={{ margin: '0 0 1.5rem 0' }}><span>Vehicle Details</span></div>
 
-            <div className="auth-row" style={{ gridTemplateColumns: '1fr 1fr', display: 'grid', gap: '1rem' }}>
+            <div className="auth-row stack-on-phone" style={{ gridTemplateColumns: '1fr 1fr', display: 'grid', gap: '1rem' }}>
               <div className="auth-field">
                 <label>EV Brand</label>
                 <select

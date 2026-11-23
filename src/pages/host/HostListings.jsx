@@ -67,8 +67,8 @@ const HostListings = () => {
   return (
     <div className="section" style={{ minHeight: 'calc(100vh - 72px)' }}>
       <div className="container" style={{ maxWidth: '1000px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
-          <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: '2rem', margin: 0 }}>My Listings</h2>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem', marginBottom: '2rem' }}>
+          <h2 style={{ fontFamily: 'var(--font-heading)', fontSize: 'clamp(1.6rem, 5vw, 2rem)', margin: 0 }}>My Listings</h2>
           <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
             <button
               type="button"
@@ -107,17 +107,17 @@ const HostListings = () => {
             {listings.map(listing => {
               const status = statusBadge(listing);
               return (
-                <div key={listing.id} className="glass-card" style={{ padding: '1.5rem', display: 'flex', gap: '1.5rem', alignItems: 'center' }}>
-                  <div style={{ width: '120px', height: '90px', borderRadius: '10px', flexShrink: 0, background: listing.images?.[0] ? `url(${listing.images[0]}) center/cover` : '#222', backgroundColor: '#222' }} />
-                  <div style={{ flex: 1 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div key={listing.id} className="glass-card" style={{ padding: 'clamp(1rem, 4vw, 1.5rem)', display: 'flex', gap: '1rem 1.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                  <div style={{ width: '120px', height: '90px', borderRadius: '10px', flexShrink: 0, background: listing.images?.[0] ? `url("${listing.images[0]}") center/cover no-repeat, #1f2937` : 'linear-gradient(135deg, #1f2937, #111827)' }} />
+                  <div style={{ flex: '1 1 220px', minWidth: 0 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem', flexWrap: 'wrap' }}>
                       <h4 style={{ margin: 0, fontSize: '1.15rem' }}>{listing.title}</h4>
                       <span style={{ padding: '0.2rem 0.7rem', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 600, background: status.bg, color: status.color, flexShrink: 0 }}>{status.label}</span>
                     </div>
                     <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', margin: '0.3rem 0' }}>
                       {listing.chargerType} • Day: {formatPKR(listing.priceDay)}/kWh • Night: {formatPKR(listing.priceNight)}/kWh
                     </p>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', fontSize: '0.85rem', marginTop: '0.5rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem 1.5rem', fontSize: '0.85rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
                       <span style={{ color: 'var(--text-secondary)' }}>{listing.sessionsCompleted} sessions</span>
                       {listing.rating > 0 && <span style={{ color: '#fbbf24', display: 'flex', alignItems: 'center', gap: '4px' }}><Star size={14} fill="currentColor" /> {listing.rating}</span>}
                       <span style={{ color: 'var(--text-secondary)' }}>{listing.reviewCount} reviews</span>
@@ -151,9 +151,9 @@ const HostListings = () => {
         <div style={{
           position: 'fixed', inset: 0, zIndex: 1000,
           background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(10px)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2rem'
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'clamp(0.75rem, 4vw, 2rem)'
         }}>
-          <div className="glass-card" style={{ width: '100%', maxWidth: '700px', padding: '2rem', position: 'relative' }}>
+          <div className="glass-card" style={{ width: '100%', maxWidth: '700px', maxHeight: '90vh', overflowY: 'auto', padding: 'clamp(1.25rem, 5vw, 2rem)', position: 'relative' }}>
             <button 
               onClick={() => setShowPhotoModal(false)}
               style={{ position: 'absolute', top: '1.5rem', right: '1.5rem', background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}
@@ -163,7 +163,7 @@ const HostListings = () => {
 
             <h3 style={{ margin: '0 0 1.5rem 0', fontSize: '1.5rem' }}>Manage Listing Photos</h3>
             
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(140px, 100%), 1fr))', gap: '1rem', marginBottom: '2rem' }}>
               {(selectedListing.listing_photos || []).map((photo, idx) => (
                 <div key={photo.id} style={{ position: 'relative', aspectRatio: '4/3', borderRadius: '12px', overflow: 'hidden', border: '1px solid var(--border-color)' }}>
                   <img src={listingService.resolveListingPhotoUrl(photo.storage_path)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />

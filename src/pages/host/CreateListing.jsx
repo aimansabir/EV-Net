@@ -181,7 +181,7 @@ const CreateListing = () => {
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1.2fr 1.2fr', gap: '1rem', marginBottom: '1.25rem', alignItems: 'flex-start' }}>
+              <div className="stack-on-phone" style={{ display: 'grid', gridTemplateColumns: '2fr 1.2fr 1.2fr', gap: '1rem', marginBottom: '1.25rem', alignItems: 'flex-start' }}>
                 <div className="auth-field">
                   <label style={{ display: 'block', marginBottom: '0.8rem', opacity: 0.8, fontSize: '0.9rem' }}>Charger Type <span style={{ color: 'var(--brand-cyan)' }}>*</span></label>
                   <select className="auth-select" value={formData.chargerType} onChange={e => setFormData({...formData, chargerType: e.target.value})} style={{ height: '44px' }}>
