@@ -233,7 +233,7 @@ const Checkout = () => {
               </div>
             )}
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 0.9fr', gap: '2.5rem', alignItems: 'start' }}>
+            <div className="stack-on-tablet" style={{ display: 'grid', gridTemplateColumns: '1.1fr 0.9fr', gap: '2.5rem', alignItems: 'start' }}>
               {/* Left Column: Summary */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
 
@@ -256,7 +256,7 @@ const Checkout = () => {
                   <h4 style={{ fontSize: '0.75rem', textTransform: 'uppercase', color: 'var(--text-secondary)', fontWeight: 800, letterSpacing: '1px', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <Clock size={14} color="var(--brand-green)" /> Reservation Window
                   </h4>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
+                  <div className="stack-on-phone" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
 
                     <div style={{ display: 'flex', gap: '14px' }}>
                       <div style={{ background: 'rgba(255,255,255,0.03)', width: '48px', height: '48px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '12px', border: '1px solid var(--border-color)', flexShrink: 0 }}>

@@ -254,16 +254,29 @@ const ChargerDetail = () => {
   return (
     <div style={{ minHeight: 'calc(100vh - 72px)' }}>
       {/* Image Gallery Header */}
-      <div style={{ position: 'relative', height: '400px', overflow: 'hidden' }}>
-        <div style={{
-          width: '100%', height: '100%',
-          background: `url(${listing.images[selectedImage]}) center/cover`,
-          transition: 'background-image 0.3s',
-        }} />
+      <div style={{ position: 'relative', height: 'clamp(260px, 45vw, 400px)', overflow: 'hidden' }}>
+        <div
+          role="img"
+          aria-label={`Photo of ${listing.title}`}
+          style={{
+            width: '100%', height: '100%',
+            // Brand gradient underneath, so a missing/broken photo still looks intentional.
+            background: [
+              listing.images[selectedImage] ? `url("${listing.images[selectedImage]}") center/cover no-repeat` : null,
+              'radial-gradient(circle at 30% 40%, rgba(0,210,106,0.18), transparent 60%)',
+              'linear-gradient(135deg, #111827, #0B0F19)',
+            ].filter(Boolean).join(', '),
+            transition: 'background-image 0.3s',
+          }}
+        />
         <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(transparent 50%, rgba(11,15,25,0.95) 100%)' }} />
 
         {/* Back button */}
-        <button onClick={() => navigate(-1)} style={{
+        <button type="button" onClick={() => {
+          // Opened from a shared link: there's no in-app page to go back to.
+          if ((window.history.state?.idx ?? 0) > 0) navigate(-1);
+          else navigate('/app/explore');
+        }} style={{
           position: 'absolute', top: '1.5rem', left: '1.5rem', zIndex: 10,
           padding: '0.6rem 1rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)',
           background: 'rgba(11,15,25,0.7)', color: '#fff', cursor: 'pointer', backdropFilter: 'blur(8px)',
@@ -305,9 +318,10 @@ const ChargerDetail = () => {
         {listing.images.length > 1 && (
           <div style={{ position: 'absolute', bottom: '1.5rem', left: '1.5rem', display: 'flex', gap: '8px', zIndex: 10 }}>
             {listing.images.slice(0, 4).map((img, i) => (
-              <div key={i} onClick={() => setSelectedImage(i)} style={{
+              <button type="button" key={i} onClick={() => setSelectedImage(i)} aria-label={`Show photo ${i + 1}`} style={{
+                padding: 0,
                 width: '60px', height: '45px', borderRadius: '6px', cursor: 'pointer',
-                background: `url(${img}) center/cover`,
+                background: `url("${img}") center/cover no-repeat, #1f2937`,
                 border: selectedImage === i ? '2px solid var(--brand-green)' : '2px solid rgba(255,255,255,0.3)',
                 opacity: selectedImage === i ? 1 : 0.7, transition: 'all 0.2s',
               }} />
@@ -324,7 +338,7 @@ const ChargerDetail = () => {
               {listingLoadError || bookingsLoadError ? 'Could not refresh everything. Showing cached details where available.' : 'Refreshing charger details...'}
             </div>
           )}
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 1fr)', gap: '2.5rem' }}>
+          <div className="stack-on-tablet" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 1fr)', gap: '2.5rem' }}>
 
             {/* Left Column */}
             <div>
@@ -346,7 +360,7 @@ const ChargerDetail = () => {
                 <div style={{
                   display: 'flex', gap: '1rem', padding: '1.25rem', marginBottom: '2rem',
                   background: 'var(--bg-card)', borderRadius: '14px', border: '1px solid var(--border-color)',
-                  alignItems: 'center',
+                  alignItems: 'center', flexWrap: 'wrap',
                 }}>
                   <div style={{ flexShrink: 0 }}>
                     <Avatar
@@ -358,16 +372,15 @@ const ChargerDetail = () => {
                       }}
                     />
                   </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.2rem' }}>
+                  <div style={{ flex: 1, minWidth: '160px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.2rem', flexWrap: 'wrap' }}>
                       <span style={{ fontWeight: 600, fontSize: '1.05rem' }}>{listing.host.name}</span>
                       {isHostVerified && (
                         <span style={{ padding: '0.1rem 0.5rem', borderRadius: '10px', background: 'rgba(0,210,106,0.2)', color: 'var(--brand-green)', fontSize: '0.7rem', fontWeight: 600 }}>✓ Verified</span>
                       )}
                     </div>
-                    <div style={{ display: 'flex', gap: '1.5rem', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                      <span>{listing.sessionsCompleted} sessions</span>
-                      <span>~5 min response</span>
+                    <div style={{ display: 'flex', gap: '0.25rem 1.5rem', fontSize: '0.8rem', color: 'var(--text-secondary)', flexWrap: 'wrap' }}>
+                      <span>{listing.sessionsCompleted || 0} sessions</span>
                       <span>Joined {new Date(listing.host.createdAt).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}</span>
                     </div>
                   </div>
@@ -566,7 +579,7 @@ const ChargerDetail = () => {
             </div>
 
             {/* Right Column — Booking Card */}
-            <div className="col-lg-5">
+            <div className="col-lg-5" id="reserve">
               <div style={{ position: 'sticky', top: '100px' }}>
                 <div className="glass-card" style={{ width: '100%', maxWidth: '620px', marginLeft: 'auto', padding: '2rem', borderRadius: '24px', position: 'relative', overflow: 'visible' }}>
                   {/* Main Header - Pricing Summary */}
@@ -953,6 +966,27 @@ const ChargerDetail = () => {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Phones: the booking card sits below the details, so keep a
+          price + Reserve shortcut pinned to the bottom of the screen. */}
+      <div className="mobile-reserve-bar">
+        <div>
+          <div style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--brand-green)' }}>
+            {formatPKR(fees.rateUsed)} <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: 400 }}>/ kWh</span>
+          </div>
+          <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+            Est. total {formatPKR(fees.userTotal || fees.totalFee)}
+          </div>
+        </div>
+        <button
+          type="button"
+          className="btn btn-primary"
+          style={{ padding: '0.7rem 1.4rem' }}
+          onClick={() => document.getElementById('reserve')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+        >
+          Reserve
+        </button>
       </div>
     </div>
   );
